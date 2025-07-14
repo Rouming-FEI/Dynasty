@@ -1,0 +1,20 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+
+# IDE / tooling
+*.csproj
+*.sln
+.vs/
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+
+# Simulated date (do not commit)
+.simulated-date
