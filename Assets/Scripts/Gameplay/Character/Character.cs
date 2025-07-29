@@ -26,5 +26,6 @@ namespace Dynasty.Gameplay
         public float ErosionLimit => ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
         public bool IsDead => ASC.IsDead;
         public bool CanAct => ASC.CanAct;
+        public bool CanMove => ASC.CanMove;
     }
 }
