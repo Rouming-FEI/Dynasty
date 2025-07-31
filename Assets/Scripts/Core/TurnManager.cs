@@ -1,0 +1,185 @@
+using System;
+using Dynasty.Gameplay;
+
+namespace Dynasty.Core
+{
+    public class TurnManager
+    {
+        private JudgmentSystem _judgment;
+        private int _consecutiveFlatCount;
+        private int _currentActorIndex;
+        private int[] _actionOrder;
+
+        public TurnManager()
+        {
+            _judgment = new JudgmentSystem();
+            _consecutiveFlatCount = 0;
+            _actionOrder = Array.Empty<int>();
+        }
+
+        public void StartGame(WorldState state)
+        {
+            state.Phase = TurnPhase.JudgmentPhase;
+            state.CurrentTurn = 1;
+
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character c = new Character(i + 1, i, $"玩家{i + 1}")
+                {
+                    CurrentLocationId = i // spawn at own entry point (0-3)
+                };
+                state.Characters[i] = c;
+            }
+
+            var evt = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.TurnStart, ref evt);
+        }
+
+        public bool Advance(WorldState state, Span<ChipAllocation> inputs)
+        {
+            switch (state.Phase)
+            {
+                case TurnPhase.JudgmentPhase:
+                    ProcessJudgment(state, inputs);
+                    break;
+                case TurnPhase.ActionPhase:
+                    if (AllAPExhausted(state))
+                        EndTurn(state);
+                    break;
+                case TurnPhase.GameOver:
+                    return false;
+            }
+            return state.Phase != TurnPhase.GameOver;
+        }
+
+        private void ProcessJudgment(WorldState state, Span<ChipAllocation> allocations)
+        {
+            JudgmentResult result = _judgment.Resolve(allocations, state.Random, ref _consecutiveFlatCount);
+
+            // Distribute AP to all players
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character c = state.GetCharacterByPlayer(i);
+                if (c != null && !c.IsDead)
+                {
+                    int ap = result.APGained[i];
+                    c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, ap);
+                    // Re-set current value to match
+                    c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, 0f);
+                }
+            }
+
+            // Build action order: winners desc, losers desc, neutrals last
+            BuildActionOrder(state, result);
+
+            // Fire events
+            var evt = new GameplayEvent(GameplayEventTypes.JudgmentResolved, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.JudgmentResolved, ref evt);
+
+            state.Phase = TurnPhase.ActionPhase;
+            _currentActorIndex = 0;
+
+            var evt2 = new GameplayEvent(GameplayEventTypes.ActionPhaseStart, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.ActionPhaseStart, ref evt2);
+        }
+
+        private void BuildActionOrder(WorldState state, JudgmentResult result)
+        {
+            int playerCount = state.PlayerCount;
+            _actionOrder = new int[playerCount];
+            int idx = 0;
+
+            // Winners first, sorted by effective chips desc; then losers
+            for (int pass = 0; pass < 2; pass++)
+            {
+                // Collect indices for this role group
+                Span<int> group = stackalloc int[playerCount];
+                int groupCount = 0;
+                JudgmentRole targetRole = (pass == 0) ? JudgmentRole.Winner : JudgmentRole.Loser;
+
+                for (int i = 0; i < playerCount; i++)
+                    if (result.Roles[i] == targetRole)
+                        group[groupCount++] = i;
+
+                // Sort by effective chips desc within group (selection sort, small N)
+                for (int i = 0; i < groupCount - 1; i++)
+                {
+                    int best = i;
+                    for (int j = i + 1; j < groupCount; j++)
+                    {
+                        if (result.EffectiveChips[group[j]] > result.EffectiveChips[group[best]])
+                            best = j;
+                        else if (result.EffectiveChips[group[j]] == result.EffectiveChips[group[best]])
+                            if (state.Random.Next(2) == 0) best = j;
+                    }
+                    int temp = group[i];
+                    group[i] = group[best];
+                    group[best] = temp;
+                }
+
+                for (int i = 0; i < groupCount; i++)
+                    _actionOrder[idx++] = group[i];
+            }
+
+            // Neutrals last
+            for (int i = 0; i < playerCount; i++)
+                if (result.Roles[i] == JudgmentRole.Neutral)
+                    _actionOrder[idx++] = i;
+        }
+
+        private bool AllAPExhausted(WorldState state)
+        {
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character c = state.Characters[i];
+                if (c != null && !c.IsDead && c.ActionPoints > 0)
+                    return false;
+            }
+            return true;
+        }
+
+        private void EndTurn(WorldState state)
+        {
+            state.Phase = TurnPhase.TurnEnd;
+
+            var turnEndEvt = new GameplayEvent(GameplayEventTypes.TurnEnd, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.TurnEnd, ref turnEndEvt);
+
+            // Tick all GEs
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                state.Characters[i]?.ASC.TickEffects();
+                state.Characters[i]?.ASC.ProcessEvents();
+            }
+
+            // Check game over
+            if (state.AliveCharacterCount <= 1)
+            {
+                state.Phase = TurnPhase.GameOver;
+                var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
+                state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
+                return;
+            }
+
+            // Check max turns
+            if (state.CurrentTurn >= GameConfig.MaxTurns)
+            {
+                state.Phase = TurnPhase.GameOver;
+                var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
+                state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
+                return;
+            }
+
+            // Next turn
+            state.CurrentTurn++;
+            state.Phase = TurnPhase.JudgmentPhase;
+            var evt2 = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.TurnStart, ref evt2);
+        }
+
+        // Public accessor for action order (used by LocalLockstep)
+        public int[] ActionOrder => _actionOrder;
+        public int CurrentActorIndex => _currentActorIndex;
+        public void IncrementActorIndex() => _currentActorIndex++;
+    }
+}

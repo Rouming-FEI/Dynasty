@@ -19,7 +19,7 @@ namespace Dynasty.Core
         public CommandQueue Commands;
         public TurnManager TurnManager;
         public DeterministicRandom Random;
-        // public LocationManager Locations;  // TODO: Task 17
+        public LocationManager Locations;
         public int CurrentTick;
         public int CurrentTurn;
         public TurnPhase Phase;
@@ -32,7 +32,7 @@ namespace Dynasty.Core
             Events = new EventBus();
             Commands = new CommandQueue();
             Random = new DeterministicRandom(randomSeed);
-            // Locations = new LocationManager();  // TODO: Task 17
+            Locations = new LocationManager();
             CurrentTick = 0;
             CurrentTurn = 0;
             Phase = TurnPhase.Waiting;
