@@ -59,6 +59,22 @@ namespace Gameplay.Judgment
     /// </summary>
     public class JudgmentSystem
     {
+        // Pre-allocated arrays to avoid per-turn GC allocations.
+        // Resized only when player count changes (effectively never after game start).
+        private JudgmentRole[] _roles;
+        private int[] _effectiveChips;
+        private int[] _apGained;
+        private int _capacity;
+
+        private void EnsureCapacity(int playerCount)
+        {
+            if (_capacity >= playerCount) return;
+            _roles = new JudgmentRole[playerCount];
+            _effectiveChips = new int[playerCount];
+            _apGained = new int[playerCount];
+            _capacity = playerCount;
+        }
+
         /// <summary>
         /// Execute a full judgment round.
         /// </summary>
@@ -76,14 +92,19 @@ namespace Gameplay.Judgment
             ref int consecutiveFlatCount)
         {
             int playerCount = allocations.Length;
+            EnsureCapacity(playerCount);
 
             JudgmentResult result = new()
             {
                 IsGlobalFlat = false,
-                Roles = new JudgmentRole[playerCount],
-                EffectiveChips = new int[playerCount],
-                APGained = new int[playerCount],
+                Roles = _roles,
+                EffectiveChips = _effectiveChips,
+                APGained = _apGained,
             };
+            // Clear arrays for this round
+            System.Array.Clear(_roles, 0, playerCount);
+            System.Array.Clear(_effectiveChips, 0, playerCount);
+            System.Array.Clear(_apGained, 0, playerCount);
 
             // ——— Step 1: sum total chips for each hand across all players ———
             int totalRock = 0, totalScissors = 0, totalPaper = 0;

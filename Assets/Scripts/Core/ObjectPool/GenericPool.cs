@@ -30,7 +30,8 @@ namespace Core.ObjectPool
             if (item == null) return;
             if (_count >= _items.Length)
             {
-                System.Array.Resize(ref _items, _items.Length * 2);
+                // Pool full — discard. Prewarm to expected capacity to avoid this.
+                return;
             }
             _items[_count] = item;
             _count++;

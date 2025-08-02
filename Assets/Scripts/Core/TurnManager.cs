@@ -33,6 +33,9 @@ namespace Core
                 state.Characters[i] = c;
             }
 
+            // Pre-allocate action order array (sized once, reused every turn)
+            _actionOrder = new int[state.PlayerCount];
+
             var evt = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.TurnStart, ref evt);
         }
@@ -88,7 +91,6 @@ namespace Core
         private void BuildActionOrder(WorldState state, JudgmentResult result)
         {
             int playerCount = state.PlayerCount;
-            _actionOrder = new int[playerCount];
             int idx = 0;
 
             // Winners first, sorted by effective chips desc; then losers

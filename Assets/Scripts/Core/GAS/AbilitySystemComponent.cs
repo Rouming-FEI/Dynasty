@@ -32,6 +32,7 @@ namespace Core.GAS
             _eventBuffer = new GameplayEvent[32];
             _eventCount = 0;
             _specPool = new GenericPool<GameplayEffectSpec>(initialSpecPoolSize);
+            _specPool.Prewarm(initialSpecPoolSize);
         }
 
         // ---------------------------------------------------------------------
