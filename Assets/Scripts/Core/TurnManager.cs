@@ -1,5 +1,5 @@
 using Core.GAS;
-using Gameplay.Character;
+using Gameplay.Characters;
 using Gameplay.Judgment;
 using System;
 

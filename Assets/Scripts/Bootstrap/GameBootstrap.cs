@@ -1,7 +1,7 @@
 using Core;
 using Network.Local;
 using AI;
-using Gameplay.Character;
+using Gameplay.Characters;
 using System.Collections;
 using UnityEngine;
 

@@ -2,7 +2,7 @@ using Core;
 using Core.GAS;
 using Core.Command;
 
-namespace Gameplay.Character
+namespace Gameplay.Characters
 {
     public class Character
     {

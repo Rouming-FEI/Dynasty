@@ -1,6 +1,6 @@
 using Core;
 using Core.Command;
-using Gameplay.Character;
+using Gameplay.Characters;
 using Gameplay.Combat;
 using Gameplay.Judgment;
 using Gameplay.Movement;

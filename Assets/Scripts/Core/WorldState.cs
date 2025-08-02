@@ -1,6 +1,6 @@
 using Core.GAS;
 using Core.Command;
-using Gameplay.Character;
+using Gameplay.Characters;
 using Gameplay.Movement;
 
 namespace Core

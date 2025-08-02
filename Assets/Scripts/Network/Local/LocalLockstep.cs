@@ -1,6 +1,6 @@
 using Core;
 using Core.Command;
-using Gameplay.Character;
+using Gameplay.Characters;
 using Gameplay.Judgment;
 using AI;
 using System;
