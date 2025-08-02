@@ -18,3 +18,8 @@
 
 # Simulated date (do not commit)
 .simulated-date
+
+# Meta documentation (not part of the game build)
+docs/
+.superpowers/
+CLAUDE.md
