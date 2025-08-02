@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core.ObjectPool
 {
     public class GenericPool<T> where T : class, new()
     {

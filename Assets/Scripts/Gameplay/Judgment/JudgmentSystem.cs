@@ -1,7 +1,9 @@
+using Core;
+using Core.GAS;
+using Core.Command;
 using System;
-using Dynasty.Core;
 
-namespace Dynasty.Gameplay
+namespace Gameplay.Judgment
 {
     /// <summary>
     /// Each player's role outcome from a judgment round.

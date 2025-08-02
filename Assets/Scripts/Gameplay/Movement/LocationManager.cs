@@ -1,4 +1,4 @@
-namespace Dynasty.Gameplay
+namespace Gameplay.Movement
 {
     public struct LocationData
     {

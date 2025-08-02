@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core.GAS
 {
     /// <summary>
     /// 预定义的 GameplayTag 常量。ID 从 1 开始，每个标签占用 long 位掩码中的一位。

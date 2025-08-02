@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Dynasty.Core
+namespace Core
 {
     public delegate void EventBusHandler(ref GameplayEvent e);
 

@@ -1,7 +1,11 @@
-using Dynasty.Core;
-using Dynasty.Gameplay;
+using Core;
+using Core.Command;
+using Gameplay.Character;
+using Gameplay.Combat;
+using Gameplay.Judgment;
+using Gameplay.Movement;
 
-namespace Dynasty.AI
+namespace AI
 {
     public class SimpleAI
     {

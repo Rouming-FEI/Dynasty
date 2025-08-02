@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core.GAS
 {
     public static class AttributeConstants
     {

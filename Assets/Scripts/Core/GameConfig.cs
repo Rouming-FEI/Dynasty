@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core
 {
     public static class GameConfig
     {

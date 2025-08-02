@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core.GAS
 {
     public enum GameplayEffectDurationType : byte
     {

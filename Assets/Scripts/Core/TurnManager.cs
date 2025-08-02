@@ -1,7 +1,8 @@
+using Gameplay.Character;
+using Gameplay.Judgment;
 using System;
-using Dynasty.Gameplay;
 
-namespace Dynasty.Core
+namespace Core
 {
     public class TurnManager
     {

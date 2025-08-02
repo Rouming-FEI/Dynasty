@@ -1,6 +1,6 @@
 using System;
 
-namespace Dynasty.Core
+namespace Core.GAS
 {
     /// <summary>
     /// Abstract base class for attribute sets (HP, Sanity, ActionPoints, etc.).

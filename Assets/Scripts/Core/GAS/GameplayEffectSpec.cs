@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core.GAS
 {
     /// <summary>GE runtime instance — pooled, zero-GC via GenericPool.</summary>
     public class GameplayEffectSpec

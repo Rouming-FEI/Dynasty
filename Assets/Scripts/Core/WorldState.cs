@@ -1,6 +1,7 @@
-using Dynasty.Gameplay;
+using Gameplay.Character;
+using Gameplay.Movement;
 
-namespace Dynasty.Core
+namespace Core
 {
     public enum TurnPhase
     {

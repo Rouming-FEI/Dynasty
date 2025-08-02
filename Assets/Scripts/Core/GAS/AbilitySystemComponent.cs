@@ -1,4 +1,5 @@
-namespace Dynasty.Core
+using Core.ObjectPool;
+namespace Core.GAS
 {
     using System.Collections.Generic;
 

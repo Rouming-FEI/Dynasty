@@ -1,11 +1,11 @@
+using Core;
+using Network.Local;
+using AI;
+using Gameplay.Character;
 using System.Collections;
-using Dynasty.Core;
-using Dynasty.Gameplay;
-using Dynasty.Network;
-using Dynasty.AI;
 using UnityEngine;
 
-namespace Dynasty.Bootstrap
+namespace Bootstrap
 {
     public class GameBootstrap : MonoBehaviour
     {

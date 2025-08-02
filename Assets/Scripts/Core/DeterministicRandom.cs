@@ -1,4 +1,4 @@
-namespace Dynasty.Core
+namespace Core
 {
     /// <summary>
     /// Deterministic pseudo-random number generator using xorshift64 algorithm.

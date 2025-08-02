@@ -1,4 +1,5 @@
-namespace Dynasty.Core
+using Core;
+namespace Core.Command
 {
     public interface ICommand
     {

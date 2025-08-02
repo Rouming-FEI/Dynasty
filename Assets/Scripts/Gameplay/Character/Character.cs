@@ -1,6 +1,8 @@
-using Dynasty.Core;
+using Core;
+using Core.GAS;
+using Core.Command;
 
-namespace Dynasty.Gameplay
+namespace Gameplay.Character
 {
     public class Character
     {

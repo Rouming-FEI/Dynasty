@@ -1,9 +1,11 @@
+using Core;
+using Core.Command;
+using Gameplay.Character;
+using Gameplay.Judgment;
+using AI;
 using System;
-using Dynasty.Core;
-using Dynasty.Gameplay;
-using Dynasty.AI; // SimpleAI forward reference (Task 22)
 
-namespace Dynasty.Network
+namespace Network.Local
 {
     public class LocalLockstep
     {
