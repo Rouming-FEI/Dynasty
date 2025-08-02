@@ -17,9 +17,11 @@ namespace Bootstrap
         private WorldState _state;
         private LocalLockstep _lockstep;
         private bool _running;
+        private WaitForSeconds _wait; // cached to avoid per-turn GC alloc
 
         private void Start()
         {
+            _wait = new WaitForSeconds(_turnDelay);
             if (_autoStart)
                 StartCoroutine(RunGameLoop());
         }
@@ -57,7 +59,7 @@ namespace Bootstrap
                     Debug.Log($"[Dynasty] Turn {_state.CurrentTurn}, Alive: {_state.AliveCharacterCount}/{_playerCount}");
                 }
 
-                yield return new WaitForSeconds(_turnDelay);
+                yield return _wait;
             }
 
             // Game over
