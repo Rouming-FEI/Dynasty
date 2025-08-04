@@ -87,7 +87,7 @@ namespace Core
                 hash = hash * 31 + (int)(c.Sanity * 1000);
                 hash = hash * 31 + c.ActionPoints;
                 hash = hash * 31 + (int)(c.ErosionLimit * 1000);
-                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.PhysicalResist) * 1000);
+                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.PhysicalDefense) * 1000);
                 hash = hash * 31 + c.ASC.ActiveEffectCount;
             }
             return hash;
