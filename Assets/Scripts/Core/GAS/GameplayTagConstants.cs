@@ -11,5 +11,14 @@ namespace Core.GAS
         public static readonly GameplayTag CannotAct    = new(4);
         public static readonly GameplayTag HealBlocked  = new(5);
         public static readonly GameplayTag HasMoved     = new(6);
+
+        public static readonly GameplayTag DamagePhysical  = new(7);
+        public static readonly GameplayTag DamageMagic     = new(8);
+        public static readonly GameplayTag DamageEffect    = new(9);
+        public static readonly GameplayTag DamageTrue      = new(10);
+        public static readonly GameplayTag ImmunePhysical  = new(11);
+        public static readonly GameplayTag ImmuneMagic     = new(12);
+        public static readonly GameplayTag ImmuneDamage    = new(13);
+        public static readonly GameplayTag HasShield       = new(14);
     }
 }
