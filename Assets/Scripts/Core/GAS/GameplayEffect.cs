@@ -17,6 +17,10 @@ namespace Core.GAS
         public GameplayTag[] RemoveTags;
         public GameplayTag[] ApplicationRequiredTags;
         public GameplayTag[] ApplicationBlockedTags;
+        public GameplayEffectPeriod? Period;            // null = no periodic execution
+        public GameplayEffectStacking Stacking;         // default None
+        public int CooldownTurns;                       // 0 = no cooldown
+        public GameplayEffectExpiryPolicy ExpiryPolicy; // default RemoveOnExpiry
 
         public bool IsInstant => DurationType == GameplayEffectDurationType.Instant;
     }
