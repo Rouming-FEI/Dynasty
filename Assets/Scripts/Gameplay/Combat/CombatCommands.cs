@@ -11,13 +11,14 @@ namespace Gameplay.Combat
         public int PlayerId { get; set; }
         public int TargetPlayerId { get; set; }
         public float Amount { get; set; }
-
-        private static GameplayEffect _cachedDamageGE;
+        public DamageType Type { get; set; }
 
         public DamageCommand() { }
-        public DamageCommand(int tick, int playerId, int targetPlayerId, float amount)
+        public DamageCommand(int tick, int playerId, int targetPlayerId, float amount,
+            DamageType type = DamageType.Physical)
         {
             Tick = tick; PlayerId = playerId; TargetPlayerId = targetPlayerId; Amount = amount;
+            Type = type;
         }
 
         public void Execute(WorldState state)
@@ -31,38 +32,9 @@ namespace Gameplay.Combat
             // Spend 1 AP
             source.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
-            // Create and apply damage GE
-            GameplayEffectSpec spec = target.ASC.RentSpec();
-            spec.Definition = GetDamageGE();
-            spec.SourceId = source.Id;
-            spec.TargetId = target.Id;
-            spec.MagnitudeMultiplier = Amount;
-
-            target.ASC.ApplyGameplayEffect(spec);
-
-            // Internal event
-            target.ASC.SendEvent(GameplayEventTypes.OnDamageTaken, source.Id, target.Id, Amount);
-
-            // Check death
-            if (target.ASC.GetAttributeValue(AttributeConstants.Sanity) <= 0f)
-            {
-                state.Commands.Enqueue(new DeathCommand(Tick, TargetPlayerId, PlayerId));
-            }
-        }
-
-        private static GameplayEffect GetDamageGE()
-        {
-            if (_cachedDamageGE != null) return _cachedDamageGE;
-            _cachedDamageGE = new GameplayEffect
-            {
-                Id = 1,
-                DurationType = GameplayEffectDurationType.Instant,
-                Modifiers = new[]
-                {
-                    new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, -1f),
-                },
-            };
-            return _cachedDamageGE;
+            // Unified damage pipeline: immunity -> attack bonus -> shield ->
+            // defense -> GE apply -> OnDamageTaken -> death check
+            DamagePipeline.ApplyDamage(state, source.Id, target.Id, Amount, Type);
         }
     }
 
