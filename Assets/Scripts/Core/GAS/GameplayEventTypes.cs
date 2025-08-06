@@ -9,6 +9,7 @@ namespace Core.GAS
         public const int OnGERemoved     = 4;
         public const int OnDeath         = 5;
         public const int OnShieldBroken  = 6;
+        public const int OnShieldGranted = 7;
 
         // Global events (51-100)
         public const int TurnStart          = 51;
