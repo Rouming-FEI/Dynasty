@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Core.Command;
+using Gameplay.Items;
 
 namespace Gameplay.Characters
 {
@@ -11,6 +12,7 @@ namespace Gameplay.Characters
         public string Name;
         public AbilitySystemComponent ASC;
         public int CurrentLocationId;
+        public InventoryComponent Inventory { get; private set; }
 
         public Character(int id, int playerId, string name)
         {
@@ -20,6 +22,7 @@ namespace Gameplay.Characters
             ASC = new AbilitySystemComponent(id);
             ASC.SetAttributeSet(new DefaultAttributeSet());
             CurrentLocationId = -1;
+            Inventory = new InventoryComponent();
         }
 
         public int ActionPoints => (int)ASC.GetAttributeValue(AttributeConstants.ActionPoints);
