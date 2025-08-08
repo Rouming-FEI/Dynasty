@@ -179,6 +179,8 @@ namespace Core.GAS
         /// <summary>
         /// Tick all active GameplayEffects. Expired effects are removed.
         /// Iterates in reverse so removal does not invalidate indices.
+        /// After ticking, surviving duration effects are re-resolved onto the
+        /// attribute set via BuffResolver (Reset → sorted modifier application).
         /// </summary>
         public void TickEffects()
         {
@@ -189,6 +191,9 @@ namespace Core.GAS
                 if (spec.IsExpired)
                     RemoveGameplayEffect(spec);
             }
+
+            if (_activeEffects.Count > 0 && _attributeSet != null)
+                BuffResolver.Resolve(_activeEffects, _attributeSet);
         }
 
         // ---------------------------------------------------------------------
