@@ -20,5 +20,6 @@ namespace Core.GAS
         public static readonly GameplayTag ImmuneMagic     = new(12);
         public static readonly GameplayTag ImmuneDamage    = new(13);
         public static readonly GameplayTag HasShield       = new(14);
+        public static readonly GameplayTag MistState       = new(15);
     }
 }
