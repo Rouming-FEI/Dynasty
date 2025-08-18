@@ -13,6 +13,7 @@ namespace Gameplay.Characters
         public AbilitySystemComponent ASC;
         public int CurrentLocationId;
         public InventoryComponent Inventory { get; private set; }
+        public CharacterDef Definition;   // 角色定义（含技能表），由 CharacterDef.ApplyTo 赋值
 
         public Character(int id, int playerId, string name)
         {

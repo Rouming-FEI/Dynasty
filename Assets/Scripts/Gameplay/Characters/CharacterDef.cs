@@ -15,6 +15,7 @@ namespace Gameplay.Characters
 
         public void ApplyTo(Character c)
         {
+            c.Definition = this;
             c.Name = Name;
             c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, BaseSanity);
             c.ASC.SetAttributeBaseValue(AttributeConstants.MaxSanity, BaseSanity);
