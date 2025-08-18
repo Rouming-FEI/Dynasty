@@ -1,5 +1,7 @@
 using Core.GAS;
 using Gameplay.Characters;
+using Gameplay.Combat;
+using Gameplay.Items;
 using Gameplay.Judgment;
 using System;
 
@@ -24,20 +26,61 @@ namespace Core
             state.Phase = TurnPhase.JudgmentPhase;
             state.CurrentTurn = 1;
 
+            // Non-hot-path one-time init: registry + def allocations are acceptable here
+            ItemRegistry.Initialize();
+
+            // Player 0 = 守护者, Player 1 = 魑魅, Player 2 = 普通人, then cycle
+            CharacterDef[] defs =
+            {
+                GuardianDef.Create(),
+                CharmSpiritDef.Create(),
+                NormalPersonDef.Create()
+            };
+
             for (int i = 0; i < state.PlayerCount; i++)
             {
-                Character c = new Character(i + 1, i, $"玩家{i + 1}")
+                CharacterDef def = defs[i % defs.Length];
+                Character c = new Character(i + 1, i, def.Name)
                 {
                     CurrentLocationId = i // spawn at own entry point (0-3)
                 };
+                def.ApplyTo(c);
+                GrantInitialItems(state, c, def);
                 state.Characters[i] = c;
             }
+
+            // 守护者被动「重装」：开局获得护盾
+            Character guardian = state.GetCharacterByPlayer(0);
+            if (guardian != null)
+                ShieldSystem.GrantShield(guardian.ASC, guardian.Id);
 
             // Pre-allocate action order array (sized once, reused every turn)
             _actionOrder = new int[state.PlayerCount];
 
             var evt = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.TurnStart, ref evt);
+        }
+
+        private static void GrantInitialItems(WorldState state, Character c, CharacterDef def)
+        {
+            // 角色定义自带的初始道具（0 = 无）
+            if (def.InitialItem > 0)
+                AddItemToInventory(c, ItemRegistry.Get(def.InitialItem));
+
+            // 出生地点的初始道具
+            int[] locationItems = state.Locations.GetInitialItems(c.CurrentLocationId);
+            if (locationItems != null)
+                for (int i = 0; i < locationItems.Length; i++)
+                    AddItemToInventory(c, ItemRegistry.Get(locationItems[i]));
+        }
+
+        private static void AddItemToInventory(Character c, ItemDef item)
+        {
+            if (item == null) return;
+            if (item.Type == ItemType.Weapon)
+                c.Inventory.EquipWeapon(item);
+            else
+                c.Inventory.AddConsumable(item); // 满 4 个即弃（返回 false）
         }
 
         public bool Advance(WorldState state, Span<ChipAllocation> inputs)
