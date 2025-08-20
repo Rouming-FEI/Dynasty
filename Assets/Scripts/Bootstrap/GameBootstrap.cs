@@ -31,6 +31,8 @@ namespace Bootstrap
             Debug.Log($"[Dynasty] Starting game with {_playerCount} players, seed={_randomSeed}");
 
             // Initialize
+            // Note: ItemRegistry.Initialize() is called inside LocalLockstep.StartGame()
+            //       → TurnManager.StartGame(), which is idempotent and safe across replays.
             _state = new WorldState(_playerCount, _randomSeed);
 
             SimpleAI[] ais = new SimpleAI[_playerCount];
