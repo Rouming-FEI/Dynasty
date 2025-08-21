@@ -21,5 +21,6 @@ namespace Core.GAS
         public const int PlayerDied         = 57;
         public const int TurnEnd            = 58;
         public const int GameOver           = 59;
+        public const int DamageDealt       = 60;
     }
 }

@@ -58,8 +58,14 @@ namespace Core.GAS
             spec.MagnitudeMultiplier = finalDamage;
             targetASC.ApplyGameplayEffect(spec);
 
-            // 6. PostDamage 事件
+            // 6. PostDamage — ASC internal + global event
             targetASC.SendEvent(GameplayEventTypes.OnDamageTaken, sourceId, targetId, finalDamage);
+            var dmgEvt = new GameplayEvent(GameplayEventTypes.DamageDealt, sourceId, targetId)
+            {
+                Magnitude = finalDamage,
+                IntArg1 = (int)damageType
+            };
+            state.Events.Dispatch(GameplayEventTypes.DamageDealt, ref dmgEvt);
 
             // 7. 死亡检查
             if (target.Sanity <= 0f)
