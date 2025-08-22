@@ -31,102 +31,58 @@ namespace AI
 
             int roll = state.Random.Next(100);
 
-            if (roll < 40)
+            // Find nearest alive enemy (any location)
+            int nearestEnemy = -1;
+            for (int i = 0; i < state.PlayerCount; i++)
             {
-                // 40%: move to random connected location
-                int[] connections = state.Locations.GetConnectedLocations(c.CurrentLocationId);
-                if (connections != null && connections.Length > 0)
+                Character other = state.Characters[i];
+                if (other != null && !other.IsDead && other.PlayerId != playerId)
                 {
-                    int target = connections[state.Random.Next(connections.Length)];
-                    return new MoveCommand(state.CurrentTick, playerId, target);
+                    nearestEnemy = other.PlayerId; break;
                 }
             }
-            else if (roll < 60)
+
+            if (roll < 30 && nearestEnemy >= 0)
             {
-                // 20%: use random valid skill on random enemy at same location
+                // 30%: use random valid skill on any alive enemy
                 if (c.Definition?.Skills != null && c.Definition.Skills.Length > 0)
                 {
-                    // Count enemies at same location
-                    int enemyCount = 0;
-                    for (int i = 0; i < state.PlayerCount; i++)
-                    {
-                        Character other = state.Characters[i];
-                        if (other != null && !other.IsDead && other.PlayerId != playerId
-                            && other.CurrentLocationId == c.CurrentLocationId)
-                            enemyCount++;
-                    }
+                    int validCount = 0;
+                    for (int i = 0; i < c.Definition.Skills.Length; i++)
+                        if (SkillSystem.CanActivate(c.Definition.Skills[i], c)) validCount++;
 
-                    if (enemyCount > 0)
+                    if (validCount > 0)
                     {
-                        // Count valid skills (check AP + tag requirements via SkillSystem)
-                        int validCount = 0;
+                        int skillIdx = 0;
+                        int picked = state.Random.Next(validCount);
+                        int pos = 0;
                         for (int i = 0; i < c.Definition.Skills.Length; i++)
                         {
                             if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
-                                validCount++;
-                        }
-
-                        if (validCount > 0)
-                        {
-                            // Pick random valid skill (two-pass: no allocation)
-                            int picked = state.Random.Next(validCount);
-                            int skillIdx = -1;
-                            int pos = 0;
-                            for (int i = 0; i < c.Definition.Skills.Length; i++)
                             {
-                                if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
-                                {
-                                    if (pos == picked) { skillIdx = i; break; }
-                                    pos++;
-                                }
+                                if (pos == picked) { skillIdx = i; break; }
+                                pos++;
                             }
-
-                            // Pick random enemy at same location (two-pass: no allocation)
-                            int enemyPicked = state.Random.Next(enemyCount);
-                            int targetId = -1;
-                            int enemyPos = 0;
-                            for (int i = 0; i < state.PlayerCount; i++)
-                            {
-                                Character other = state.Characters[i];
-                                if (other != null && !other.IsDead && other.PlayerId != playerId
-                                    && other.CurrentLocationId == c.CurrentLocationId)
-                                {
-                                    if (enemyPos == enemyPicked) { targetId = other.PlayerId; break; }
-                                    enemyPos++;
-                                }
-                            }
-
-                            if (skillIdx >= 0 && targetId >= 0)
-                                return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, targetId);
                         }
+                        return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, nearestEnemy);
                     }
                 }
             }
-            else if (roll < 80)
+            else if (roll < 60 && nearestEnemy >= 0 && c.Inventory.EquippedWeapon != null)
             {
-                // 20%: use health pack (Self-target consumable) if sanity < 2
-                if (c.Sanity < 2f)
+                // 30%: attack any alive enemy with equipped weapon
+                return new DamageCommand(state.CurrentTick, playerId, nearestEnemy, 1f);
+            }
+            else if (roll < 75)
+            {
+                // 15%: use health pack if sanity < max
+                if (c.Sanity < c.MaxSanity)
                 {
                     for (int i = 0; i < c.Inventory.Consumables.Count; i++)
                     {
                         ItemDef item = c.Inventory.Consumables[i];
                         if (item != null && item.TargetType == ItemTargetType.Self)
-                        {
                             return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
-                        }
-                    }
-                }
-            }
-            else if (roll < 90)
-            {
-                // 10%: attack random enemy at same location with knife (damage command)
-                for (int i = 0; i < state.PlayerCount; i++)
-                {
-                    Character other = state.Characters[i];
-                    if (other != null && !other.IsDead && other.PlayerId != playerId
-                        && other.CurrentLocationId == c.CurrentLocationId)
-                    {
-                        return new DamageCommand(state.CurrentTick, playerId, other.PlayerId, 1f);
                     }
                 }
             }
