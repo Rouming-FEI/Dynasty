@@ -539,7 +539,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27524b6fe26eb034a8887dece3cfc187, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _playerCount: 4
+  _playerCount: 3
   _randomSeed: 42
   _autoStart: 1
   _turnDelay: 0.1

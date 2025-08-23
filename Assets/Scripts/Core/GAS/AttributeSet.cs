@@ -57,10 +57,25 @@ namespace Core.GAS
         /// <summary>
         /// Copies all base values to current values. Used for resetting or
         /// reinitialising attribute state (e.g. at the start of a turn).
+        /// WARNING: wipes persistent resources (Sanity, ActionPoints) too —
+        /// only use for full reinitialisation, never for per-turn buff resolve.
         /// </summary>
         public void Reset()
         {
             Array.Copy(_baseValues, _currentValues, _attributeCount);
+        }
+
+        /// <summary>
+        /// Copies the base value to the current value for a single attribute.
+        /// Used by BuffResolver to rebuild derived attributes each turn
+        /// without touching persistent resources.
+        /// </summary>
+        public void ResetAttribute(int attributeId)
+        {
+            int index = attributeId - 1;
+            if (index < 0 || index >= _attributeCount)
+                return;
+            _currentValues[index] = _baseValues[index];
         }
 
         /// <summary>

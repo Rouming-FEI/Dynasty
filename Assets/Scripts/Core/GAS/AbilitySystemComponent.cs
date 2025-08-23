@@ -63,10 +63,18 @@ namespace Core.GAS
         /// Apply a GameplayEffectSpec to this component.
         /// Flow: tag condition check → modifier execution → tag mutation →
         /// mount duration effects → send internal event.
+        /// Takes ownership of the spec: any spec not mounted into the active
+        /// list (Instant, zero-duration, or rejected by tags) is returned to
+        /// the pool before this method exits.
         /// </summary>
         public void ApplyGameplayEffect(GameplayEffectSpec spec)
         {
-            if (spec?.Definition == null) return;
+            if (spec == null) return;
+            if (spec.Definition == null)
+            {
+                ReturnSpec(spec);
+                return;
+            }
             GameplayEffect ge = spec.Definition;
 
             // --- Tag condition check ---
@@ -75,7 +83,10 @@ namespace Core.GAS
                 for (int i = 0; i < ge.ApplicationRequiredTags.Length; i++)
                 {
                     if (!Tags.HasTag(ge.ApplicationRequiredTags[i]))
+                    {
+                        ReturnSpec(spec);
                         return;
+                    }
                 }
             }
 
@@ -84,36 +95,16 @@ namespace Core.GAS
                 for (int i = 0; i < ge.ApplicationBlockedTags.Length; i++)
                 {
                     if (Tags.HasTag(ge.ApplicationBlockedTags[i]))
+                    {
+                        ReturnSpec(spec);
                         return;
+                    }
                 }
             }
 
             // --- Apply attribute modifiers ---
             if (ge.Modifiers != null)
-            {
-                float mult = spec.MagnitudeMultiplier;
-                for (int i = 0; i < ge.Modifiers.Length; i++)
-                {
-                    AttributeModifier mod = ge.Modifiers[i];
-                    float mag = mod.Magnitude * mult;
-
-                    switch (mod.Op)
-                    {
-                        case AttributeModifierOp.Add:
-                            ModifyAttributeCurrentValue(mod.AttributeId, mag);
-                            break;
-
-                        case AttributeModifierOp.Override:
-                            _attributeSet?.SetCurrentValue(mod.AttributeId, mag);
-                            break;
-
-                        case AttributeModifierOp.Multiply:
-                            float cur = GetAttributeValue(mod.AttributeId);
-                            _attributeSet?.SetCurrentValue(mod.AttributeId, cur * (1f + mag));
-                            break;
-                    }
-                }
-            }
+                ApplyModifiers(ge.Modifiers, spec.MagnitudeMultiplier);
 
             // --- Apply tag mutations ---
             if (ge.GrantTags != null)
@@ -129,12 +120,54 @@ namespace Core.GAS
             }
 
             // --- Mount non-instant duration effects ---
-            if (!ge.IsInstant && ge.DurationTurns > 0)
+            bool mounted = !ge.IsInstant && ge.DurationTurns > 0;
+            if (mounted)
                 _activeEffects.Add(spec);
 
             // --- Internal event ---
             SendEvent(GameplayEventTypes.OnGEApplied, spec.SourceId, OwnerId,
                 spec.MagnitudeMultiplier);
+
+            // --- Recycle unmounted specs (Instant / zero-duration) ---
+            // They never enter _activeEffects, so RemoveGameplayEffect (the only
+            // other return path) can never reclaim them.
+            if (!mounted)
+                ReturnSpec(spec);
+        }
+
+        /// <summary>
+        /// Execute a modifier array against current values. Shared by initial
+        /// GE application and periodic re-execution. Zero-GC.
+        /// </summary>
+        private void ApplyModifiers(AttributeModifier[] modifiers, float mult)
+        {
+            for (int i = 0; i < modifiers.Length; i++)
+            {
+                AttributeModifier mod = modifiers[i];
+                float mag = mod.Magnitude * mult;
+
+                switch (mod.Op)
+                {
+                    case AttributeModifierOp.Add:
+                        ModifyAttributeCurrentValue(mod.AttributeId, mag);
+                        break;
+
+                    case AttributeModifierOp.Override:
+                        _attributeSet?.SetCurrentValue(mod.AttributeId, mag);
+                        break;
+
+                    case AttributeModifierOp.Multiply:
+                        float cur = GetAttributeValue(mod.AttributeId);
+                        _attributeSet?.SetCurrentValue(mod.AttributeId, cur * (1f + mag));
+                        break;
+                }
+            }
+        }
+
+        private void ReturnSpec(GameplayEffectSpec spec)
+        {
+            spec.Reset();
+            _specPool.Return(spec);
         }
 
         // ---------------------------------------------------------------------
@@ -168,8 +201,7 @@ namespace Core.GAS
 
             SendEvent(GameplayEventTypes.OnGERemoved, spec.SourceId, OwnerId, 0f);
 
-            spec.Reset();
-            _specPool.Return(spec);
+            ReturnSpec(spec);
         }
 
         // ---------------------------------------------------------------------
@@ -177,22 +209,29 @@ namespace Core.GAS
         // ---------------------------------------------------------------------
 
         /// <summary>
-        /// Tick all active GameplayEffects. Expired effects are removed.
-        /// Iterates in reverse so removal does not invalidate indices.
-        /// After ticking, surviving duration effects are re-resolved onto the
-        /// attribute set via BuffResolver (Reset → sorted modifier application).
+        /// Tick all active GameplayEffects. Periodic effects that fire this turn
+        /// re-execute their modifiers (DoT/HoT payload). Expired effects are
+        /// removed. Iterates in reverse so removal does not invalidate indices.
+        /// BuffResolver then rebuilds derived attributes — always, even when no
+        /// effect survives, so an expired buff's modifiers do not linger.
         /// </summary>
         public void TickEffects()
         {
             for (int i = _activeEffects.Count - 1; i >= 0; i--)
             {
                 GameplayEffectSpec spec = _activeEffects[i];
-                spec.Tick();
+                bool periodicFired = spec.Tick();
+
+                // Periodic payload: re-execute the GE's modifiers on fire.
+                // Tick() only returns true when Definition has a Period.
+                if (periodicFired && spec.Definition?.Modifiers != null)
+                    ApplyModifiers(spec.Definition.Modifiers, spec.MagnitudeMultiplier);
+
                 if (spec.IsExpired)
                     RemoveGameplayEffect(spec);
             }
 
-            if (_activeEffects.Count > 0 && _attributeSet != null)
+            if (_attributeSet != null)
                 BuffResolver.Resolve(_activeEffects, _attributeSet);
         }
 
