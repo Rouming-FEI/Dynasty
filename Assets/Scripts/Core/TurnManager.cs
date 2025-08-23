@@ -42,7 +42,7 @@ namespace Core
                 CharacterDef def = defs[i % defs.Length];
                 Character c = new Character(i + 1, i, def.Name)
                 {
-                    CurrentLocationId = 4 // all spawn at safehouse so they can fight immediately
+                    CurrentLocationId = i // spawn at own entry point (0-3)
                 };
                 def.ApplyTo(c);
                 GrantInitialItems(state, c, def);

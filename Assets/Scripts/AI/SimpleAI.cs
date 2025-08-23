@@ -31,59 +31,69 @@ namespace AI
 
             int roll = state.Random.Next(100);
 
-            // Find nearest alive enemy (any location)
+            // Find enemy at same location (for combat) and nearest enemy (for movement)
+            int sameLocEnemy = -1;
             int nearestEnemy = -1;
+            int nearestLoc = -1;
             for (int i = 0; i < state.PlayerCount; i++)
             {
                 Character other = state.Characters[i];
-                if (other != null && !other.IsDead && other.PlayerId != playerId)
-                {
-                    nearestEnemy = other.PlayerId; break;
-                }
+                if (other == null || other.IsDead || other.PlayerId == playerId) continue;
+                nearestEnemy = other.PlayerId; // just grab first alive enemy
+                nearestLoc = other.CurrentLocationId;
+                if (other.CurrentLocationId == c.CurrentLocationId)
+                    sameLocEnemy = other.PlayerId;
             }
 
-            if (roll < 30 && nearestEnemy >= 0)
-            {
-                // 30%: use random valid skill on any alive enemy
-                if (c.Definition?.Skills != null && c.Definition.Skills.Length > 0)
-                {
-                    int validCount = 0;
-                    for (int i = 0; i < c.Definition.Skills.Length; i++)
-                        if (SkillSystem.CanActivate(c.Definition.Skills[i], c)) validCount++;
+            bool hasEnemyHere = sameLocEnemy >= 0;
 
-                    if (validCount > 0)
+            if (hasEnemyHere)
+            {
+                // Enemy at same location → fight!
+                if (roll < 35)
+                {
+                    // 35%: use skill on same-location enemy
+                    if (c.Definition?.Skills != null && c.Definition.Skills.Length > 0)
                     {
-                        int skillIdx = 0;
-                        int picked = state.Random.Next(validCount);
-                        int pos = 0;
+                        int validCount = 0;
                         for (int i = 0; i < c.Definition.Skills.Length; i++)
+                            if (SkillSystem.CanActivate(c.Definition.Skills[i], c)) validCount++;
+                        if (validCount > 0)
                         {
-                            if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
-                            {
-                                if (pos == picked) { skillIdx = i; break; }
-                                pos++;
-                            }
+                            int skillIdx = 0, picked = state.Random.Next(validCount), pos = 0;
+                            for (int i = 0; i < c.Definition.Skills.Length; i++)
+                                if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
+                                    { if (pos == picked) { skillIdx = i; break; } pos++; }
+                            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, sameLocEnemy);
                         }
-                        return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, nearestEnemy);
                     }
                 }
-            }
-            else if (roll < 60 && nearestEnemy >= 0 && c.Inventory.EquippedWeapon != null)
-            {
-                // 30%: attack any alive enemy with equipped weapon
-                return new DamageCommand(state.CurrentTick, playerId, nearestEnemy, 1f);
-            }
-            else if (roll < 75)
-            {
-                // 15%: use health pack if sanity < max
-                if (c.Sanity < c.MaxSanity)
+                else if (roll < 70 && c.Inventory.EquippedWeapon != null)
                 {
-                    for (int i = 0; i < c.Inventory.Consumables.Count; i++)
-                    {
-                        ItemDef item = c.Inventory.Consumables[i];
-                        if (item != null && item.TargetType == ItemTargetType.Self)
-                            return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
-                    }
+                    // 35%: attack same-location enemy
+                    return new DamageCommand(state.CurrentTick, playerId, sameLocEnemy, 1f);
+                }
+            }
+
+            // Not fighting / fallback: move toward nearest enemy or heal
+            if (roll < 60 && nearestEnemy >= 0 && c.CurrentLocationId != nearestLoc)
+            {
+                // 60%: move toward nearest enemy (simple: move to safehouse as hub)
+                int[] connections = state.Locations.GetConnectedLocations(c.CurrentLocationId);
+                if (connections != null && connections.Length > 0)
+                {
+                    int target = connections[state.Random.Next(connections.Length)];
+                    return new MoveCommand(state.CurrentTick, playerId, target);
+                }
+            }
+            else if (roll < 75 && c.Sanity < c.MaxSanity)
+            {
+                // 15%: heal if hurt
+                for (int i = 0; i < c.Inventory.Consumables.Count; i++)
+                {
+                    ItemDef item = c.Inventory.Consumables[i];
+                    if (item != null && item.TargetType == ItemTargetType.Self)
+                        return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
                 }
             }
 
