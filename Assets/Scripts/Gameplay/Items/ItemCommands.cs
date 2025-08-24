@@ -78,14 +78,35 @@ namespace Gameplay.Items
 
             if (item.UseEffect != null)
             {
-                GameplayEffectSpec spec = target.ASC.RentSpec();
-                spec.Definition = item.UseEffect;
-                spec.SourceId = c.Id;
-                spec.TargetId = target.Id;
-                target.ASC.ApplyGameplayEffect(spec);
+                // 伤害类效果（含负 Sanity 修改器，如刀）统一走 DamagePipeline，
+                // 保证免疫/护盾/防御/死亡结算顺序一致；其余效果（如血包回复）直接应用
+                float damage = GetSanityDamage(item.UseEffect);
+                if (damage > 0f)
+                {
+                    DamagePipeline.ApplyDamage(state, c.Id, target.Id, damage, DamageType.Physical);
+                }
+                else
+                {
+                    GameplayEffectSpec spec = target.ASC.RentSpec();
+                    spec.Definition = item.UseEffect;
+                    spec.SourceId = c.Id;
+                    spec.TargetId = target.Id;
+                    target.ASC.ApplyGameplayEffect(spec);
+                }
             }
 
             c.Inventory.RemoveConsumable(ItemIndex);
+        }
+
+        /// <summary>返回效果中负 Sanity 修改器对应的伤害值（正数）；无伤害修改器返回 0。</summary>
+        private static float GetSanityDamage(GameplayEffect effect)
+        {
+            AttributeModifier[] mods = effect.Modifiers;
+            if (mods == null) return 0f;
+            for (int i = 0; i < mods.Length; i++)
+                if (mods[i].AttributeId == AttributeConstants.Sanity && mods[i].Magnitude < 0f)
+                    return -mods[i].Magnitude;
+            return 0f;
         }
     }
 }

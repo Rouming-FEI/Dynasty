@@ -52,7 +52,7 @@ namespace Core
             // 守护者被动「重装」：开局获得护盾
             Character guardian = state.GetCharacterByPlayer(0);
             if (guardian != null)
-                ShieldSystem.GrantShield(guardian.ASC, guardian.Id);
+                ShieldSystem.GrantShield(state, guardian.ASC, guardian.Id);
 
             // Pre-allocate action order array (sized once, reused every turn)
             _actionOrder = new int[state.PlayerCount];

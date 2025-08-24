@@ -23,18 +23,21 @@ namespace Core.GAS
 
             AbilitySystemComponent targetASC = target.ASC;
 
-            // 1. 免疫检查
-            if (targetASC.Tags.HasTag(GameplayTagConstants.ImmuneDamage)) return 0f;
-            if (damageType == DamageType.Physical && targetASC.Tags.HasTag(GameplayTagConstants.ImmunePhysical)) return 0f;
-            if (damageType == DamageType.Magic && targetASC.Tags.HasTag(GameplayTagConstants.ImmuneMagic)) return 0f;
+            // 1. 免疫检查（真实伤害无视一切免疫）
+            if (damageType != DamageType.True)
+            {
+                if (targetASC.Tags.HasTag(GameplayTagConstants.ImmuneDamage)) return 0f;
+                if (damageType == DamageType.Physical && targetASC.Tags.HasTag(GameplayTagConstants.ImmunePhysical)) return 0f;
+                if (damageType == DamageType.Magic && targetASC.Tags.HasTag(GameplayTagConstants.ImmuneMagic)) return 0f;
+            }
 
             // 2. 伤害计算：基础 + 攻击加成（仅物理/法术）
             float finalDamage = baseDamage;
             if (damageType == DamageType.Physical || damageType == DamageType.Magic)
                 finalDamage += source?.ASC.GetAttributeValue(AttributeConstants.AttackBonus) ?? 0f;
 
-            // 3. 护盾检查：吃掉本次伤害并破盾
-            if (targetASC.Tags.HasTag(GameplayTagConstants.HasShield))
+            // 3. 护盾检查：吃掉本次伤害并破盾（真实伤害穿盾）
+            if (damageType != DamageType.True && targetASC.Tags.HasTag(GameplayTagConstants.HasShield))
             {
                 targetASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
                 var shieldEvent = new GameplayEvent(GameplayEventTypes.OnShieldBroken, sourceId, targetId);

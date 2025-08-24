@@ -87,7 +87,7 @@ namespace Bootstrap
             events.Subscribe(GameplayEventTypes.PlayerDied, 0, (ref GameplayEvent e) =>
             {
                 var c = _state.GetCharacter(e.TargetId);
-                var killer = _state.GetCharacter(e.IntArg1);
+                var killer = _state.GetCharacterByPlayer(e.IntArg1);
                 Debug.Log($"[死亡] {c?.Name ?? "?"} 被 {killer?.Name ?? "?"} 击杀");
             });
 
