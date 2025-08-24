@@ -23,7 +23,15 @@ namespace Gameplay.Characters
                         Id = 2, Name = "守护",
                         Cost = new SkillCost(SkillCostType.AP, 2),
                         Activation = SkillActivationType.Active,
-                        // 效果: 目标加 HasShield（由 UseSkillCommand 处理）
+                        // 效果: 目标加 HasShield（Instant GE 授予永久标签，护盾破碎时由 ShieldSystem 移除）
+                        Effects = new[]
+                        {
+                            new GameplayEffect
+                            {
+                                Id = 201, DurationType = GameplayEffectDurationType.Instant,
+                                GrantTags = new[] { GameplayTagConstants.HasShield }
+                            }
+                        }
                     },
 
                     // 守护之光 (被动, 4充能) — 每次攻击 +1 充能，满 4 自动触发

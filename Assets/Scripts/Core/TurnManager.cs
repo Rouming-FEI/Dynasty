@@ -67,6 +67,9 @@ namespace Core
             if (def.InitialItem > 0)
                 AddItemToInventory(c, ItemRegistry.Get(def.InitialItem));
 
+            // 每人开局 1 个血包（安全屋血包尚无拾取机制，先作为初始补给发放）
+            AddItemToInventory(c, ItemRegistry.Get(2));
+
             // 出生地点的初始道具
             int[] locationItems = state.Locations.GetInitialItems(c.CurrentLocationId);
             if (locationItems != null)

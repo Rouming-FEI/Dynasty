@@ -9,10 +9,11 @@ namespace Gameplay.Characters
     /// </summary>
     public static class SkillSystem
     {
-        /// <summary>技能是否可激活：施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
+        /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         public static bool CanActivate(SkillDef skill, Character c)
         {
             if (skill == null || c == null || !c.CanAct) return false;
+            if (skill.Activation != SkillActivationType.Active) return false; // 被动/响应型技能不可主动施放
             if (skill.RequiredTags != null && !c.ASC.Tags.HasAll(skill.RequiredTags)) return false;
             if (skill.BlockingTags != null && c.ASC.Tags.HasAny(skill.BlockingTags)) return false;
             if (skill.Cost.Type == SkillCostType.AP && c.ActionPoints < skill.Cost.Amount) return false;

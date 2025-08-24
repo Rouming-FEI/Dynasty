@@ -14,6 +14,9 @@ namespace Core.GAS
     /// </summary>
     public static class BuffResolver
     {
+        /// <summary>stackalloc 缓冲上限；超出部分截断，防止堆叠异常导致栈溢出。</summary>
+        private const int MaxModifierCount = 64;
+
         // 对活跃 GE 中作用于派生属性的 Modifier 做拓扑排序后重建
         // 规则：Override > Multiply > Add；同优先级按 Channel 升序
         // activeEffects 为空时也必须调用：负责把已过期 GE 残留的派生属性清回基础值
@@ -43,17 +46,30 @@ namespace Core.GAS
 
             if (modCount == 0) return;
 
-            // 3. 展开到 span（栈分配），跳过非派生属性的 modifier
+            // 2.5 封顶：stackalloc 不可无界，超过上限截断并告警（异常分支，允许分配）
+            if (modCount > MaxModifierCount)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[BuffResolver] derived modifier count {modCount} exceeds cap {MaxModifierCount}, truncating");
+                modCount = MaxModifierCount;
+            }
+
+            // 3. 展开到 span（栈分配），跳过非派生属性的 modifier；
+            //    按 Spec 的 MagnitudeMultiplier 与 StackCount 缩放 Magnitude
             Span<AttributeModifier> allMods = stackalloc AttributeModifier[modCount];
             int idx = 0;
-            for (int i = 0; i < activeEffects.Count; i++)
+            for (int i = 0; i < activeEffects.Count && idx < modCount; i++)
             {
-                AttributeModifier[] mods = activeEffects[i]?.Definition?.Modifiers;
+                GameplayEffectSpec spec = activeEffects[i];
+                AttributeModifier[] mods = spec?.Definition?.Modifiers;
                 if (mods == null) continue;
-                for (int j = 0; j < mods.Length; j++)
+                float scale = spec.MagnitudeMultiplier * spec.StackCount;
+                for (int j = 0; j < mods.Length && idx < modCount; j++)
                 {
                     if (IsDerivedAttribute(mods[j].AttributeId))
-                        allMods[idx++] = mods[j];
+                        allMods[idx++] = new AttributeModifier(
+                            mods[j].AttributeId, mods[j].Op,
+                            mods[j].Magnitude * scale, mods[j].Channel);
                 }
             }
 
