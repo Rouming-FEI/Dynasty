@@ -1,3 +1,4 @@
+using System;
 using Core;
 using Core.Command;
 using Gameplay.Characters;
@@ -31,74 +32,96 @@ namespace AI
 
             int roll = state.Random.Next(100);
 
-            // Find enemy at same location (for combat) and nearest enemy (for movement)
+            // Find enemy at same location (for combat) and any alive enemy (for movement)
             int sameLocEnemy = -1;
-            int nearestEnemy = -1;
-            int nearestLoc = -1;
+            int anyEnemy = -1;
             for (int i = 0; i < state.PlayerCount; i++)
             {
                 Character other = state.Characters[i];
                 if (other == null || other.IsDead || other.PlayerId == playerId) continue;
-                nearestEnemy = other.PlayerId; // just grab first alive enemy
-                nearestLoc = other.CurrentLocationId;
+                anyEnemy = other.PlayerId; // just grab first alive enemy
                 if (other.CurrentLocationId == c.CurrentLocationId)
                     sameLocEnemy = other.PlayerId;
             }
 
-            bool hasEnemyHere = sameLocEnemy >= 0;
-
-            if (hasEnemyHere)
+            ICommand cmd;
+            if (sameLocEnemy >= 0)
             {
-                // Enemy at same location → fight!
+                // Enemy at same location — exclusive ranges:
+                //   [ 0, 35)  35%  use skill on enemy
+                //   [35, 70)  35%  attack with weapon
+                //   [70, 85)  15%  heal if hurt
+                //   [85,100)  15%  move away
                 if (roll < 35)
-                {
-                    // 35%: use skill on same-location enemy
-                    if (c.Definition?.Skills != null && c.Definition.Skills.Length > 0)
-                    {
-                        int validCount = 0;
-                        for (int i = 0; i < c.Definition.Skills.Length; i++)
-                            if (SkillSystem.CanActivate(c.Definition.Skills[i], c)) validCount++;
-                        if (validCount > 0)
-                        {
-                            int skillIdx = 0, picked = state.Random.Next(validCount), pos = 0;
-                            for (int i = 0; i < c.Definition.Skills.Length; i++)
-                                if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
-                                    { if (pos == picked) { skillIdx = i; break; } pos++; }
-                            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, sameLocEnemy);
-                        }
-                    }
-                }
-                else if (roll < 70 && c.Inventory.EquippedWeapon != null)
-                {
-                    // 35%: attack same-location enemy
-                    return new DamageCommand(state.CurrentTick, playerId, sameLocEnemy, 1f);
-                }
+                    cmd = TryUseSkill(state, c, playerId, sameLocEnemy);
+                else if (roll < 70)
+                    cmd = TryAttack(state, c, playerId, sameLocEnemy);
+                else if (roll < 85)
+                    cmd = TryHeal(state, c, playerId);
+                else
+                    cmd = TryMove(state, c, playerId);
+            }
+            else
+            {
+                // No enemy here — exclusive ranges:
+                //   [ 0, 65)  65%  move toward enemies
+                //   [65, 80)  15%  heal if hurt
+                //   [80,100)  20%  waste AP
+                if (roll < 65)
+                    cmd = anyEnemy >= 0 ? TryMove(state, c, playerId) : null;
+                else if (roll < 80)
+                    cmd = TryHeal(state, c, playerId);
+                else
+                    cmd = null;
             }
 
-            // Not fighting / fallback: move toward nearest enemy or heal
-            if (roll < 60 && nearestEnemy >= 0 && c.CurrentLocationId != nearestLoc)
-            {
-                // 60%: move toward nearest enemy (simple: move to safehouse as hub)
-                int[] connections = state.Locations.GetConnectedLocations(c.CurrentLocationId);
-                if (connections != null && connections.Length > 0)
-                {
-                    int target = connections[state.Random.Next(connections.Length)];
-                    return new MoveCommand(state.CurrentTick, playerId, target);
-                }
-            }
-            else if (roll < 75 && c.Sanity < c.MaxSanity)
-            {
-                // 15%: heal if hurt
-                for (int i = 0; i < c.Inventory.Consumables.Count; i++)
-                {
-                    ItemDef item = c.Inventory.Consumables[i];
-                    if (item != null && item.TargetType == ItemTargetType.Self)
-                        return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
-                }
-            }
+            // Any range whose action is unavailable falls back to wasting AP,
+            // never into another range's action.
+            return cmd ?? new WasteAPCommand(state.CurrentTick, playerId);
+        }
 
-            // Fallback: waste AP
-            return new WasteAPCommand(state.CurrentTick, playerId);
+        private static ICommand TryUseSkill(WorldState state, Character c, int playerId, int targetId)
+        {
+            if (c.Definition?.Skills == null || c.Definition.Skills.Length == 0) return null;
+
+            // Single pass over CanActivate: collect valid indices, then pick one (zero GC)
+            Span<int> validSkills = stackalloc int[c.Definition.Skills.Length];
+            int vc = 0;
+            for (int i = 0; i < c.Definition.Skills.Length; i++)
+                if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
+                    validSkills[vc++] = i;
+            if (vc == 0) return null;
+
+            int skillIdx = validSkills[state.Random.Next(vc)];
+            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, targetId);
+        }
+
+        private static ICommand TryAttack(WorldState state, Character c, int playerId, int targetId)
+        {
+            if (c.Inventory.EquippedWeapon == null) return null;
+            return new DamageCommand(state.CurrentTick, playerId, targetId, 1f);
+        }
+
+        private static ICommand TryHeal(WorldState state, Character c, int playerId)
+        {
+            if (c.Sanity >= c.MaxSanity) return null;
+            for (int i = 0; i < c.Inventory.Consumables.Count; i++)
+            {
+                ItemDef item = c.Inventory.Consumables[i];
+                if (item != null && item.TargetType == ItemTargetType.Self)
+                    return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
+            }
+            return null;
+        }
+
+        private static ICommand TryMove(WorldState state, Character c, int playerId)
+        {
+            // Simple movement: step to a random connected location (map hub topology
+            // makes this converge toward enemies over a few turns)
+            int[] connections = state.Locations.GetConnectedLocations(c.CurrentLocationId);
+            if (connections == null || connections.Length == 0) return null;
+            int target = connections[state.Random.Next(connections.Length)];
+            return new MoveCommand(state.CurrentTick, playerId, target);
         }
     }
 }
