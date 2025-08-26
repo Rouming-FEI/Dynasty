@@ -1,6 +1,7 @@
 using System;
 using Core;
 using Core.Command;
+using Core.GAS;
 using Gameplay.Characters;
 using Gameplay.Combat;
 using Gameplay.Items;
@@ -93,7 +94,11 @@ namespace AI
             if (vc == 0) return null;
 
             int skillIdx = validSkills[state.Random.Next(vc)];
-            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, targetId);
+
+            // 自 Buff 技能（守护/迷离之境）目标是施放者自己，不能把 Buff 丢给敌人
+            SkillDef skill = c.Definition.Skills[skillIdx];
+            int target = skill.Target == SkillTargetType.Self ? playerId : targetId;
+            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, target);
         }
 
         private static ICommand TryAttack(WorldState state, Character c, int playerId, int targetId)

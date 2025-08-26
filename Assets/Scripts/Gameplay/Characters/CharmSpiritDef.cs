@@ -20,6 +20,8 @@ namespace Gameplay.Characters
                         Id = 10, Name = "迷离之境",
                         Cost = new SkillCost(SkillCostType.AP, 1),
                         Activation = SkillActivationType.Active,
+                        Target = SkillTargetType.Self, // 自 Buff：进入迷离状态的是施放者自己
+
                         Effects = new[]
                         {
                             new GameplayEffect

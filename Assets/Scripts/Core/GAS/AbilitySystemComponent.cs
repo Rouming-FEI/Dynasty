@@ -122,7 +122,13 @@ namespace Core.GAS
             // --- Mount non-instant duration effects ---
             bool mounted = !ge.IsInstant && ge.DurationTurns > 0;
             if (mounted)
+            {
+                // 周期效果的首个间隔从挂载后开始计数：PeriodTick 初始化为 Interval，
+                // 否则 Reset 后的 0 会让周期负载在挂载后的第一次 Tick 立即触发。
+                if (ge.Period.HasValue)
+                    spec.PeriodTick = ge.Period.Value.Interval;
                 _activeEffects.Add(spec);
+            }
 
             // --- Internal event ---
             SendEvent(GameplayEventTypes.OnGEApplied, spec.SourceId, OwnerId,
@@ -136,31 +142,32 @@ namespace Core.GAS
         }
 
         /// <summary>
-        /// Execute a modifier array against current values. Shared by initial
-        /// GE application and periodic re-execution. Zero-GC.
+        /// Execute a modifier array against current values. Zero-GC.
         /// </summary>
         private void ApplyModifiers(AttributeModifier[] modifiers, float mult)
         {
             for (int i = 0; i < modifiers.Length; i++)
+                ApplySingleModifier(modifiers[i], mult);
+        }
+
+        private void ApplySingleModifier(AttributeModifier mod, float mult)
+        {
+            float mag = mod.Magnitude * mult;
+
+            switch (mod.Op)
             {
-                AttributeModifier mod = modifiers[i];
-                float mag = mod.Magnitude * mult;
+                case AttributeModifierOp.Add:
+                    ModifyAttributeCurrentValue(mod.AttributeId, mag);
+                    break;
 
-                switch (mod.Op)
-                {
-                    case AttributeModifierOp.Add:
-                        ModifyAttributeCurrentValue(mod.AttributeId, mag);
-                        break;
+                case AttributeModifierOp.Override:
+                    _attributeSet?.SetCurrentValue(mod.AttributeId, mag);
+                    break;
 
-                    case AttributeModifierOp.Override:
-                        _attributeSet?.SetCurrentValue(mod.AttributeId, mag);
-                        break;
-
-                    case AttributeModifierOp.Multiply:
-                        float cur = GetAttributeValue(mod.AttributeId);
-                        _attributeSet?.SetCurrentValue(mod.AttributeId, cur * (1f + mag));
-                        break;
-                }
+                case AttributeModifierOp.Multiply:
+                    float cur = GetAttributeValue(mod.AttributeId);
+                    _attributeSet?.SetCurrentValue(mod.AttributeId, cur * (1f + mag));
+                    break;
             }
         }
 
@@ -210,22 +217,23 @@ namespace Core.GAS
 
         /// <summary>
         /// Tick all active GameplayEffects. Periodic effects that fire this turn
-        /// re-execute their modifiers (DoT/HoT payload). Expired effects are
-        /// removed. Iterates in reverse so removal does not invalidate indices.
-        /// BuffResolver then rebuilds derived attributes — always, even when no
-        /// effect survives, so an expired buff's modifiers do not linger.
+        /// re-execute their payload (DoT/HoT). Negative Sanity payloads route
+        /// through DamagePipeline so immunity/shield/defense/death checks apply.
+        /// Expired effects are removed. Iterates in reverse so removal does not
+        /// invalidate indices. BuffResolver then rebuilds derived attributes —
+        /// always, even when no effect survives, so an expired buff's modifiers
+        /// do not linger.
         /// </summary>
-        public void TickEffects()
+        public void TickEffects(WorldState state)
         {
             for (int i = _activeEffects.Count - 1; i >= 0; i--)
             {
                 GameplayEffectSpec spec = _activeEffects[i];
                 bool periodicFired = spec.Tick();
 
-                // Periodic payload: re-execute the GE's modifiers on fire.
-                // Tick() only returns true when Definition has a Period.
+                // Periodic payload — Tick() only returns true when Definition has a Period.
                 if (periodicFired && spec.Definition?.Modifiers != null)
-                    ApplyModifiers(spec.Definition.Modifiers, spec.MagnitudeMultiplier);
+                    ApplyPeriodicPayload(state, spec);
 
                 if (spec.IsExpired)
                     RemoveGameplayEffect(spec);
@@ -233,6 +241,31 @@ namespace Core.GAS
 
             if (_attributeSet != null)
                 BuffResolver.Resolve(_activeEffects, _attributeSet);
+        }
+
+        /// <summary>
+        /// 周期负载执行：负 Sanity Add（DoT）统一走 DamagePipeline，保证
+        /// 免疫/护盾/防御/死亡结算顺序一致；其余修改器直接应用。
+        /// </summary>
+        private void ApplyPeriodicPayload(WorldState state, GameplayEffectSpec spec)
+        {
+            AttributeModifier[] modifiers = spec.Definition.Modifiers;
+            for (int i = 0; i < modifiers.Length; i++)
+            {
+                AttributeModifier mod = modifiers[i];
+                float mag = mod.Magnitude * spec.MagnitudeMultiplier;
+
+                if (state != null
+                    && mod.AttributeId == AttributeConstants.Sanity
+                    && mod.Op == AttributeModifierOp.Add
+                    && mag < 0f)
+                {
+                    DamagePipeline.ApplyDamage(state, spec.SourceId, OwnerId, -mag, DamageType.Effect);
+                    continue;
+                }
+
+                ApplySingleModifier(mod, spec.MagnitudeMultiplier);
+            }
         }
 
         // ---------------------------------------------------------------------

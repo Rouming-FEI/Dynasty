@@ -198,7 +198,7 @@ namespace Core
             // Tick all GEs
             for (int i = 0; i < state.PlayerCount; i++)
             {
-                state.Characters[i]?.ASC.TickEffects();
+                state.Characters[i]?.ASC.TickEffects(state);
                 state.Characters[i]?.ASC.ProcessEvents();
             }
 

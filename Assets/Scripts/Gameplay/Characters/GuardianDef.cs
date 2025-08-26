@@ -23,6 +23,8 @@ namespace Gameplay.Characters
                         Id = 2, Name = "守护",
                         Cost = new SkillCost(SkillCostType.AP, 2),
                         Activation = SkillActivationType.Active,
+                        Target = SkillTargetType.Self, // 自 Buff：AI 只对自己施放
+
                         // 效果: 目标加 HasShield（Instant GE 授予永久标签，护盾破碎时由 ShieldSystem 移除）
                         Effects = new[]
                         {

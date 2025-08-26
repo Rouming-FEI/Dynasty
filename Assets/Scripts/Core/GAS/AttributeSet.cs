@@ -44,14 +44,24 @@ namespace Core.GAS
         }
 
         /// <summary>
-        /// Sets only the current value, clamped to >= 0.
+        /// Sets only the current value, clamped to >= 0. Sanity is additionally
+        /// clamped to MaxSanity so healing cannot overfill (skipped while
+        /// MaxSanity is still uninitialised at 0).
         /// </summary>
         public void SetCurrentValue(int attributeId, float value)
         {
             int index = attributeId - 1;
             if (index < 0 || index >= _attributeCount)
                 return;
-            _currentValues[index] = value > 0f ? value : 0f;
+            if (value < 0f)
+                value = 0f;
+            if (attributeId == AttributeConstants.Sanity)
+            {
+                float max = GetValue(AttributeConstants.MaxSanity);
+                if (max > 0f && value > max)
+                    value = max;
+            }
+            _currentValues[index] = value;
         }
 
         /// <summary>

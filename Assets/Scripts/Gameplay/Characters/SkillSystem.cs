@@ -1,5 +1,6 @@
 using Core;
 using Core.GAS;
+using Gameplay.Combat;
 
 namespace Gameplay.Characters
 {
@@ -44,6 +45,21 @@ namespace Gameplay.Characters
                     spec.TargetId = target.Id;
                     spec.RemainingTurns = ge.DurationTurns;
                     target.ASC.ApplyGameplayEffect(spec);
+
+                    // 授予护盾的 GE 统一补走 ShieldSystem.GrantShield，
+                    // 保证 OnShieldGranted 事件（ASC 内部 + 全局）正常派发。
+                    // Tag 容器为位掩码，重复 AddTag 幂等，无副作用。
+                    if (ge.GrantTags != null)
+                    {
+                        for (int t = 0; t < ge.GrantTags.Length; t++)
+                        {
+                            if (ge.GrantTags[t] == GameplayTagConstants.HasShield)
+                            {
+                                ShieldSystem.GrantShield(state, target.ASC, c.Id);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
