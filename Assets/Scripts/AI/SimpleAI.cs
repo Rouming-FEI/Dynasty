@@ -76,9 +76,9 @@ namespace AI
                     cmd = null;
             }
 
-            // Any range whose action is unavailable falls back to wasting AP,
-            // never into another range's action.
-            return cmd ?? new WasteAPCommand(state.CurrentTick, playerId);
+            // Any range whose action is unavailable falls back to moving
+            // (testing: never idle-waste AP unless movement is also impossible).
+            return cmd ?? TryMove(state, c, playerId) ?? new WasteAPCommand(state.CurrentTick, playerId);
         }
 
         private static ICommand TryUseSkill(WorldState state, Character c, int playerId, int targetId)

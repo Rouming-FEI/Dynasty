@@ -17,11 +17,11 @@ namespace Gameplay.Characters
                     // 重装 (被动) — StartGame 时通过 ASC 加 HasShield 标签
                     new SkillDef { Id = 1, Name = "重装", Activation = SkillActivationType.Passive },
 
-                    // 守护 (主动, 2AP) — 给任意角色加 HasShield
+                    // 守护 (主动, 1AP) — 给任意角色加 HasShield
                     new SkillDef
                     {
                         Id = 2, Name = "守护",
-                        Cost = new SkillCost(SkillCostType.AP, 2),
+                        Cost = new SkillCost(SkillCostType.AP, 1),
                         Activation = SkillActivationType.Active,
                         Target = SkillTargetType.Self, // 自 Buff：AI 只对自己施放
 

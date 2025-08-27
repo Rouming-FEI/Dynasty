@@ -75,7 +75,16 @@ namespace Bootstrap
         {
             events.Subscribe(GameplayEventTypes.JudgmentResolved, 0, (ref GameplayEvent e) =>
             {
-                Debug.Log($"[判定结算] AP 分配完成");
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                sb.Append("[判定结算] AP: ");
+                for (int i = 0; i < _playerCount; i++)
+                {
+                    Character c = _state.Characters[i];
+                    if (c == null || c.IsDead) continue;
+                    sb.Append($"{c.Name}:{c.ActionPoints}AP");
+                    if (i < _playerCount - 1) sb.Append(" | ");
+                }
+                Debug.Log(sb.ToString());
             });
 
             events.Subscribe(GameplayEventTypes.EntityMoved, 0, (ref GameplayEvent e) =>

@@ -42,6 +42,14 @@ namespace Core.GAS
                 targetASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
                 var shieldEvent = new GameplayEvent(GameplayEventTypes.OnShieldBroken, sourceId, targetId);
                 state.Events.Dispatch(GameplayEventTypes.OnShieldBroken, ref shieldEvent);
+
+                // 护盾吸收也派发 DamageDealt（Magnitude = 被吸收的伤害值），保证战斗日志完整
+                var absorbedEvt = new GameplayEvent(GameplayEventTypes.DamageDealt, sourceId, targetId)
+                {
+                    Magnitude = finalDamage,
+                    IntArg1 = (int)damageType
+                };
+                state.Events.Dispatch(GameplayEventTypes.DamageDealt, ref absorbedEvt);
                 return 0f;
             }
 
