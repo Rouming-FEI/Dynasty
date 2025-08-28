@@ -65,15 +65,15 @@ namespace AI
             else
             {
                 // No enemy here — exclusive ranges:
-                //   [ 0, 65)  65%  move toward enemies
+                //   [ 0, 65)  65%  move toward enemies (no enemy alive → self-buff skill)
                 //   [65, 80)  15%  heal if hurt
-                //   [80,100)  20%  waste AP
+                //   [80,100)  20%  self-buff skill (守护充能/迷离之境 独处时也该用)
                 if (roll < 65)
-                    cmd = anyEnemy >= 0 ? TryMove(state, c, playerId) : null;
+                    cmd = anyEnemy >= 0 ? TryMove(state, c, playerId) : TryUseSelfSkill(state, c, playerId);
                 else if (roll < 80)
                     cmd = TryHeal(state, c, playerId);
                 else
-                    cmd = null;
+                    cmd = TryUseSelfSkill(state, c, playerId);
             }
 
             // Any range whose action is unavailable falls back to moving
@@ -99,6 +99,25 @@ namespace AI
             SkillDef skill = c.Definition.Skills[skillIdx];
             int target = skill.Target == SkillTargetType.Self ? playerId : targetId;
             return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, target);
+        }
+
+        /// <summary>独处时的自 Buff：只挑 Target == Self 的可激活技能，对自己施放。</summary>
+        private static ICommand TryUseSelfSkill(WorldState state, Character c, int playerId)
+        {
+            if (c.Definition?.Skills == null || c.Definition.Skills.Length == 0) return null;
+
+            Span<int> validSkills = stackalloc int[c.Definition.Skills.Length];
+            int vc = 0;
+            for (int i = 0; i < c.Definition.Skills.Length; i++)
+            {
+                SkillDef skill = c.Definition.Skills[i];
+                if (skill.Target == SkillTargetType.Self && SkillSystem.CanActivate(skill, c))
+                    validSkills[vc++] = i;
+            }
+            if (vc == 0) return null;
+
+            int skillIdx = validSkills[state.Random.Next(vc)];
+            return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, playerId);
         }
 
         private static ICommand TryAttack(WorldState state, Character c, int playerId, int targetId)

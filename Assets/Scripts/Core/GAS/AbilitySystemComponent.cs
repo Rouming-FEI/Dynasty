@@ -316,6 +316,16 @@ namespace Core.GAS
         }
 
         // ---------------------------------------------------------------------
+        // Guardian charge — 守护技能充能计数（跨回合保留，不随 GE 过期）
+        // ---------------------------------------------------------------------
+
+        private int _guardianCharge;
+
+        public void AddGuardianCharge() => _guardianCharge++;
+        public int GetGuardianCharge() => _guardianCharge;
+        public void ResetGuardianCharge() => _guardianCharge = 0;
+
+        // ---------------------------------------------------------------------
         // Queries
         // ---------------------------------------------------------------------
 

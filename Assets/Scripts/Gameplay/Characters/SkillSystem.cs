@@ -10,6 +10,10 @@ namespace Gameplay.Characters
     /// </summary>
     public static class SkillSystem
     {
+        /// <summary>守护技能 Id（GuardianDef 中定义，全技能表内唯一）。</summary>
+        private const int GuardianSkillId = 2;
+        /// <summary>守护充能阈值：攒满 3 充能兑换 1 护盾。</summary>
+        private const int GuardianChargeThreshold = 3;
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         public static bool CanActivate(SkillDef skill, Character c)
         {
@@ -30,6 +34,20 @@ namespace Gameplay.Characters
             // 支付消耗
             if (skill.Cost.Type == SkillCostType.AP)
                 c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
+
+            // 守护 (Id=2) 充能机制：总价 3AP 可攒 —— 每次施放 1AP 攒 1 充能
+            // （充能跨回合保留），攒满 3 充能兑换 1 护盾并清零。
+            // 护盾统一走 ShieldSystem.GrantShield，保证 OnShieldGranted 事件派发。
+            if (skill.Id == GuardianSkillId)
+            {
+                c.ASC.AddGuardianCharge();
+                if (c.ASC.GetGuardianCharge() >= GuardianChargeThreshold)
+                {
+                    ShieldSystem.GrantShield(state, target.ASC, c.Id);
+                    c.ASC.ResetGuardianCharge();
+                }
+                return; // 充能技能不携带 GE，无需走通用应用流程
+            }
 
             // 应用效果
             if (skill.Effects != null)
