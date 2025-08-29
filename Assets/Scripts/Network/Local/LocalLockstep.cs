@@ -16,6 +16,16 @@ namespace Network.Local
         public WorldState State => _state;
         public TurnManager TurnManager => _turnManager;
 
+        /// <summary>
+        /// Optional manual input hook. When set, it replaces AI action input for all actors.
+        /// Return null to indicate input is not ready yet — the turn pauses without
+        /// consuming AP and RunTurn returns, waiting to be called again.
+        /// </summary>
+        public Func<int, ICommand> ManualInputProvider;
+
+        /// <summary>Player id of the next actor eligible to act in the action phase, or -1 if none.</summary>
+        public int CurrentActorPlayerId => GetNextActor();
+
         public LocalLockstep(WorldState state, SimpleAI[] ais)
         {
             _state = state;
@@ -61,7 +71,19 @@ namespace Network.Local
                 int actorPlayerId = GetNextActor();
                 if (actorPlayerId < 0) break; // no one can act
 
-                ICommand cmd = _ais[actorPlayerId].GetActionInput(_state, actorPlayerId);
+                ICommand cmd;
+                if (ManualInputProvider != null)
+                {
+                    cmd = ManualInputProvider(actorPlayerId);
+                    // Input not ready yet — pause here without consuming AP or
+                    // advancing the actor index; caller re-invokes RunTurn later.
+                    if (cmd == null) return true;
+                }
+                else
+                {
+                    cmd = _ais[actorPlayerId].GetActionInput(_state, actorPlayerId);
+                }
+
                 if (cmd != null)
                 {
                     _state.Commands.Enqueue(cmd);
