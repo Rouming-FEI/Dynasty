@@ -14,23 +14,21 @@ namespace Bootstrap
         [SerializeField] private int _randomSeed = 42;
         [SerializeField] private bool _autoStart = true;
         [SerializeField] private float _turnDelay = 0.5f;
+        [SerializeField] private float _manualPollDelay = 0.05f;
 
         private WorldState _state;
         private LocalLockstep _lockstep;
         private bool _running;
         private WaitForSeconds _wait;
+        private WaitForSeconds _manualWait;
 
         private void Start()
         {
             _wait = new WaitForSeconds(_turnDelay);
-            if (_autoStart)
-                StartCoroutine(RunGameLoop());
-        }
+            _manualWait = new WaitForSeconds(_manualPollDelay);
 
-        private IEnumerator RunGameLoop()
-        {
-            Debug.Log($"========== Dynasty 对战开始 (seed={_randomSeed}) ==========");
-
+            // 在 Start 中同步创建世界与 Lockstep，保证其他组件（如 ManualTestUI）
+            // 在自己的 Start/Update 里能通过 GetLockstep() 拿到实例并注册输入
             _state = new WorldState(_playerCount, _randomSeed);
 
             // Subscribe to all global events for battle log
@@ -41,28 +39,46 @@ namespace Bootstrap
                 ais[i] = new SimpleAI(i);
 
             _lockstep = new LocalLockstep(_state, ais);
+
+            if (_autoStart)
+                StartCoroutine(RunGameLoop());
+        }
+
+        private IEnumerator RunGameLoop()
+        {
+            // 等待一帧，让 ManualTestUI 等组件有机会注册 ManualInputProvider，
+            // 避免首个行动被 AI 抢跑
+            yield return null;
+
+            Debug.Log($"========== Dynasty 对战开始 (seed={_randomSeed}) ==========");
+
             _lockstep.StartGame();
             _running = true;
 
             // Log initial state
             LogCharacterStates();
 
-            int turnCount = 0;
+            int lastLoggedTurn = _state.CurrentTurn;
             while (_running && _state.Phase != TurnPhase.GameOver)
             {
                 bool continuing = _lockstep.RunTurn();
-                turnCount++;
 
                 if (!continuing || _state.Phase == TurnPhase.GameOver)
                     break;
 
-                // Log character states every turn
-                LogCharacterStates();
+                // 手动模式下 RunTurn 以轮询频率被反复调用（等待玩家点击时
+                // 返回 true 但回合未推进），仅在回合数变化时打印，避免刷屏
+                if (_state.CurrentTurn != lastLoggedTurn)
+                {
+                    LogCharacterStates();
+                    lastLoggedTurn = _state.CurrentTurn;
+                }
 
-                yield return _wait;
+                // 手动模式用短间隔轮询输入；AI 模式保持原节奏
+                yield return _lockstep.ManualInputProvider != null ? _manualWait : _wait;
             }
 
-            Debug.Log($"========== 游戏结束: {turnCount} turns ==========");
+            Debug.Log($"========== 游戏结束: {_state.CurrentTurn} rounds ==========");
             LogCharacterStates();
 
             long hash = _state.ComputeStateHash();
