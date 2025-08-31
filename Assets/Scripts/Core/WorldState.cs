@@ -1,6 +1,7 @@
 using Core.GAS;
 using Core.Command;
 using Gameplay.Characters;
+using Gameplay.Judgment;
 using Gameplay.Movement;
 
 namespace Core
@@ -23,6 +24,7 @@ namespace Core
         public TurnManager TurnManager;
         public DeterministicRandom Random;
         public LocationManager Locations;
+        public Gameplay.Judgment.JudgmentResult? LastJudgment;
         public int CurrentTick;
         public int CurrentTurn;
         public TurnPhase Phase;

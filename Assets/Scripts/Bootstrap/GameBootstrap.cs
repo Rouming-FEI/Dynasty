@@ -92,12 +92,26 @@ namespace Bootstrap
             events.Subscribe(GameplayEventTypes.JudgmentResolved, 0, (ref GameplayEvent e) =>
             {
                 System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                sb.Append("[判定结算] AP: ");
+                sb.AppendLine($"[判定结算] Round {_state.CurrentTurn}");
+                // Show last judgment detail if available
+                if (_state.LastJudgment != null)
+                {
+                    var j = _state.LastJudgment;
+                    string[] handNames = { "石头", "剪刀", "布" };
+                    sb.Append("  胜手: ").Append(j.WinnerHand >= 0 ? handNames[j.WinnerHand] : "全局平筹码").Append(" | ");
+                    sb.Append("败手: ").Append(j.LoserHand >= 0 ? handNames[j.LoserHand] : "-").Append(" | ");
+                    sb.Append("中立: ").AppendLine(j.NeutralHand >= 0 ? handNames[j.NeutralHand] : "-");
+                }
+                sb.Append("  AP: ");
                 for (int i = 0; i < _playerCount; i++)
                 {
                     Character c = _state.Characters[i];
                     if (c == null || c.IsDead) continue;
-                    sb.Append($"{c.Name}:{c.ActionPoints}AP");
+                    string role = "";
+                    if (_state.LastJudgment != null)
+                        role = _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Winner ? "[胜]" :
+                               _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Loser ? "[败]" : "[中]";
+                    sb.Append($"{c.Name}:{c.ActionPoints}AP{role}");
                     if (i < _playerCount - 1) sb.Append(" | ");
                 }
                 Debug.Log(sb.ToString());

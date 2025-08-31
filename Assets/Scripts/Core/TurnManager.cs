@@ -106,6 +106,7 @@ namespace Core
         private void ProcessJudgment(WorldState state, Span<ChipAllocation> allocations)
         {
             JudgmentResult result = _judgment.Resolve(allocations, state.Random, ref _consecutiveFlatCount);
+            state.LastJudgment = result;
 
             // Distribute AP to all players
             for (int i = 0; i < state.PlayerCount; i++)
