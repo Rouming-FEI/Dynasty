@@ -107,6 +107,7 @@ namespace Core
         {
             JudgmentResult result = _judgment.Resolve(allocations, state.Random, ref _consecutiveFlatCount);
             state.LastJudgment = result;
+            state.HasJudgmentResult = true;
 
             // Distribute AP to all players
             for (int i = 0; i < state.PlayerCount; i++)

@@ -24,7 +24,8 @@ namespace Core
         public TurnManager TurnManager;
         public DeterministicRandom Random;
         public LocationManager Locations;
-        public Gameplay.Judgment.JudgmentResult? LastJudgment;
+        public bool HasJudgmentResult;
+        public JudgmentResult LastJudgment;
         public int CurrentTick;
         public int CurrentTurn;
         public TurnPhase Phase;

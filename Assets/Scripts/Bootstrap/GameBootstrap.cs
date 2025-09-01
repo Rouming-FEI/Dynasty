@@ -94,7 +94,7 @@ namespace Bootstrap
                 System.Text.StringBuilder sb = new System.Text.StringBuilder();
                 sb.AppendLine($"[判定结算] Round {_state.CurrentTurn}");
                 // Show last judgment detail if available
-                if (_state.LastJudgment != null)
+                if (_state.HasJudgmentResult)
                 {
                     var j = _state.LastJudgment;
                     string[] handNames = { "石头", "剪刀", "布" };
@@ -108,7 +108,7 @@ namespace Bootstrap
                     Character c = _state.Characters[i];
                     if (c == null || c.IsDead) continue;
                     string role = "";
-                    if (_state.LastJudgment != null)
+                    if (_state.HasJudgmentResult)
                         role = _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Winner ? "[胜]" :
                                _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Loser ? "[败]" : "[中]";
                     sb.Append($"{c.Name}:{c.ActionPoints}AP{role}");
