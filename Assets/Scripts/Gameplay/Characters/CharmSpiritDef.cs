@@ -35,12 +35,13 @@ namespace Gameplay.Characters
                         }
                     },
 
-                    // 鬼葬 (主动, 1AP, 3回合)
+                    // 鬼葬 (主动, 1AP, 3回合) — P1 简化：每回合对自身造成 0.5 Effect 伤害
                     new SkillDef
                     {
                         Id = 11, Name = "鬼葬",
                         Cost = new SkillCost(SkillCostType.AP, 1),
                         Activation = SkillActivationType.Active,
+                        Target = SkillTargetType.Self,
                         Effects = new[]
                         {
                             new GameplayEffect
@@ -49,7 +50,10 @@ namespace Gameplay.Characters
                                 DurationType = GameplayEffectDurationType.HasDuration,
                                 DurationTurns = 3,
                                 Period = new GameplayEffectPeriod(1), // 每回合末
-                                // 具体效果由鬼葬系统计算（地点人数相关）
+                                Modifiers = new[]
+                                {
+                                    new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, -0.5f)
+                                }
                             }
                         }
                     },

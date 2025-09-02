@@ -95,13 +95,16 @@ namespace AI
 
             int skillIdx = validSkills[state.Random.Next(vc)];
 
-            // 自 Buff 技能（守护/迷离之境）目标是施放者自己，不能把 Buff 丢给敌人
+            // 自 Buff（Self）/ 任意目标（Any）技能：AI 对自己施放
+            // 守护充能攒在自己身上，满 3 充能自动兑换护盾给目标（target 即自己）
+            // Any 类型技能在 AI 测试中统一对自己施放
             SkillDef skill = c.Definition.Skills[skillIdx];
-            int target = skill.Target == SkillTargetType.Self ? playerId : targetId;
+            int target = (skill.Target == SkillTargetType.Self || skill.Target == SkillTargetType.Any)
+                ? playerId : targetId;
             return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, target);
         }
 
-        /// <summary>独处时的自 Buff：只挑 Target == Self 的可激活技能，对自己施放。</summary>
+        /// <summary>独处时的自 Buff/任意目标技能：挑 Target == Self 或 Any 的可激活技能，对自己施放。</summary>
         private static ICommand TryUseSelfSkill(WorldState state, Character c, int playerId)
         {
             if (c.Definition?.Skills == null || c.Definition.Skills.Length == 0) return null;
@@ -111,7 +114,8 @@ namespace AI
             for (int i = 0; i < c.Definition.Skills.Length; i++)
             {
                 SkillDef skill = c.Definition.Skills[i];
-                if (skill.Target == SkillTargetType.Self && SkillSystem.CanActivate(skill, c))
+                if ((skill.Target == SkillTargetType.Self || skill.Target == SkillTargetType.Any)
+                    && SkillSystem.CanActivate(skill, c))
                     validSkills[vc++] = i;
             }
             if (vc == 0) return null;

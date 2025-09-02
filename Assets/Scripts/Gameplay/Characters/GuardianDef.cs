@@ -25,7 +25,7 @@ namespace Gameplay.Characters
                         Id = 2, Name = "守护",
                         Cost = new SkillCost(SkillCostType.AP, 1),
                         Activation = SkillActivationType.Active,
-                        Target = SkillTargetType.Self, // 自 Buff：AI 只对自己施放
+                        Target = SkillTargetType.Any, // 可为任意角色赋予护盾
                     },
 
                     // 守护之光 (被动, 4充能) — 每次攻击 +1 充能，满 4 自动触发

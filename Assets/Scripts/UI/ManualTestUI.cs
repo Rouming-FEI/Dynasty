@@ -145,16 +145,39 @@ namespace UI
                 SkillDef skill = skills[i];
                 if (!SkillSystem.CanActivate(skill, c)) continue;
 
-                int targetId = skill.Target == SkillTargetType.Self ? c.PlayerId : FindSkillTarget(c);
-                if (targetId < 0) continue; // 无可用目标
-
-                Character target = _state.GetCharacterByPlayer(targetId);
                 string cost = skill.Cost.Type == SkillCostType.AP
                     ? $"{skill.Cost.Amount:F0} AP"
                     : $"{skill.Cost.Amount:F0} {skill.Cost.Type}";
 
-                if (GUILayout.Button($"技能 {skill.Name} → {target?.Name} ({cost})"))
-                    SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, targetId));
+                if (skill.Target == SkillTargetType.Self)
+                {
+                    // 自 Buff 技能：只能对自己
+                    if (GUILayout.Button($"技能 {skill.Name} → {c.Name} ({cost})"))
+                        SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
+                }
+                else if (skill.Target == SkillTargetType.Any)
+                {
+                    // 任意目标技能：显示自己 + 所有敌人
+                    GUILayout.Label($"技能 {skill.Name} ({cost}) — 选择目标：");
+                    if (GUILayout.Button($"  └ 自己 [{c.Name}]"))
+                        SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
+                    for (int j = 0; j < _state.PlayerCount; j++)
+                    {
+                        Character other = _state.Characters[j];
+                        if (other == null || other.IsDead || other.PlayerId == c.PlayerId) continue;
+                        if (GUILayout.Button($"  └ {other.Name}"))
+                            SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, other.PlayerId));
+                    }
+                }
+                else
+                {
+                    // 敌方技能：找同地点敌人
+                    int targetId = FindSkillTarget(c);
+                    if (targetId < 0) continue;
+                    Character target = _state.GetCharacterByPlayer(targetId);
+                    if (GUILayout.Button($"技能 {skill.Name} → {target?.Name} ({cost})"))
+                        SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, targetId));
+                }
             }
         }
 
@@ -213,7 +236,8 @@ namespace UI
                 if (ch == null) continue;
                 string dead = ch.IsDead ? " [死亡]" : "";
                 string shield = ch.ASC.Tags.HasTag(GameplayTagConstants.HasShield) ? " [盾]" : "";
-                GUILayout.Label($"{ch.Name}  HP:{ch.Sanity:F1}  AP:{ch.ActionPoints}{shield}{dead}  @{_state.Locations.GetName(ch.CurrentLocationId)}");
+                string mist = ch.ASC.Tags.HasTag(GameplayTagConstants.MistState) ? " [迷离]" : "";
+                GUILayout.Label($"{ch.Name}  HP:{ch.Sanity:F1}  AP:{ch.ActionPoints}{shield}{mist}{dead}  @{_state.Locations.GetName(ch.CurrentLocationId)}");
             }
         }
     }

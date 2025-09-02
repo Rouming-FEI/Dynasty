@@ -40,6 +40,10 @@ namespace Core.GAS
             if (damageType != DamageType.True && targetASC.Tags.HasTag(GameplayTagConstants.HasShield))
             {
                 targetASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+
+                // 护盾抵挡伤害后回复 1 点理智（SetCurrentValue 已内置 MaxSanity 钳制）
+                targetASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, 1f);
+
                 var shieldEvent = new GameplayEvent(GameplayEventTypes.OnShieldBroken, sourceId, targetId);
                 state.Events.Dispatch(GameplayEventTypes.OnShieldBroken, ref shieldEvent);
 
