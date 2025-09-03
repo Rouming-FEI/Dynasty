@@ -21,7 +21,12 @@ namespace Gameplay.Characters
             if (skill.Activation != SkillActivationType.Active) return false; // 被动/响应型技能不可主动施放
             if (skill.RequiredTags != null && !c.ASC.Tags.HasAll(skill.RequiredTags)) return false;
             if (skill.BlockingTags != null && c.ASC.Tags.HasAny(skill.BlockingTags)) return false;
-            if (skill.Cost.Type == SkillCostType.AP && c.ActionPoints < skill.Cost.Amount) return false;
+            if (skill.Cost.Type == SkillCostType.AP)
+            {
+                // 守护满充能时免费给盾，不检查 AP
+                bool freeGrant = (skill.Id == GuardianSkillId && c.ASC.GetGuardianCharge() >= GuardianChargeThreshold);
+                if (!freeGrant && c.ActionPoints < skill.Cost.Amount) return false;
+            }
             return true;
         }
 
@@ -31,23 +36,30 @@ namespace Gameplay.Characters
             if (!CanActivate(skill, c)) return;
             if (target == null || target.IsDead) return;
 
-            // 支付消耗
-            if (skill.Cost.Type == SkillCostType.AP)
-                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
-
-            // 守护 (Id=2) 充能机制：总价 3AP 可攒 —— 每次施放 1AP 攒 1 充能
-            // （充能跨回合保留），攒满 3 充能兑换 1 护盾并清零。
-            // 护盾统一走 ShieldSystem.GrantShield，保证 OnShieldGranted 事件派发。
+            // 守护 (Id=2) 充能机制：总价 3AP 可攒 ——
+            // - 充能未满时：花 1AP 攒 1 层充能，不关心目标
+            // - 充能满时：免费（0AP）给目标上盾，充能清零
             if (skill.Id == GuardianSkillId)
             {
-                c.ASC.AddGuardianCharge();
                 if (c.ASC.GetGuardianCharge() >= GuardianChargeThreshold)
                 {
+                    // 满充能：0AP，给目标上盾
                     ShieldSystem.GrantShield(state, target.ASC, c.Id);
                     c.ASC.ResetGuardianCharge();
                 }
-                return; // 充能技能不携带 GE，无需走通用应用流程
+                else
+                {
+                    // 未满：1AP 充能
+                    if (skill.Cost.Type == SkillCostType.AP)
+                        c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
+                    c.ASC.AddGuardianCharge();
+                }
+                return;
             }
+
+            // 支付消耗（非守护技能）
+            if (skill.Cost.Type == SkillCostType.AP)
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
 
             // 应用效果
             if (skill.Effects != null)
