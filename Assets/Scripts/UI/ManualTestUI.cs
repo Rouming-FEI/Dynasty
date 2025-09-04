@@ -157,8 +157,18 @@ namespace UI
                 }
                 else if (skill.Target == SkillTargetType.Any)
                 {
-                    // 任意目标技能：显示自己 + 所有敌人
-                    GUILayout.Label($"技能 {skill.Name} ({cost}) — 选择目标：");
+                    // 任意目标技能：显示自己 + 所有存活角色
+                    // 守护 (Id=2) 显示充能进度
+                    string extra = "";
+                    if (skill.Id == 2)
+                    {
+                        int charge = c.ASC.GetGuardianCharge();
+                        if (charge >= 3)
+                            extra = " [满充能·免费给盾]";
+                        else
+                            extra = $" [充能 {charge}/3]";
+                    }
+                    GUILayout.Label($"技能 {skill.Name} ({cost}){extra} — 选择目标：");
                     if (GUILayout.Button($"  └ 自己 [{c.Name}]"))
                         SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
                     for (int j = 0; j < _state.PlayerCount; j++)
