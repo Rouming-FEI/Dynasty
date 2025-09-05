@@ -158,25 +158,42 @@ namespace UI
                 else if (skill.Target == SkillTargetType.Any)
                 {
                     // 任意目标技能：显示自己 + 所有存活角色
-                    // 守护 (Id=2) 显示充能进度
-                    string extra = "";
+                    // 守护 (Id=2)：充能未满 → 纯充能（无目标选择）；满充能 → 选择目标给盾
                     if (skill.Id == 2)
                     {
                         int charge = c.ASC.GetGuardianCharge();
                         if (charge >= 3)
-                            extra = " [满充能·免费给盾]";
+                        {
+                            GUILayout.Label($"技能 {skill.Name} (免费) [满充能·选择给盾目标] — 给谁：");
+                            if (GUILayout.Button($"  └ 自己 [{c.Name}]"))
+                                SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
+                            for (int j = 0; j < _state.PlayerCount; j++)
+                            {
+                                Character other = _state.Characters[j];
+                                if (other == null || other.IsDead || other.PlayerId == c.PlayerId) continue;
+                                if (GUILayout.Button($"  └ {other.Name}"))
+                                    SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, other.PlayerId));
+                            }
+                        }
                         else
-                            extra = $" [充能 {charge}/3]";
+                        {
+                            // 充能未满：纯充能，无目标选择
+                            if (GUILayout.Button($"技能 {skill.Name} (1 AP) [充能 {charge}/3]"))
+                                SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
+                        }
                     }
-                    GUILayout.Label($"技能 {skill.Name} ({cost}){extra} — 选择目标：");
-                    if (GUILayout.Button($"  └ 自己 [{c.Name}]"))
-                        SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
-                    for (int j = 0; j < _state.PlayerCount; j++)
+                    else
                     {
-                        Character other = _state.Characters[j];
-                        if (other == null || other.IsDead || other.PlayerId == c.PlayerId) continue;
-                        if (GUILayout.Button($"  └ {other.Name}"))
-                            SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, other.PlayerId));
+                        GUILayout.Label($"技能 {skill.Name} ({cost}) — 选择目标：");
+                        if (GUILayout.Button($"  └ 自己 [{c.Name}]"))
+                            SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, c.PlayerId));
+                        for (int j = 0; j < _state.PlayerCount; j++)
+                        {
+                            Character other = _state.Characters[j];
+                            if (other == null || other.IsDead || other.PlayerId == c.PlayerId) continue;
+                            if (GUILayout.Button($"  └ {other.Name}"))
+                                SubmitCommand(new UseSkillCommand(_state.CurrentTick, c.PlayerId, i, other.PlayerId));
+                        }
                     }
                 }
                 else
