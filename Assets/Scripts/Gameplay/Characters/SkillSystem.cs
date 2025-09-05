@@ -49,10 +49,15 @@ namespace Gameplay.Characters
                 }
                 else
                 {
-                    // 未满：1AP 充能
+                    // 未满：1AP 充能；若刚好满 3 层，当回合直接给盾，不等到下回合
                     if (skill.Cost.Type == SkillCostType.AP)
                         c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
                     c.ASC.AddGuardianCharge();
+                    if (c.ASC.GetGuardianCharge() >= GuardianChargeThreshold)
+                    {
+                        ShieldSystem.GrantShield(state, target.ASC, c.Id);
+                        c.ASC.ResetGuardianCharge();
+                    }
                 }
                 return;
             }
