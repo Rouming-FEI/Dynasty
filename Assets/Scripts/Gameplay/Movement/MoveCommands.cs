@@ -36,6 +36,8 @@ namespace Gameplay.Movement
                 IntArg2 = TargetLocationId
             };
             state.Events.Dispatch(GameplayEventTypes.EntityMoved, ref evt);
+
+            // 到达新地点后掉落物可通过 Locations.GetRemainingItemCount / GetLocatedItems 查询，供 UI 展示
         }
     }
 

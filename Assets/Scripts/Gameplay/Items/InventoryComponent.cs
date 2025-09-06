@@ -8,9 +8,13 @@ namespace Gameplay.Items
         public List<ItemDef> Consumables;
         public const int MaxConsumables = 4;
 
+        /// <summary>枪弹药数：装填一次可射击一发，击发后归零，需 ReloadCommand 重新装填。</summary>
+        public int EquippedWeaponAmmo;
+
         public InventoryComponent()
         {
             Consumables = new List<ItemDef>(MaxConsumables);
+            EquippedWeaponAmmo = 0;
         }
 
         public void EquipWeapon(ItemDef weapon)

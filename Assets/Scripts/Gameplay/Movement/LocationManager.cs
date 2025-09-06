@@ -141,6 +141,26 @@ namespace Gameplay.Movement
             return _runtimeItems[locationId].Count;
         }
 
+        /// <summary>
+        /// 向指定地点投放物品（ItemId × count）。用于武器投掷等场景。
+        /// </summary>
+        public void DropItem(int locationId, int itemId, int count)
+        {
+            if (locationId < 0 || locationId >= _runtimeItems.Length) return;
+            var list = _runtimeItems[locationId];
+            for (int i = 0; i < count; i++)
+                list.Add(itemId);
+        }
+
+        /// <summary>
+        /// 清除指定地点的所有掉落物。用于拆除（Demolish）场景。
+        /// </summary>
+        public void ClearItems(int locationId)
+        {
+            if (locationId < 0 || locationId >= _runtimeItems.Length) return;
+            _runtimeItems[locationId].Clear();
+        }
+
         public LocationData[] GetAll() => _locations;
     }
 }
