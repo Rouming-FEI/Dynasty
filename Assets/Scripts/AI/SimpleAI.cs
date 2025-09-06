@@ -29,7 +29,9 @@ namespace AI
         public ICommand GetActionInput(WorldState state, int playerId)
         {
             Character c = state.GetCharacterByPlayer(playerId);
-            if (c == null || c.IsDead || c.ActionPoints <= 0) return null;
+            if (c == null || c.IsDead) return null;
+            bool hasFreeAction = c.ASC.GetGuardianCharge() >= 3;
+            if (c.ActionPoints <= 0 && !hasFreeAction) return null;
 
             int roll = state.Random.Next(100);
 

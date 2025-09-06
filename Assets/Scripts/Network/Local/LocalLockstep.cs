@@ -112,7 +112,7 @@ namespace Network.Local
                 int idx = (startIdx + offset) % order.Length;
                 int playerId = order[idx];
                 Character c = _state.GetCharacterByPlayer(playerId);
-                if (c != null && !c.IsDead && c.ActionPoints > 0)
+                if (c != null && !c.IsDead && (c.ActionPoints > 0 || c.ASC.GetGuardianCharge() >= 3))
                     return playerId;
             }
             return -1;
