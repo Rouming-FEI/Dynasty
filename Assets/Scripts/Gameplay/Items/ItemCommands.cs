@@ -116,6 +116,9 @@ namespace Gameplay.Items
                 case 4: // 施工锤 — 近战攻击（投掷/拆除由独立 Command 处理）
                     DamagePipeline.ApplyDamage(state, c.Id, target.Id, 1.5f, DamageType.Physical);
                     break;
+                case 5: // 核弹 — 嵌入 RPS 判定，胜者全体 3 真实伤害
+                    NukeSystem.Launch(state, c);
+                    break;
                 default: // 其他武器（刀等）— 走 UseEffect 伤害
                     float damage = GetSanityDamage(item.UseEffect);
                     if (damage > 0f)
