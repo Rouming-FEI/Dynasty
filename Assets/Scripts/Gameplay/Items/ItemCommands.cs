@@ -84,6 +84,14 @@ namespace Gameplay.Items
                 return;
             }
 
+            // 应急处理装置 (Id=8)：HoT + DeathSave 标签 + ErosionLimit（见 EmergencyDeviceEffect）
+            if (item.Id == 8)
+            {
+                EmergencyDeviceEffect.Apply(state, target);
+                c.Inventory.RemoveConsumable(ItemIndex);
+                return;
+            }
+
             // 武器类道具走 WeaponSystem 路由，消耗品类仍直接应用 UseEffect
             if (item.Type == ItemType.Weapon)
             {

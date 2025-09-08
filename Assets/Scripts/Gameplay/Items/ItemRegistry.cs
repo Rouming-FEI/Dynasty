@@ -144,7 +144,8 @@ namespace Gameplay.Items
                 }
             };
 
-            // 应急处理装置 (Id=8) — 消耗品，5 回合持续回复 + 侵蚀上限 +1 + 死亡豁免标签
+            // 应急处理装置 (Id=8) — 消耗品，由 EmergencyDeviceEffect 拆分为 3 个 GE：
+            //   HoT(Period(1)x5, Sanity+0.5) + DeathSave(Duration=5, DeathSaveActive 标签) + ErosionUp(Instant, ErosionLimit+1)
             var emergencyDevice = new ItemDef
             {
                 Id = 8,
@@ -152,19 +153,7 @@ namespace Gameplay.Items
                 Type = ItemType.Consumable,
                 UseAPCost = 0,
                 TargetType = ItemTargetType.Self,
-                UseEffect = new GameplayEffect
-                {
-                    Id = 107,
-                    DurationType = GameplayEffectDurationType.HasDuration,
-                    DurationTurns = 5,
-                    Period = new GameplayEffectPeriod(1),
-                    Modifiers = new[]
-                    {
-                        new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, 0.5f),
-                        new AttributeModifier(AttributeConstants.ErosionLimit, AttributeModifierOp.Add, 1f)
-                    },
-                    GrantTags = new[] { GameplayTagConstants.DeathSaveActive }
-                }
+                UseEffect = null  // handled by EmergencyDeviceEffect.Apply (ItemCommands special case)
             };
 
             _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice };

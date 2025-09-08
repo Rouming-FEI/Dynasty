@@ -65,6 +65,23 @@ namespace Core.GAS
 
             if (finalDamage < 0f) finalDamage = 0f;
 
+            // 4.5 死亡豁免 — 应急处理装置（伤害应用前检查，避免死后再救）
+            if (target.ASC.Tags.HasTag(GameplayTagConstants.DeathSaveActive) && target.Sanity <= finalDamage)
+            {
+                target.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                target.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, 0f); // trigger clamp
+                target.ASC.Tags.RemoveTag(GameplayTagConstants.DeathSaveActive);
+
+                var saveEvt = new GameplayEvent(GameplayEventTypes.OnDamageTaken, sourceId, targetId)
+                {
+                    Magnitude = finalDamage,
+                    IntArg1 = 1  // 1 = death was saved
+                };
+                state.Events.Dispatch(GameplayEventTypes.OnDamageTaken, ref saveEvt);
+
+                return 0f; // damage was saved
+            }
+
             // 5. 应用伤害 GE（modifier 为 Sanity Add -1，乘以正的 finalDamage 得到负增量）
             GameplayEffectSpec spec = targetASC.RentSpec();
             spec.Definition = GetDamageGE(damageType);
