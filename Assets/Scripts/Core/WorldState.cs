@@ -31,6 +31,15 @@ namespace Core
         public TurnPhase Phase;
         public int PlayerCount;
 
+        // 陷阱炸弹存储（定长数组，确定性安全）
+        public int[] LocationTrapCounts;
+
+        // 荆棘素全局 DOT 回合计数器
+        public int ThornPotionTurnsRemaining;
+
+        // 本回合移动记录（用于荆棘素 DOT 判定）
+        public bool[] MovedThisTurn;
+
         public WorldState(int playerCount, int randomSeed = 42)
         {
             PlayerCount = playerCount;
@@ -39,6 +48,9 @@ namespace Core
             Commands = new CommandQueue();
             Random = new DeterministicRandom(randomSeed);
             Locations = new LocationManager();
+            LocationTrapCounts = new int[GameConfig.MaxLocations];
+            MovedThisTurn = new bool[GameConfig.MaxPlayers];
+            ThornPotionTurnsRemaining = 0;
             CurrentTick = 0;
             CurrentTurn = 0;
             Phase = TurnPhase.Waiting;
@@ -72,6 +84,24 @@ namespace Core
                     if (Characters[i] != null && !Characters[i].IsDead) c++;
                 return c;
             }
+        }
+
+        public void PlantTrap(int locId)
+        {
+            if (locId >= 0 && locId < LocationTrapCounts.Length)
+                LocationTrapCounts[locId]++;
+        }
+
+        public bool HasTrap(int locId)
+        {
+            if (locId < 0 || locId >= LocationTrapCounts.Length) return false;
+            return LocationTrapCounts[locId] > 0;
+        }
+
+        public void ClearTrap(int locId)
+        {
+            if (locId >= 0 && locId < LocationTrapCounts.Length)
+                LocationTrapCounts[locId] = 0;
         }
 
         public long ComputeStateHash()

@@ -76,6 +76,14 @@ namespace Gameplay.Items
 
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -(float)item.UseAPCost);
 
+            // 触发式炸弹 (Id=7)：在自身位置安放陷阱
+            if (item.Id == 7)
+            {
+                TrapSystem.Plant(state, c.CurrentLocationId, 7);
+                c.Inventory.RemoveConsumable(ItemIndex);
+                return;
+            }
+
             // 武器类道具走 WeaponSystem 路由，消耗品类仍直接应用 UseEffect
             if (item.Type == ItemType.Weapon)
             {
@@ -98,6 +106,10 @@ namespace Gameplay.Items
                     spec.SourceId = c.Id;
                     spec.TargetId = target.Id;
                     target.ASC.ApplyGameplayEffect(spec);
+
+                    // 荆棘素 (Id=6)：激活全局 DOT 回合计数器
+                    if (item.Id == 6)
+                        state.ThornPotionTurnsRemaining = 3;
                 }
             }
 

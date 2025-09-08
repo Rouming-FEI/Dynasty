@@ -1,4 +1,5 @@
 using Gameplay.Characters;
+using Gameplay.Items;
 using Core;
 using Core.GAS;
 using Core.Command;
@@ -29,6 +30,13 @@ namespace Gameplay.Movement
 
             int oldLoc = c.CurrentLocationId;
             c.CurrentLocationId = TargetLocationId;
+
+            // 标记本回合已移动（供荆棘素 DOT 判定）
+            if (PlayerId >= 0 && PlayerId < state.MovedThisTurn.Length)
+                state.MovedThisTurn[PlayerId] = true;
+
+            // 到达新地点后检查触发式炸弹
+            TrapSystem.CheckTrigger(state, TargetLocationId, c);
 
             var evt = new GameplayEvent(GameplayEventTypes.EntityMoved, PlayerId, c.Id)
             {

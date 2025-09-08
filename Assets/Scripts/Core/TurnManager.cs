@@ -204,6 +204,24 @@ namespace Core
                 state.Characters[i]?.ASC.ProcessEvents();
             }
 
+            // 荆棘素全局 DOT：回合末对移动过且携带标签的角色造成 0.5 效果伤害
+            if (state.ThornPotionTurnsRemaining > 0)
+            {
+                for (int i = 0; i < state.PlayerCount; i++)
+                {
+                    Character ch = state.Characters[i];
+                    if (ch == null || ch.IsDead) continue;
+                    if (!state.MovedThisTurn[i]) continue;
+                    if (!ch.ASC.Tags.HasTag(GameplayTagConstants.ThornPotionActive)) continue;
+                    DamagePipeline.ApplyDamage(state, -1, ch.Id, 0.5f, DamageType.Effect);
+                }
+                state.ThornPotionTurnsRemaining--;
+            }
+
+            // 重置本回合移动记录
+            for (int i = 0; i < state.MovedThisTurn.Length; i++)
+                state.MovedThisTurn[i] = false;
+
             // Check game over
             if (state.AliveCharacterCount <= 1)
             {
