@@ -23,5 +23,6 @@ namespace Core.GAS
         public static readonly GameplayTag MistState         = new(15);
         public static readonly GameplayTag ThornPotionActive = new(16);
         public static readonly GameplayTag DeathSaveActive   = new(17);
+        public static readonly GameplayTag HideoutHidden     = new(18);
     }
 }

@@ -12,10 +12,15 @@ namespace Gameplay.Items
     {
         /// <summary>
         /// 远程攻击：不限同地点，消耗 1 弹药对目标造成伤害。
-        /// 返回 false 表示弹药不足，攻击未执行。
+        /// 返回 false 表示弹药不足或目标处于藏匿状态无法瞄准，攻击未执行。
         /// </summary>
         public static bool RangedAttack(WorldState state, Character attacker, Character target, ItemDef weapon, float damage)
         {
+            // 藏匿处隐身：目标隐身且攻击者未同处藏匿状态 → 无法瞄准
+            if (target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) &&
+                !attacker.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden))
+                return false;
+
             if (attacker.Inventory.EquippedWeaponAmmo <= 0) return false;
             attacker.Inventory.EquippedWeaponAmmo--;
             DamagePipeline.ApplyDamage(state, attacker.Id, target.Id, damage, DamageType.Physical);

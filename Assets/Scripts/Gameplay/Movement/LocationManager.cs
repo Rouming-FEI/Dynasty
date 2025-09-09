@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Gameplay.Locations;
 
 namespace Gameplay.Movement
 {
@@ -25,6 +26,8 @@ namespace Gameplay.Movement
         private LocationData[] _locations;
         /// <summary>运行时可变物品列表，按 locationId 索引。元素为 ItemId。</summary>
         private List<int>[] _runtimeItems;
+        /// <summary>地点特殊规则，按 locationId 索引。无规则的地点为 null。</summary>
+        public LocationRule[] Rules;
 
         public int LocationCount => _locations.Length;
 
@@ -63,6 +66,10 @@ namespace Gameplay.Movement
                         _runtimeItems[i].Add(items[j]);
                 }
             }
+
+            // 注册地点规则（按 LocationId 索引，无规则的地点保持 null）
+            Rules = new LocationRule[_locations.Length];
+            Rules[6] = new HideoutRule();
         }
 
         public string GetName(int locationId)

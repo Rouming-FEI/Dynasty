@@ -29,7 +29,15 @@ namespace Gameplay.Movement
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
             int oldLoc = c.CurrentLocationId;
+
+            // 离开旧地点：触发地点规则 OnLeave（如藏匿处移除隐身标签）
+            if (oldLoc >= 0 && oldLoc < state.Locations.LocationCount)
+                state.Locations.Rules[oldLoc]?.OnLeave(state, c);
+
             c.CurrentLocationId = TargetLocationId;
+
+            // 进入新地点：触发地点规则 OnEnter（如藏匿处添加隐身标签）
+            state.Locations.Rules[TargetLocationId]?.OnEnter(state, c);
 
             // 标记本回合已移动（供荆棘素 DOT 判定）
             if (PlayerId >= 0 && PlayerId < state.MovedThisTurn.Length)

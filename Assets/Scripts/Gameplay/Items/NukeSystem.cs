@@ -44,7 +44,7 @@ namespace Gameplay.Items
                 Character target = state.Characters[i];
                 if (target == null || target.IsDead) continue;
                 if (target.PlayerId == launcher.PlayerId) continue; // skip launcher
-                if (target.CurrentLocationId == 6) continue; // hideout immune
+                if (target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden)) continue; // 藏匿处隐身免疫核弹
 
                 DamagePipeline.ApplyDamage(state, launcher.Id, target.Id, 3f, DamageType.True);
             }
