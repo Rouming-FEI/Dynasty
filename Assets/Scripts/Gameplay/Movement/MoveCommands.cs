@@ -1,5 +1,6 @@
 using Gameplay.Characters;
 using Gameplay.Items;
+using Gameplay.Locations;
 using Core;
 using Core.GAS;
 using Core.Command;
@@ -24,6 +25,10 @@ namespace Gameplay.Movement
             if (c == null || !c.CanMove) return;
             if (!state.Locations.IsValidLocation(TargetLocationId)) return;
             if (c.ActionPoints <= 0) return;
+
+            // 地点准入检查（如实验室大门关闭时拒绝进入），拒绝时不消耗 AP
+            LocationRule targetRule = state.Locations.Rules[TargetLocationId];
+            if (targetRule != null && !targetRule.CanEnter(state, c)) return;
 
             // Spend 1 AP
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);

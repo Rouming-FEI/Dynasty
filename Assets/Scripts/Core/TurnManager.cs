@@ -222,6 +222,11 @@ namespace Core
             for (int i = 0; i < state.MovedThisTurn.Length; i++)
                 state.MovedThisTurn[i] = false;
 
+            // 地点规则回合结束钩子（如实验室深度潮汐周期判定）
+            var locationRules = state.Locations.Rules;
+            for (int i = 0; i < locationRules.Length; i++)
+                locationRules[i]?.OnTurnEnd(state);
+
             // Check game over
             if (state.AliveCharacterCount <= 1)
             {

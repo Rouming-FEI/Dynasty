@@ -70,6 +70,7 @@ namespace Gameplay.Movement
             // 注册地点规则（按 LocationId 索引，无规则的地点保持 null）
             Rules = new LocationRule[_locations.Length];
             Rules[6] = new HideoutRule();
+            Rules[LabRule.LabLocationId] = new LabRule();
         }
 
         public string GetName(int locationId)
