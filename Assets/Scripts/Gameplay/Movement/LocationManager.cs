@@ -71,6 +71,7 @@ namespace Gameplay.Movement
             Rules = new LocationRule[_locations.Length];
             Rules[6] = new HideoutRule();
             Rules[LabRule.LabLocationId] = new LabRule();
+            Rules[OutpostRule.OutpostLocationId] = new OutpostRule();
         }
 
         public string GetName(int locationId)

@@ -24,5 +24,8 @@ namespace Core.GAS
         public static readonly GameplayTag ThornPotionActive = new(16);
         public static readonly GameplayTag DeathSaveActive   = new(17);
         public static readonly GameplayTag HideoutHidden     = new(18);
+        public static readonly GameplayTag OnTurret          = new(19);
+        public static readonly GameplayTag TurretLoaded      = new(20);
+        public static readonly GameplayTag TurretAimed       = new(21);
     }
 }

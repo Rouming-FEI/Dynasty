@@ -26,6 +26,7 @@ namespace Gameplay.Combat
             Character source = state.GetCharacterByPlayer(PlayerId);
             Character target = state.GetCharacterByPlayer(TargetPlayerId);
             if (source == null || target == null) return;
+            if (!source.CanAct) return; // 死亡/眩晕/塔上(OnTurret 附带 CannotAct)不可攻击
             if (target.IsDead) return;
             if (source.ActionPoints <= 0) return;
 
