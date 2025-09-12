@@ -149,6 +149,52 @@ namespace Bootstrap
                 string type = ((DamageType)e.IntArg1).ToString();
                 Debug.Log($"[伤害] {src?.Name ?? "?"} → {tgt?.Name ?? "?"} : {e.Magnitude:F1} {type}");
             });
+
+            events.Subscribe(GameplayEventTypes.NukeLaunched, 0, (ref GameplayEvent e) =>
+            {
+                var launcher = _state.GetCharacter(e.SourceId);
+                Debug.Log(e.IntArg1 == 1
+                    ? $"[核弹] {launcher?.Name ?? "?"} 判定获胜，核弹发射！全场 3 点真实伤害（藏匿者免疫）"
+                    : $"[核弹] {launcher?.Name ?? "?"} 判定落败，发射失败");
+            });
+
+            events.Subscribe(GameplayEventTypes.TrapTriggered, 0, (ref GameplayEvent e) =>
+            {
+                var trigger = _state.GetCharacter(e.TargetId);
+                string cause = trigger != null ? $"被 {trigger.Name} 触发" : "被远程引爆";
+                Debug.Log($"[炸弹] {_state.Locations.GetName(e.IntArg1)} 的触发式炸弹{cause}");
+            });
+
+            events.Subscribe(GameplayEventTypes.ThornDotTick, 0, (ref GameplayEvent e) =>
+            {
+                var c = _state.GetCharacter(e.TargetId);
+                Debug.Log($"[荆棘素] {c?.Name ?? "?"} 本回合移动过，受荆棘反噬");
+            });
+
+            // 死亡豁免：DamagePipeline 仅在豁免生效时向全局总线派发 OnDamageTaken (IntArg1=1)
+            events.Subscribe(GameplayEventTypes.OnDamageTaken, 0, (ref GameplayEvent e) =>
+            {
+                if (e.IntArg1 != 1) return;
+                var c = _state.GetCharacter(e.TargetId);
+                Debug.Log($"[死亡豁免] {c?.Name ?? "?"} 濒死之际被应急处理装置救回 (0.5 HP)");
+            });
+
+            events.Subscribe(GameplayEventTypes.TidePulse, 0, (ref GameplayEvent e) =>
+            {
+                string[] handNames = { "石头", "剪刀", "布" };
+                string indoor = e.IntArg1 >= 0 && e.IntArg1 < 3 ? handNames[e.IntArg1] : "?";
+                string outdoor = e.IntArg2 >= 0 && e.IntArg2 < 3 ? handNames[e.IntArg2] : "?";
+                string outcome = e.Magnitude == 1f ? "室内一方受创" :
+                                 e.Magnitude == 2f ? "室外一方受创" : "平局，无人受伤";
+                Debug.Log($"[实验室] 深度潮汐判定: 室内出{indoor} vs 室外出{outdoor} → {outcome}");
+            });
+
+            events.Subscribe(GameplayEventTypes.TurretFired, 0, (ref GameplayEvent e) =>
+            {
+                var src = _state.GetCharacter(e.SourceId);
+                var tgt = _state.GetCharacter(e.TargetId);
+                Debug.Log($"[炮台] {src?.Name ?? "?"} 操纵地狱前哨炮台轰击 {tgt?.Name ?? "?"}");
+            });
         }
 
         private void LogCharacterStates()
@@ -162,7 +208,16 @@ namespace Bootstrap
                 string dead = c.IsDead ? " [X]" : "";
                 string shield = c.ASC.Tags.HasTag(GameplayTagConstants.HasShield) ? " [盾]" : "";
                 string location = _state.Locations.GetName(c.CurrentLocationId);
-                sb.Append($"{c.Name}:{c.Sanity:F1}HP AP={c.ActionPoints}{shield}{dead} @{location}");
+
+                // 装备武器显示：枪附带弹药数（[枪1弹]），其他武器只显示名称（[施工锤]）
+                string weapon = "";
+                var equipped = c.Inventory.EquippedWeapon;
+                if (equipped != null)
+                    weapon = equipped.Id == 3
+                        ? $" [{equipped.Name}{c.Inventory.EquippedWeaponAmmo}弹]"
+                        : $" [{equipped.Name}]";
+
+                sb.Append($"{c.Name}:{c.Sanity:F1}HP AP={c.ActionPoints}{shield}{dead} @{location}{weapon}");
                 if (i < _playerCount - 1) sb.Append(" | ");
             }
             Debug.Log(sb.ToString());

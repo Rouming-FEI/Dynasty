@@ -36,6 +36,14 @@ namespace Gameplay.Items
 
             // 3. Check if launcher is in winner list
             bool launcherWon = result.Roles[launcher.PlayerId] == JudgmentRole.Winner;
+
+            // 发射结果事件（成功/失败都派发，供战斗日志展示）
+            var launchEvt = new GameplayEvent(GameplayEventTypes.NukeLaunched, launcher.Id, -1)
+            {
+                IntArg1 = launcherWon ? 1 : 0
+            };
+            state.Events.Dispatch(GameplayEventTypes.NukeLaunched, ref launchEvt);
+
             if (!launcherWon) return false;
 
             // 4. Deal 3 True damage to ALL players except launcher and hideout occupants

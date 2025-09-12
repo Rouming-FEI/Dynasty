@@ -294,4 +294,39 @@ namespace Gameplay.Items
             WeaponSystem.Reload(c);
         }
     }
+
+    /// <summary>
+    /// 用装备中的枪射击：消耗 1 AP 与 1 弹药，对任意地点目标造成 2 物理伤害。
+    /// 必须装备枪（Id=3）且有弹药。目标藏匿无法瞄准时射击不执行、不扣 AP
+    /// （与其他命令"无效操作不扣 AP"约定一致）。
+    /// </summary>
+    public class FireGunCommand : ICommand
+    {
+        public int Tick { get; set; }
+        public int PlayerId { get; set; }
+        public int TargetPlayerId { get; set; }
+
+        public FireGunCommand() { }
+        public FireGunCommand(int tick, int playerId, int targetPlayerId)
+        {
+            Tick = tick; PlayerId = playerId; TargetPlayerId = targetPlayerId;
+        }
+
+        public void Execute(WorldState state)
+        {
+            Character c = state.GetCharacterByPlayer(PlayerId);
+            if (c == null || !c.CanAct || c.ActionPoints <= 0) return;
+
+            ItemDef gun = c.Inventory.EquippedWeapon;
+            if (gun == null || gun.Id != 3) return;
+            if (c.Inventory.EquippedWeaponAmmo <= 0) return;
+
+            Character target = state.GetCharacterByPlayer(TargetPlayerId);
+            if (target == null || target.IsDead || target.PlayerId == PlayerId) return;
+
+            // RangedAttack 内部处理弹药扣减与藏匿瞄准检查，失败则不扣 AP
+            if (WeaponSystem.RangedAttack(state, c, target, gun, 2f))
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+        }
+    }
 }

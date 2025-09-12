@@ -33,6 +33,10 @@ namespace AI
             bool hasFreeAction = c.ASC.GetGuardianCharge() >= 3;
             if (c.ActionPoints <= 0 && !hasFreeAction) return null;
 
+            // 理智垂危 → 最高优先级使用应急处理装置自救（0 AP，不占决策骰）
+            ICommand emergency = TryUseEmergencyDevice(state, c, playerId);
+            if (emergency != null) return emergency;
+
             int roll = state.Random.Next(100);
 
             // Find enemy at same location (for combat) and any alive enemy (for movement)
@@ -52,7 +56,7 @@ namespace AI
             {
                 // Enemy at same location — exclusive ranges:
                 //   [ 0, 35)  35%  use skill on enemy
-                //   [35, 70)  35%  attack with weapon
+                //   [35, 70)  35%  attack with weapon (枪→远程/换弹, 锤→重击, 其他→普攻)
                 //   [70, 85)  15%  heal if hurt
                 //   [85,100)  15%  move away
                 if (roll < 35)
@@ -67,11 +71,18 @@ namespace AI
             else
             {
                 // No enemy here — exclusive ranges:
-                //   [ 0, 65)  65%  move toward enemies (no enemy alive → self-buff skill)
+                //   [ 0, 10)  10%  独处时安置触发式炸弹（背包有 Id=7 才生效）
+                //   [10, 65)  55%  有枪 → 远程攻击/换弹；否则向敌人移动（无敌人 → 自 Buff）
                 //   [65, 80)  15%  heal if hurt
                 //   [80,100)  20%  self-buff skill (守护充能/迷离之境 独处时也该用)
-                if (roll < 65)
-                    cmd = anyEnemy >= 0 ? TryMove(state, c, playerId) : TryUseSelfSkill(state, c, playerId);
+                if (roll < 10)
+                    cmd = TryPlantTrap(state, c, playerId);
+                else if (roll < 65)
+                {
+                    cmd = TryUseRangedWeapon(state, c, playerId);
+                    if (cmd == null)
+                        cmd = anyEnemy >= 0 ? TryMove(state, c, playerId) : TryUseSelfSkill(state, c, playerId);
+                }
                 else if (roll < 80)
                     cmd = TryHeal(state, c, playerId);
                 else
@@ -126,10 +137,94 @@ namespace AI
             return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, playerId);
         }
 
+        /// <summary>
+        /// 武器攻击路由：枪 → 远程射击/换弹（不限地点），施工锤 → 近战重击 1.5，
+        /// 其他武器 → 普攻 1.0。空手不攻击。
+        /// </summary>
         private static ICommand TryAttack(WorldState state, Character c, int playerId, int targetId)
         {
-            if (c.Inventory.EquippedWeapon == null) return null;
+            ItemDef weapon = c.Inventory.EquippedWeapon;
+            if (weapon == null) return null;
+
+            // 枪 (Id=3)：有弹 → 远程射击最近敌人；无弹 → 换弹
+            if (weapon.Id == 3)
+            {
+                ICommand ranged = TryUseRangedWeapon(state, c, playerId);
+                if (ranged != null) return ranged;
+            }
+
+            // 施工锤 (Id=4)：近战重击同地点敌人
+            if (weapon.Id == 4)
+                return new DamageCommand(state.CurrentTick, playerId, targetId, 1.5f);
+
+            // 其他武器（刀等）：普通攻击
             return new DamageCommand(state.CurrentTick, playerId, targetId, 1f);
+        }
+
+        /// <summary>
+        /// 远程武器行动：装备枪时，有弹 → 射击最近敌人（同地点优先，否则任意存活敌人），
+        /// 无弹 → 换弹。未装备枪返回 null。
+        /// </summary>
+        private static ICommand TryUseRangedWeapon(WorldState state, Character c, int playerId)
+        {
+            ItemDef weapon = c.Inventory.EquippedWeapon;
+            if (weapon == null || weapon.Id != 3) return null;
+
+            if (c.Inventory.EquippedWeaponAmmo <= 0)
+                return new ReloadCommand(state.CurrentTick, playerId);
+
+            int target = FindNearestEnemy(state, c, playerId);
+            if (target < 0) return null;
+            return new FireGunCommand(state.CurrentTick, playerId, target);
+        }
+
+        /// <summary>
+        /// 最近敌人：同地点优先，否则按索引取首个存活敌人（确定性）。
+        /// 跳过无法瞄准的藏匿目标（目标隐身且自己未隐身），避免必然落空的射击。
+        /// </summary>
+        private static int FindNearestEnemy(WorldState state, Character c, int playerId)
+        {
+            bool selfHidden = c.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden);
+            int any = -1;
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character other = state.Characters[i];
+                if (other == null || other.IsDead || other.PlayerId == playerId) continue;
+                if (other.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) && !selfHidden) continue;
+                if (other.CurrentLocationId == c.CurrentLocationId) return other.PlayerId;
+                if (any < 0) any = other.PlayerId;
+            }
+            return any;
+        }
+
+        /// <summary>独处时安置触发式炸弹（Id=7）。背包无弹返回 null（外层回退到移动）。</summary>
+        private static ICommand TryPlantTrap(WorldState state, Character c, int playerId)
+        {
+            for (int i = 0; i < c.Inventory.Consumables.Count; i++)
+            {
+                ItemDef item = c.Inventory.Consumables[i];
+                if (item != null && item.Id == 7)
+                    return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 理智 &lt; 2 且背包有应急处理装置（Id=8）时使用。
+        /// DeathSave 已激活则不重复使用（避免浪费第二件装置）。
+        /// </summary>
+        private static ICommand TryUseEmergencyDevice(WorldState state, Character c, int playerId)
+        {
+            if (c.Sanity >= 2f) return null;
+            if (c.ASC.Tags.HasTag(GameplayTagConstants.DeathSaveActive)) return null;
+
+            for (int i = 0; i < c.Inventory.Consumables.Count; i++)
+            {
+                ItemDef item = c.Inventory.Consumables[i];
+                if (item != null && item.Id == 8)
+                    return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
+            }
+            return null;
         }
 
         private static ICommand TryHeal(WorldState state, Character c, int playerId)

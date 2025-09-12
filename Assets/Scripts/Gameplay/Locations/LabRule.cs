@@ -104,10 +104,25 @@ namespace Gameplay.Locations
             int indoorHand = DominantHand(indoorRock, indoorScissors, indoorPaper, state.Random);
             int outdoorHand = DominantHand(outdoorRock, outdoorScissors, outdoorPaper, state.Random);
 
+            // 判定受创侧：0=平局/无伤，1=室内受创，2=室外受创
+            int damagedSide = 0;
             if (!ThresholdRemoved && HandType.Beats(outdoorHand, indoorHand))
-                DamageSide(state, insideLab: true);   // 阈值器完好 → 室内输方受伤
+                damagedSide = 1;   // 阈值器完好 → 室内输方受伤
             else if (ThresholdRemoved && HandType.Beats(indoorHand, outdoorHand))
-                DamageSide(state, insideLab: false);  // 阈值器拆除 → 室外输方受伤
+                damagedSide = 2;   // 阈值器拆除 → 室外输方受伤
+
+            var evt = new GameplayEvent(GameplayEventTypes.TidePulse, -1, -1)
+            {
+                IntArg1 = indoorHand,
+                IntArg2 = outdoorHand,
+                Magnitude = damagedSide
+            };
+            state.Events.Dispatch(GameplayEventTypes.TidePulse, ref evt);
+
+            if (damagedSide == 1)
+                DamageSide(state, insideLab: true);
+            else if (damagedSide == 2)
+                DamageSide(state, insideLab: false);
         }
 
         /// <summary>取筹码最多的手牌；多个并列最高时用确定性随机决定。</summary>

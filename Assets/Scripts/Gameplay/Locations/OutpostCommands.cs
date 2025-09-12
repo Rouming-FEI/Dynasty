@@ -121,6 +121,9 @@ namespace Gameplay.Locations
             tags.RemoveTag(GameplayTagConstants.TurretLoaded);
             tags.RemoveTag(GameplayTagConstants.TurretAimed);
 
+            var evt = new GameplayEvent(GameplayEventTypes.TurretFired, c.Id, target.Id);
+            state.Events.Dispatch(GameplayEventTypes.TurretFired, ref evt);
+
             DamagePipeline.ApplyDamage(state, c.Id, target.Id, 3f, DamageType.Physical);
         }
     }

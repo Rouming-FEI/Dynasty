@@ -213,6 +213,11 @@ namespace Core
                     if (ch == null || ch.IsDead) continue;
                     if (!state.MovedThisTurn[i]) continue;
                     if (!ch.ASC.Tags.HasTag(GameplayTagConstants.ThornPotionActive)) continue;
+
+                    // 荆棘反噬事件（先派发原因，再走伤害管线，日志顺序自然）
+                    var thornEvt = new GameplayEvent(GameplayEventTypes.ThornDotTick, -1, ch.Id);
+                    state.Events.Dispatch(GameplayEventTypes.ThornDotTick, ref thornEvt);
+
                     DamagePipeline.ApplyDamage(state, -1, ch.Id, 0.5f, DamageType.Effect);
                 }
                 state.ThornPotionTurnsRemaining--;

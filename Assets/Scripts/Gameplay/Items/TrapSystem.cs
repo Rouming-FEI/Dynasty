@@ -27,6 +27,12 @@ namespace Gameplay.Items
 
             state.ClearTrap(locationId);
 
+            var evt = new GameplayEvent(GameplayEventTypes.TrapTriggered, -1, triggerChar?.Id ?? -1)
+            {
+                IntArg1 = locationId
+            };
+            state.Events.Dispatch(GameplayEventTypes.TrapTriggered, ref evt);
+
             // 对地点所有存活角色造成 1.5 效果伤害
             for (int i = 0; i < state.Characters.Length; i++)
             {
@@ -45,6 +51,12 @@ namespace Gameplay.Items
             if (!state.HasTrap(locationId)) return;
 
             state.ClearTrap(locationId);
+
+            var evt = new GameplayEvent(GameplayEventTypes.TrapTriggered, -1, -1)
+            {
+                IntArg1 = locationId
+            };
+            state.Events.Dispatch(GameplayEventTypes.TrapTriggered, ref evt);
 
             for (int i = 0; i < state.Characters.Length; i++)
             {
