@@ -13,6 +13,10 @@ namespace Gameplay.Items
     /// </summary>
     public static class NukeSystem
     {
+        // 复用判定实例，避免 Command.Execute 热路径上每次发射都 new JudgmentSystem()
+        // （Resolve 内部数组按局清零，独立实例不与 TurnManager 的 LastJudgment 共享）
+        private static readonly JudgmentSystem _nukeJudge = new JudgmentSystem();
+
         /// <summary>
         /// 发射核弹：嵌入全员 RPS 判定，发射者在胜者列表 → 成功并对全员造成 3 真实伤害。
         /// </summary>
@@ -22,17 +26,23 @@ namespace Gameplay.Items
             int playerCount = state.PlayerCount;
 
             // 1. Collect chip allocations from all players (AI auto-allocate via SetRandom)
+            //    死亡/缺席玩家不参与判定：保持 0-0-0 空筹码
             Span<ChipAllocation> allocations = stackalloc ChipAllocation[playerCount];
             for (int i = 0; i < playerCount; i++)
             {
-                allocations[i] = new ChipAllocation(i);
-                allocations[i].SetRandom(state.Random);
+                Character ch = state.GetCharacterByPlayer(i);
+                if (ch == null || ch.IsDead)
+                    allocations[i] = new ChipAllocation(i); // 0-0-0, no chips
+                else
+                {
+                    allocations[i] = new ChipAllocation(i);
+                    allocations[i].SetRandom(state.Random);
+                }
             }
 
             // 2. Run embedded judgment
-            JudgmentSystem judge = new JudgmentSystem();
             int flatCount = 0;
-            JudgmentResult result = judge.Resolve(allocations, state.Random, ref flatCount);
+            JudgmentResult result = _nukeJudge.Resolve(allocations, state.Random, ref flatCount);
 
             // 3. Check if launcher is in winner list
             bool launcherWon = result.Roles[launcher.PlayerId] == JudgmentRole.Winner;

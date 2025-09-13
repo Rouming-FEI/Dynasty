@@ -232,6 +232,11 @@ namespace Core
             for (int i = 0; i < locationRules.Length; i++)
                 locationRules[i]?.OnTurnEnd(state);
 
+            // 结算回合末伤害入队的命令（DOT/荆棘素/潮汐经 DamagePipeline 产生的
+            // DeathCommand 等）。不在此执行的话，死亡会延迟到下一行动阶段才生效，
+            // 下面的存活人数检查也会基于过期状态。
+            state.Commands.ExecuteAll(state);
+
             // Check game over
             if (state.AliveCharacterCount <= 1)
             {

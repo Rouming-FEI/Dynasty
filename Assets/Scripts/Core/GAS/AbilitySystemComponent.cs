@@ -123,6 +123,10 @@ namespace Core.GAS
             bool mounted = !ge.IsInstant && ge.DurationTurns > 0;
             if (mounted)
             {
+                // 挂载即初始化剩余回合数（单一事实来源）：Reset() 会把 RemainingTurns
+                // 清零，若不在此赋值，IsExpired (RemainingTurns <= 0) 会在首次 Tick
+                // 就移除该效果，与 DurationTurns > 0 的挂载判断脱节。
+                spec.RemainingTurns = ge.DurationTurns;
                 // 周期效果的首个间隔从挂载后开始计数：PeriodTick 初始化为 Interval，
                 // 否则 Reset 后的 0 会让周期负载在挂载后的第一次 Tick 立即触发。
                 if (ge.Period.HasValue)

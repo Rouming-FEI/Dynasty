@@ -233,7 +233,10 @@ namespace AI
             for (int i = 0; i < c.Inventory.Consumables.Count; i++)
             {
                 ItemDef item = c.Inventory.Consumables[i];
-                if (item != null && item.TargetType == ItemTargetType.Self)
+                // 只认血包（Id=2）。荆棘素/触发式炸弹/应急装置的 TargetType 也是 Self，
+                // 按 TargetType 判断会把功能道具当治疗品误耗；应急装置由
+                // TryUseEmergencyDevice 在理智垂危时专门处理，不在这里消耗。
+                if (item != null && item.Id == 2)
                     return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
             }
             return null;

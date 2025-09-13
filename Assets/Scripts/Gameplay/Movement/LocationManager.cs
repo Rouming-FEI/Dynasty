@@ -42,8 +42,9 @@ namespace Gameplay.Movement
                 new() { Id = 3, Name = "下潜入口D",  Connections = new[] { 4, 5, 6, 7, 8, 9 } },
                 // 安全屋(4) — Hub 节点，连通所有地点；血包×2 + 应急处理装置×2（适配 3 人测试）
                 new() { Id = 4, Name = "安全屋",     Connections = new[] { 0, 1, 2, 3, 5, 6, 7, 8, 9 }, InitialItems = new[] { 2, 2, 8, 8 } },
-                // 地狱前哨(5) — 原有地点，更新连通关系
-                new() { Id = 5, Name = "地狱前哨",   Connections = new[] { 0, 1, 2, 3, 4, 6, 7, 8, 9 } },
+                // 废弃哨站(5) — 旧哨站，仅作中转节点：无道具、无特殊规则。
+                // 「地狱前哨」名称与炮台规则归属 Id=8，避免同名地点混淆
+                new() { Id = 5, Name = "废弃哨站",   Connections = new[] { 0, 1, 2, 3, 4 } },
                 // 藏匿处(6) — 无初始掉落物
                 new() { Id = 6, Name = "藏匿处",     Connections = new[] { 0, 1, 2, 3, 4 } },
                 // 实验室(7) — 荆棘素×2 + 触发式炸弹×2

@@ -26,8 +26,18 @@ namespace Gameplay.Items
             ItemDef item = ItemRegistry.Get(ItemId);
             if (item == null) return;
 
-            // 背包满 → 拾取失败，不扣 AP
-            if (!c.Inventory.AddConsumable(item)) return;
+            // 武器类进装备位（与 TurnManager.AddItemToInventory 一致）。
+            // 修复：武器曾进背包，UseItemCommand 走武器路由后从不移除，
+            // 核弹（Weapon 类）因此可无限复用。
+            if (item.Type == ItemType.Weapon)
+            {
+                c.Inventory.EquipWeapon(item);
+            }
+            else
+            {
+                // 背包满 → 拾取失败，不扣 AP
+                if (!c.Inventory.AddConsumable(item)) return;
+            }
 
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
         }
@@ -161,7 +171,8 @@ namespace Gameplay.Items
 
     /// <summary>
     /// 投掷施工锤：消耗 1 AP，攻击方 vs 目标 RPS 判定，命中造成 1.5 伤害。
-    /// 无论命中与否，锤子掉落在目标位置并从攻击方解除装备。
+    /// 命中与否锤子都掉落在目标位置并从攻击方移除；目标无效（不存在/死亡）
+    /// 时不执行、不扣 AP，锤子保留。
     /// </summary>
     public class ThrowHammerCommand : ICommand
     {
@@ -180,30 +191,42 @@ namespace Gameplay.Items
             Character c = state.GetCharacterByPlayer(PlayerId);
             if (c == null || !c.CanAct || c.ActionPoints <= 0) return;
 
-            // 必须持有施工锤（装备中或在背包中）
-            ItemDef hammer = c.Inventory.EquippedWeapon;
-            if (hammer == null || hammer.Id != 4)
+            // 必须持有施工锤（Id=4）：背包优先，其次装备位。
+            // 装备位是其他武器时不视为持锤（修复：曾把非锤武器当锤投掷）。
+            ItemDef hammer = null;
+            int hammerIndex = -1;
+            for (int i = 0; i < c.Inventory.Consumables.Count; i++)
             {
-                // 从背包中找
-                for (int i = 0; i < c.Inventory.Consumables.Count; i++)
+                if (c.Inventory.Consumables[i].Id == 4)
                 {
-                    if (c.Inventory.Consumables[i].Id == 4)
-                    {
-                        hammer = c.Inventory.Consumables[i];
-                        c.Inventory.RemoveConsumable(i);
-                        break;
-                    }
+                    hammer = c.Inventory.Consumables[i];
+                    hammerIndex = i;
+                    break;
                 }
             }
-            else
+            bool fromEquipped = false;
+            if (hammer == null
+                && c.Inventory.EquippedWeapon != null
+                && c.Inventory.EquippedWeapon.Id == 4)
             {
-                c.Inventory.EquippedWeapon = null;
+                hammer = c.Inventory.EquippedWeapon;
+                fromEquipped = true;
             }
-
             if (hammer == null) return;
 
             Character target = state.GetCharacterByPlayer(TargetPlayerId);
             if (target == null || target.IsDead) return;
+
+            // 目标校验通过后才移除锤子（修复：曾在校验前移除，无效目标导致锤子凭空消失）
+            if (fromEquipped)
+            {
+                c.Inventory.EquippedWeapon = null;
+                c.Inventory.EquippedWeaponAmmo = 0;
+            }
+            else
+            {
+                c.Inventory.RemoveConsumable(hammerIndex);
+            }
 
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
