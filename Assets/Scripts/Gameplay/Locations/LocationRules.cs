@@ -28,5 +28,8 @@ namespace Gameplay.Locations
 
         /// <summary>回合结束时触发（由 TurnManager.EndTurn 遍历调用，用于地点周期机制如深度潮汐）。</summary>
         public virtual void OnTurnEnd(WorldState state) { }
+
+        /// <summary>返回本规则的可变状态 hash，用于确定性自检。子类 override 返回实际状态组合。</summary>
+        public virtual long StateHash() => 0;
     }
 }

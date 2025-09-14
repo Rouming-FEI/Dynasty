@@ -25,6 +25,7 @@ namespace Gameplay.Items
         {
             if (!state.HasTrap(locationId)) return false;
 
+            int trapCount = state.LocationTrapCounts[locationId];
             state.ClearTrap(locationId);
 
             var evt = new GameplayEvent(GameplayEventTypes.TrapTriggered, -1, triggerChar?.Id ?? -1)
@@ -33,13 +34,16 @@ namespace Gameplay.Items
             };
             state.Events.Dispatch(GameplayEventTypes.TrapTriggered, ref evt);
 
-            // 对地点所有存活角色造成 1.5 效果伤害
-            for (int i = 0; i < state.Characters.Length; i++)
+            // N 个炸弹 = N × 1.5 效果伤害
+            for (int bomb = 0; bomb < trapCount; bomb++)
             {
-                Character c = state.Characters[i];
-                if (c == null || c.IsDead) continue;
-                if (c.CurrentLocationId != locationId) continue;
-                DamagePipeline.ApplyDamage(state, -1, c.Id, 1.5f, DamageType.Effect);
+                for (int i = 0; i < state.Characters.Length; i++)
+                {
+                    Character c = state.Characters[i];
+                    if (c == null || c.IsDead) continue;
+                    if (c.CurrentLocationId != locationId) continue;
+                    DamagePipeline.ApplyDamage(state, -1, c.Id, 1.5f, DamageType.Effect);
+                }
             }
 
             return true;
@@ -50,6 +54,7 @@ namespace Gameplay.Items
         {
             if (!state.HasTrap(locationId)) return;
 
+            int trapCount = state.LocationTrapCounts[locationId];
             state.ClearTrap(locationId);
 
             var evt = new GameplayEvent(GameplayEventTypes.TrapTriggered, -1, -1)
@@ -58,12 +63,16 @@ namespace Gameplay.Items
             };
             state.Events.Dispatch(GameplayEventTypes.TrapTriggered, ref evt);
 
-            for (int i = 0; i < state.Characters.Length; i++)
+            // N 个炸弹 = N × 1.5 效果伤害
+            for (int bomb = 0; bomb < trapCount; bomb++)
             {
-                Character c = state.Characters[i];
-                if (c == null || c.IsDead) continue;
-                if (c.CurrentLocationId != locationId) continue;
-                DamagePipeline.ApplyDamage(state, -1, c.Id, 1.5f, DamageType.Effect);
+                for (int i = 0; i < state.Characters.Length; i++)
+                {
+                    Character c = state.Characters[i];
+                    if (c == null || c.IsDead) continue;
+                    if (c.CurrentLocationId != locationId) continue;
+                    DamagePipeline.ApplyDamage(state, -1, c.Id, 1.5f, DamageType.Effect);
+                }
             }
         }
     }

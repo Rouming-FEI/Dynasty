@@ -103,7 +103,9 @@ namespace Core.GAS
             }
 
             // --- Apply attribute modifiers ---
-            if (ge.Modifiers != null)
+            // 周期型 GE 的 Modifier 是周期负载，由每回合 ApplyPeriodicPayload 执行；
+            // 挂载时不再立即执行，避免 HoT/DoT 多计算一次。
+            if (ge.Modifiers != null && !ge.Period.HasValue)
                 ApplyModifiers(ge.Modifiers, spec.MagnitudeMultiplier);
 
             // --- Apply tag mutations ---
@@ -336,5 +338,27 @@ namespace Core.GAS
         public bool IsDead   => Tags.HasTag(GameplayTagConstants.Dead);
         public bool CanAct   => !IsDead && !Tags.HasTag(GameplayTagConstants.CannotAct);
         public bool CanMove  => CanAct && !Tags.HasTag(GameplayTagConstants.CannotMove);
+
+        // ---------------------------------------------------------------------
+        // Determinism hash — 确定性自检
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// 计算活跃 GE 列表的状态 hash。遍历每个 spec 的关键字段累加，zero-GC。
+        /// </summary>
+        public long ComputeEffectsHash()
+        {
+            long h = 0;
+            for (int i = 0; i < _activeEffects.Count; i++)
+            {
+                GameplayEffectSpec s = _activeEffects[i];
+                h = h * 31 + (s.Definition?.Id ?? 0);
+                h = h * 31 + s.RemainingTurns;
+                h = h * 31 + s.PeriodTick;
+                h = h * 31 + s.PeriodRunCount;
+                h = h * 31 + s.StackCount;
+            }
+            return h;
+        }
     }
 }

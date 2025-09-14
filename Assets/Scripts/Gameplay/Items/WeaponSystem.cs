@@ -42,8 +42,8 @@ namespace Gameplay.Items
             // 锤子掉落在目标位置
             state.Locations.DropItem(target.CurrentLocationId, hammer.Id, 1);
 
-            // 解除装备
-            attacker.Inventory.EquippedWeapon = null;
+            // 注意：锤子来源的移除（背包 RemoveConsumable / 装备位清空）由调用方（ThrowHammerCommand）负责，
+            // 此处不做任何装备位操作，避免背包锤投掷时误卸装备武器（如枪）。
             return hit;
         }
 

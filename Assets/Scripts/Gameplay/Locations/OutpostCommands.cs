@@ -115,6 +115,12 @@ namespace Gameplay.Locations
             Character target = state.GetCharacterByPlayer(TargetPlayerId);
             if (target == null || target.IsDead) return;
 
+            // 藏匿处隐身：目标隐身且炮手自身未隐身 → 无法瞄准，拒绝发射；
+            // 装弹/瞄准状态保留（不白费已花费的 AP），本次仅不扣 AP 不造成伤害。
+            if (target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) &&
+                !c.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden))
+                return;
+
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
             // 先清弹药/瞄准状态再结算伤害，避免伤害管线触发的连锁事件读到中间状态

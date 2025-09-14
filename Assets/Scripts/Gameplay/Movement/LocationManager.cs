@@ -172,5 +172,20 @@ namespace Gameplay.Movement
         }
 
         public LocationData[] GetAll() => _locations;
+
+        /// <summary>
+        /// 计算所有地点运行时物品列表的状态 hash，用于确定性自检。zero-GC。
+        /// </summary>
+        public long ComputeItemsHash()
+        {
+            long h = 0;
+            for (int i = 0; i < _runtimeItems.Length; i++)
+            {
+                var list = _runtimeItems[i];
+                for (int j = 0; j < list.Count; j++)
+                    h = h * 31 + list[j];
+            }
+            return h;
+        }
     }
 }

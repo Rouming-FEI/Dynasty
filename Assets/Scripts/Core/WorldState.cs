@@ -110,6 +110,16 @@ namespace Core
             hash = hash * 31 + CurrentTick;
             hash = hash * 31 + CurrentTurn;
             hash = hash * 31 + (int)Phase;
+
+            // WorldState 层全局状态
+            hash = hash * 31 + (long)Random.State;
+            hash = hash * 31 + ThornPotionTurnsRemaining;
+            for (int i = 0; i < LocationTrapCounts.Length; i++)
+                hash = hash * 31 + LocationTrapCounts[i];
+            for (int i = 0; i < MovedThisTurn.Length; i++)
+                hash = hash * 31 + (MovedThisTurn[i] ? 1 : 0);
+
+            // 每角色状态
             for (int i = 0; i < Characters.Length; i++)
             {
                 Character c = Characters[i];
@@ -121,8 +131,26 @@ namespace Core
                 hash = hash * 31 + c.ActionPoints;
                 hash = hash * 31 + (int)(c.ErosionLimit * 1000);
                 hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.PhysicalDefense) * 1000);
-                hash = hash * 31 + c.ASC.ActiveEffectCount;
+                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.MagicDefense) * 1000);
+                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.AttackBonus) * 1000);
+                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.MaxSanity) * 1000);
+                hash = hash * 31 + (int)(c.ASC.GetAttributeValue(AttributeConstants.MaxActionPoints) * 1000);
+                hash = hash * 31 + c.ASC.Tags.Mask;
+                hash = hash * 31 + c.ASC.GetGuardianCharge();
+                // GE 详情（替换原来的 ActiveEffectCount）
+                hash = hash * 31 + c.ASC.ComputeEffectsHash();
+                // 背包
+                hash = hash * 31 + c.Inventory.EquippedWeaponAmmo;
+                hash = hash * 31 + (c.Inventory.EquippedWeapon?.Id ?? 0);
+                for (int j = 0; j < c.Inventory.Consumables.Count; j++)
+                    hash = hash * 31 + c.Inventory.Consumables[j].Id;
             }
+
+            // 地点规则状态
+            for (int i = 0; i < Locations.Rules.Length; i++)
+                hash = hash * 31 + (Locations.Rules[i]?.StateHash() ?? 0);
+            hash = hash * 31 + Locations.ComputeItemsHash();
+
             return hash;
         }
     }

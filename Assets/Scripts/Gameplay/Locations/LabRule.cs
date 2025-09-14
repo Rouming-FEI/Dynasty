@@ -36,6 +36,16 @@ namespace Gameplay.Locations
 
         public LabRule() { LocationId = LabLocationId; }
 
+        /// <inheritdoc/>
+        public override long StateHash()
+        {
+            long h = (DoorOpen ? 1L : 0L);
+            h = h * 31 + (SwitchOn ? 1L : 0L);
+            h = h * 31 + (ThresholdRemoved ? 1L : 0L);
+            h = h * 31 + TideTurnsElapsed;
+            return h;
+        }
+
         public void ToggleDoor() => DoorOpen = !DoorOpen;
 
         /// <summary>切换潮汐开关。任一方向切换都重置周期计数（"每 2 回合"从开启时刻起算）。</summary>
