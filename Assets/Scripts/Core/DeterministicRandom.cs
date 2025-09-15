@@ -14,6 +14,7 @@ namespace Core
         /// The seed used to initialize this generator.
         /// </summary>
         public long Seed => _seed;
+        public ulong State => _state;
 
         /// <summary>
         /// Creates a new deterministic random generator.
