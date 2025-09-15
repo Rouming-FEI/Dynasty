@@ -109,6 +109,10 @@ namespace Core
             state.LastJudgment = result;
             state.HasJudgmentResult = true;
 
+            // 拷贝筹码分布供日志显示（定长数组，确定性安全）
+            for (int i = 0; i < allocations.Length && i < state.LastAllocations.Length; i++)
+                state.LastAllocations[i] = allocations[i];
+
             // Distribute AP to all players
             for (int i = 0; i < state.PlayerCount; i++)
             {

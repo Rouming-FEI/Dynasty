@@ -26,6 +26,8 @@ namespace Core
         public LocationManager Locations;
         public bool HasJudgmentResult;
         public JudgmentResult LastJudgment;
+        /// <summary>最近一轮判定每位玩家的筹码分布（供日志/调试显示）。</summary>
+        public ChipAllocation[] LastAllocations;
         public int CurrentTick;
         public int CurrentTurn;
         public TurnPhase Phase;
@@ -50,6 +52,7 @@ namespace Core
             Locations = new LocationManager();
             LocationTrapCounts = new int[GameConfig.MaxLocations];
             MovedThisTurn = new bool[GameConfig.MaxPlayers];
+            LastAllocations = new ChipAllocation[GameConfig.MaxPlayers];
             ThornPotionTurnsRemaining = 0;
             CurrentTick = 0;
             CurrentTurn = 0;

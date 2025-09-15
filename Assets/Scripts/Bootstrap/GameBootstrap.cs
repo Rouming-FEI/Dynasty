@@ -102,6 +102,16 @@ namespace Bootstrap
                     sb.Append("败手: ").Append(j.LoserHand >= 0 ? handNames[j.LoserHand] : "-").Append(" | ");
                     sb.Append("中立: ").AppendLine(j.NeutralHand >= 0 ? handNames[j.NeutralHand] : "-");
                 }
+                sb.Append("  筹码: ");
+                for (int i = 0; i < _playerCount; i++)
+                {
+                    Character c = _state.Characters[i];
+                    if (c == null || c.IsDead) continue;
+                    var a = _state.LastAllocations[i];
+                    sb.Append($"{c.Name}:石{a.Rock}剪{a.Scissors}布{a.Paper}");
+                    if (i < _playerCount - 1) sb.Append(" | ");
+                }
+                sb.AppendLine();
                 sb.Append("  AP: ");
                 for (int i = 0; i < _playerCount; i++)
                 {
