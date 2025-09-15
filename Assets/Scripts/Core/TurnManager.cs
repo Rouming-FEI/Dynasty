@@ -113,6 +113,15 @@ namespace Core
             for (int i = 0; i < allocations.Length && i < state.LastAllocations.Length; i++)
                 state.LastAllocations[i] = allocations[i];
 
+            // 全局平筹码且未触发保底 → 本轮作废重来（保持 JudgmentPhase，不进入行动阶段）
+            // 规则：三选项筹码全等 → 作废重来；连续平 2 次 → 全员 1 AP 保底进入行动
+            if (result.IsGlobalFlat && result.APGained[0] == 0)
+            {
+                var flatEvt = new GameplayEvent(GameplayEventTypes.JudgmentResolved, -1, -1);
+                state.Events.Dispatch(GameplayEventTypes.JudgmentResolved, ref flatEvt);
+                return;
+            }
+
             // Distribute AP to all players
             for (int i = 0; i < state.PlayerCount; i++)
             {

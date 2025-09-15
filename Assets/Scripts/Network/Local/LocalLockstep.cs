@@ -62,6 +62,11 @@ namespace Network.Local
 
                 if (!_turnManager.Advance(_state, allocations))
                     return false;
+
+                // 全局平筹码作废重来：Phase 仍是 JudgmentPhase，
+                // 本轮结束，下一轮 RunTurn 重新收集筹码再判定
+                if (_state.Phase == TurnPhase.JudgmentPhase)
+                    return true;
             }
 
             // Action phase: each actor takes their turn
