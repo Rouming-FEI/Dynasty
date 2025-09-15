@@ -25,7 +25,7 @@ namespace Gameplay.Judgment
         /// <summary>HandType constant for the winning hand, or -1 on global flat.</summary>
         public int WinnerHand;
 
-        /// <summary>HandType constant for the losing hand (BeatenBy(WinnerHand)).</summary>
+        /// <summary>HandType constant for the losing hand (BeatsWho(WinnerHand)).</summary>
         public int LoserHand;
 
         /// <summary>HandType constant for the neutral hand.</summary>
@@ -142,8 +142,11 @@ namespace Gameplay.Judgment
             // Non-flat round → reset flat counter.
             consecutiveFlatCount = 0;
 
-            // ——— Step 4: LoserHand = the hand beaten by WinnerHand ———
-            result.LoserHand = HandType.BeatenBy(result.WinnerHand);
+            // ——— Step 4: LoserHand = the hand WinnerHand beats ———
+            // 规则（docs/项目介绍.md）：「胜手按 RPS 规则克制的那一方为败手」。
+            // 注意 HandType 的命名易混：BeatsWho(h) = h 克制谁（正确）；
+            // BeatenBy(h) = 谁克制 h（反向，曾误用于此处导致胜负判定全部错位）。
+            result.LoserHand = HandType.BeatsWho(result.WinnerHand);
 
             // ——— Step 5: NeutralHand = the remaining hand (0+1+2 = 3) ———
             result.NeutralHand = 3 - result.WinnerHand - result.LoserHand;
