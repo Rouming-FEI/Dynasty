@@ -23,6 +23,7 @@
 docs/
 .superpowers/
 CLAUDE.md
+AGENTS.md
 
 # IDE user-specific settings
 *.DotSettings.user
