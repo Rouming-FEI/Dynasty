@@ -182,7 +182,9 @@ namespace Gameplay.Judgment
             // ——— Step 7: AP distribution ———
             // Each winner receives AP equal to the number of losers,
             // capped at (playerCount - 1).
-            int apPerWinner = Math.Min(result.LoserCount, playerCount - 1);
+            // 规则修订（2025-09）：无败者时胜者保底 1 AP，
+            // 避免「全员 0 AP」空转轮（纯随机下占比曾高达 61%）。
+            int apPerWinner = Math.Min(Math.Max(result.LoserCount, 1), playerCount - 1);
             for (int i = 0; i < playerCount; i++)
             {
                 result.APGained[i] = (result.Roles[i] == JudgmentRole.Winner)
