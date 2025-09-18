@@ -1,7 +1,7 @@
 {
     "name": "Dynasty.UI",
     "rootNamespace": "",
-    "references": ["Dynasty.Simulation"],
+    "references": ["Dynasty.Simulation", "Dynasty.Bootstrap"],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
