@@ -114,6 +114,9 @@ namespace Dynasty.Tests
         /// </summary>
         public ScenarioBuilder WithActiveEffect(int playerId, GameplayEffect ge)
         {
+            if (ge == null || ge.IsInstant || ge.DurationTurns <= 0)
+                throw new InvalidOperationException("WithActiveEffect 只接受持续型 GE");
+
             _overrides.Add(s =>
             {
                 Character c = s.GetCharacterByPlayer(playerId);
@@ -172,6 +175,11 @@ namespace Dynasty.Tests
 
         // ---------------- 构建 ----------------
 
+        /// <summary>
+        /// 构建测试用 WorldState。副作用：跳过判定阶段，直接把 Phase 置为 ActionPhase，
+        /// 因此 TurnManager 的 ActionOrder 未填充、AP 未通过判定分发——需要行动能力的
+        /// 测试应显式调用 WithAP / WithAllAP 注入 AP。
+        /// </summary>
         public WorldState Build()
         {
             var state = new WorldState(_playerCount, _seed);

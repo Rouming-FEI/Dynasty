@@ -56,6 +56,7 @@ namespace Dynasty.Tests
             var inv = state.GetCharacterByPlayer(0).Inventory;
             Assert.AreEqual(0, inv.Consumables.Count);
             Assert.IsNull(inv.EquippedWeapon);
+            Assert.AreEqual(0, inv.EquippedWeaponAmmo);
         }
 
         [Test]
@@ -80,6 +81,25 @@ namespace Dynasty.Tests
 
             Assert.IsTrue(state.GetCharacterByPlayer(1).ASC.Tags
                 .HasTag(GameplayTagConstants.HideoutHidden));
+        }
+
+        [Test]
+        public void WithActiveEffect_挂载持续型GE()
+        {
+            var ge = new GameplayEffect
+            {
+                Id = 900,
+                DurationType = GameplayEffectDurationType.HasDuration,
+                DurationTurns = 3,
+                Modifiers = new[]
+                {
+                    new AttributeModifier(AttributeConstants.AttackBonus, AttributeModifierOp.Add, 1f)
+                }
+            };
+
+            var state = ScenarioBuilder.Create(2).WithActiveEffect(0, ge).Build();
+
+            Assert.AreEqual(1, state.GetCharacterByPlayer(0).ASC.ActiveEffectCount);
         }
 
         [Test]
