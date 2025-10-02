@@ -116,7 +116,10 @@ namespace Gameplay.Judgment
             }
 
             // ——— Step 2: determine winner hand ———
-            result.WinnerHand = DetermineWinnerHand(totalRock, totalScissors, totalPaper);
+            // 规则②双高+一低时：胜手 = 两高中克制低手者，败手 = 低手本身（docs/项目介绍.md 4.1）。
+            // 通过 lowHand out 参数把「低手」带回，Step 4 据此区分败手语义。
+            int lowHand;
+            result.WinnerHand = DetermineWinnerHand(totalRock, totalScissors, totalPaper, out lowHand);
 
             // ——— Step 3: global flat (all three totals equal) ———
             if (result.WinnerHand < 0)
@@ -142,11 +145,13 @@ namespace Gameplay.Judgment
             // Non-flat round → reset flat counter.
             consecutiveFlatCount = 0;
 
-            // ——— Step 4: LoserHand = the hand WinnerHand beats ———
-            // 规则（docs/项目介绍.md）：「胜手按 RPS 规则克制的那一方为败手」。
-            // 注意 HandType 的命名易混：BeatsWho(h) = h 克制谁（正确）；
-            // BeatenBy(h) = 谁克制 h（反向，曾误用于此处导致胜负判定全部错位）。
-            result.LoserHand = HandType.BeatsWho(result.WinnerHand);
+            // ——— Step 4: LoserHand ———
+            // 规则（docs/项目介绍.md 4.1）：
+            // ①唯一最高 → 败手 = 胜手按 RPS 规则克制的那一方（BeatsWho(WinnerHand)）
+            // ②双高+一低 → 败手 = 低筹码选项本身，中立手 = 剩余一高
+            result.LoserHand = lowHand >= 0
+                ? lowHand
+                : HandType.BeatsWho(result.WinnerHand);
 
             // ——— Step 5: NeutralHand = the remaining hand (0+1+2 = 3) ———
             result.NeutralHand = 3 - result.WinnerHand - result.LoserHand;
@@ -202,8 +207,12 @@ namespace Gameplay.Judgment
         /// HandType.Rock (0), HandType.Scissors (1), HandType.Paper (2),
         /// or -1 when all three totals are equal (global flat).
         /// </returns>
-        private static int DetermineWinnerHand(int rock, int scissors, int paper)
+        /// <param name="lowHand">
+        /// 双高+一低时输出低筹码的那一手（败手候选）；唯一最高/全平时输出 -1。
+        /// </param>
+        private static int DetermineWinnerHand(int rock, int scissors, int paper, out int lowHand)
         {
+            lowHand = -1;
             if (rock == scissors && scissors == paper)
                 return -1;
 
@@ -227,12 +236,13 @@ namespace Gameplay.Judgment
             {
                 // Two hands tie for highest + one lowest.
                 // The hand that BEATS the lowest hand wins.
-                int lowHand;
+                // 注意语义方向：BeatsWho(h) = h 克制谁（正确——返回克制最低手的胜手）；
+                // BeatenBy(h) = 谁克制 h（反向，曾误用于此导致双高平局胜负全盘错位）。
                 if (rock == min) lowHand = HandType.Rock;
                 else if (scissors == min) lowHand = HandType.Scissors;
                 else lowHand = HandType.Paper;
 
-                return HandType.BeatenBy(lowHand);
+                return HandType.BeatsWho(lowHand);
             }
         }
 
