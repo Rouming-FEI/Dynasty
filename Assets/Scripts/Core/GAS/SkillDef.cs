@@ -14,8 +14,8 @@ namespace Core.GAS
         public int CooldownTurns;
         public GameplayTag[] RequiredTags;   // must have to activate
         public GameplayTag[] BlockingTags;   // cannot have to activate
-        public SkillCost[] ExtraCosts;                    // 多段成本（主 Cost + 这些全部支付）
-        public SkillRestriction[] Restrictions;            // 前置条件（全部满足才可施放）
-        public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能
+        public SkillCost[] ExtraCosts;                    // 多段成本（主 Cost + 这些全部支付）；空元素（default struct）视为无成本，安全忽略
+        public SkillRestriction[] Restrictions;            // 前置条件（全部满足才可施放）；空元素（default struct）视为无条件，安全忽略
+        public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能（Task 7 接线，当前未消费）
     }
 }

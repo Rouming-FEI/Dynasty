@@ -56,7 +56,7 @@ namespace Gameplay.Characters
                 case SkillCostType.Sanity: return c.ASC.GetAttributeValue(AttributeConstants.Sanity) >= cost.Amount;
                 case SkillCostType.ErosionLimit: return c.ASC.GetAttributeValue(AttributeConstants.ErosionLimit) >= cost.Amount;
                 case SkillCostType.Charge: return c.ASC.GetGuardianCharge() >= cost.Amount;
-                default: return true;
+                default: return false;
             }
         }
 
@@ -141,7 +141,7 @@ namespace Gameplay.Characters
                     c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ErosionLimit, -cost.Amount);
                     break;
                 case SkillCostType.Charge:
-                    c.ASC.ResetGuardianCharge();
+                    c.ASC.ModifyGuardianCharge(-(int)cost.Amount);
                     break;
             }
         }

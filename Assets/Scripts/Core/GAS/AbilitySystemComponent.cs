@@ -330,6 +330,12 @@ namespace Core.GAS
         public void AddGuardianCharge() => _guardianCharge++;
         public int GetGuardianCharge() => _guardianCharge;
         public void ResetGuardianCharge() => _guardianCharge = 0;
+        /// <summary>Delta 修改充能计数（正加负减），钳位到 >= 0。</summary>
+        public void ModifyGuardianCharge(int delta)
+        {
+            _guardianCharge += delta;
+            if (_guardianCharge < 0) _guardianCharge = 0;
+        }
 
         // ---------------------------------------------------------------------
         // Queries
