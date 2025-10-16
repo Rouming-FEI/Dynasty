@@ -27,7 +27,37 @@ namespace Gameplay.Characters
                 bool freeGrant = (skill.Id == GuardianSkillId && c.ASC.GetGuardianCharge() >= GuardianChargeThreshold);
                 if (!freeGrant && c.ActionPoints < skill.Cost.Amount) return false;
             }
+            if (!HasResources(skill, c)) return false;
             return true;
+        }
+
+        private static bool HasResources(SkillDef skill, Character c)
+        {
+            // 主成本 AP 已在上面的守护免费分支里检查（freeGrant 满充能时 0 AP 免费施放），
+            // 此处只补充非 AP 主成本 + 额外成本 + 前置条件，避免重复校验破坏守护免费分支。
+            if (skill.Cost.Type != SkillCostType.AP && !HasResource(c, skill.Cost)) return false;
+            if (skill.ExtraCosts != null)
+                for (int i = 0; i < skill.ExtraCosts.Length; i++)
+                    if (!HasResource(c, skill.ExtraCosts[i])) return false;
+            if (skill.Restrictions != null)
+                for (int i = 0; i < skill.Restrictions.Length; i++)
+                {
+                    SkillRestriction r = skill.Restrictions[i];
+                    if (c.ASC.GetAttributeValue(r.AttributeId) < r.MinValue) return false;
+                }
+            return true;
+        }
+
+        private static bool HasResource(Character c, SkillCost cost)
+        {
+            switch (cost.Type)
+            {
+                case SkillCostType.AP: return c.ActionPoints >= cost.Amount;
+                case SkillCostType.Sanity: return c.ASC.GetAttributeValue(AttributeConstants.Sanity) >= cost.Amount;
+                case SkillCostType.ErosionLimit: return c.ASC.GetAttributeValue(AttributeConstants.ErosionLimit) >= cost.Amount;
+                case SkillCostType.Charge: return c.ASC.GetGuardianCharge() >= cost.Amount;
+                default: return true;
+            }
         }
 
         /// <summary>激活技能：支付消耗后，将技能携带的全部 GE 应用到目标身上。</summary>
@@ -58,9 +88,11 @@ namespace Gameplay.Characters
                 return;
             }
 
-            // 支付消耗（非守护技能）
-            if (skill.Cost.Type == SkillCostType.AP)
-                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -skill.Cost.Amount);
+            // 支付消耗（非守护技能）：主成本 + 额外成本
+            PayResource(c, skill.Cost);
+            if (skill.ExtraCosts != null)
+                for (int i = 0; i < skill.ExtraCosts.Length; i++)
+                    PayResource(c, skill.ExtraCosts[i]);
 
             // 应用效果
             if (skill.Effects != null)
@@ -92,6 +124,25 @@ namespace Gameplay.Characters
                         }
                     }
                 }
+            }
+        }
+
+        private static void PayResource(Character c, SkillCost cost)
+        {
+            switch (cost.Type)
+            {
+                case SkillCostType.AP:
+                    c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -cost.Amount);
+                    break;
+                case SkillCostType.Sanity:
+                    c.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, -cost.Amount);
+                    break;
+                case SkillCostType.ErosionLimit:
+                    c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ErosionLimit, -cost.Amount);
+                    break;
+                case SkillCostType.Charge:
+                    c.ASC.ResetGuardianCharge();
+                    break;
             }
         }
     }

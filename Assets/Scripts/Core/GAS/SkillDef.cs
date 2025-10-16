@@ -14,5 +14,8 @@ namespace Core.GAS
         public int CooldownTurns;
         public GameplayTag[] RequiredTags;   // must have to activate
         public GameplayTag[] BlockingTags;   // cannot have to activate
+        public SkillCost[] ExtraCosts;                    // 多段成本（主 Cost + 这些全部支付）
+        public SkillRestriction[] Restrictions;            // 前置条件（全部满足才可施放）
+        public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能
     }
 }
