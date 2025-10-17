@@ -241,6 +241,19 @@ namespace Core.GAS
                 if (periodicFired && spec.Definition?.Modifiers != null)
                     ApplyPeriodicPayload(state, spec);
 
+                // RemoveOnCondition：声明条件标签，任一缺失即移除（开关类 GE）
+                if (spec.Definition.ExpiryPolicy == GameplayEffectExpiryPolicy.RemoveOnCondition
+                    && spec.Definition.ConditionTags != null)
+                {
+                    bool condMet = true;
+                    GameplayTag[] condTags = spec.Definition.ConditionTags;
+                    for (int t = 0; t < condTags.Length; t++)
+                    {
+                        if (!Tags.HasTag(condTags[t])) { condMet = false; break; }
+                    }
+                    if (!condMet) { RemoveGameplayEffect(spec); continue; }
+                }
+
                 if (spec.IsExpired)
                     RemoveGameplayEffect(spec);
             }

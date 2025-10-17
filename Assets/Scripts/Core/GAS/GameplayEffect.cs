@@ -21,6 +21,7 @@ namespace Core.GAS
         public GameplayEffectStacking Stacking;         // default None
         public int CooldownTurns;                       // 0 = no cooldown
         public GameplayEffectExpiryPolicy ExpiryPolicy; // default RemoveOnExpiry
+        public GameplayTag[] ConditionTags;  // RemoveOnCondition: owner 必须持有全部标签，任一缺失则移除
 
         public bool IsInstant => DurationType == GameplayEffectDurationType.Instant;
     }
