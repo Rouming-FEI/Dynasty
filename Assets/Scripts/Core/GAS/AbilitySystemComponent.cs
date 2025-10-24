@@ -260,6 +260,29 @@ namespace Core.GAS
 
             if (_attributeSet != null)
                 BuffResolver.Resolve(_activeEffects, _attributeSet);
+
+            // 周期被动：每回合递减，到期执行负载并按 Interval 重置（Dead 角色暂停）
+            if (!Tags.HasTag(GameplayTagConstants.Dead))
+            {
+                for (int p = 0; p < _passiveCount; p++)
+                {
+                    if (--_passiveTimers[p] > 0) continue;
+                    _passiveTimers[p] = _passiveIntervals[p];
+                    GameplayEffect[] payload = _passivePayloads[p];
+                    if (payload == null) continue;
+                    for (int e = 0; e < payload.Length; e++)
+                    {
+                        GameplayEffect ge = payload[e];
+                        if (ge == null) continue;
+                        GameplayEffectSpec spec = RentSpec();
+                        spec.Definition = ge;
+                        spec.SourceId = OwnerId;
+                        spec.TargetId = OwnerId;
+                        spec.RemainingTurns = ge.DurationTurns;
+                        ApplyGameplayEffect(spec);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -348,6 +371,27 @@ namespace Core.GAS
         {
             _guardianCharge += delta;
             if (_guardianCharge < 0) _guardianCharge = 0;
+        }
+
+        // ---------------------------------------------------------------------
+        // 周期被动计时器 — PassiveInterval / PassiveEffects
+        // ---------------------------------------------------------------------
+
+        // 周期被动计时器：固定上限栈数组，零 GC
+        private GameplayEffect[][] _passivePayloads = new GameplayEffect[4][];
+        private int[] _passiveTimers = new int[4];
+        private int[] _passiveIntervals = new int[4];
+        private int _passiveCount;
+
+        /// <summary>注册周期被动（角色创建时由 TurnManager 调用）。</summary>
+        public void RegisterPassive(SkillDef skill)
+        {
+            if (skill == null || skill.PassiveInterval <= 0) return;
+            if (_passiveCount >= _passiveTimers.Length) return;
+            _passivePayloads[_passiveCount] = skill.PassiveEffects;
+            _passiveIntervals[_passiveCount] = skill.PassiveInterval;
+            _passiveTimers[_passiveCount] = skill.PassiveInterval;
+            _passiveCount++;
         }
 
         // ---------------------------------------------------------------------

@@ -45,6 +45,8 @@ namespace Core
                     CurrentLocationId = i // spawn at own entry point (0-3)
                 };
                 def.ApplyTo(c);
+                for (int s = 0; s < c.Definition.Skills.Length; s++)
+                    c.ASC.RegisterPassive(c.Definition.Skills[s]);
                 GrantInitialItems(state, c, def);
                 state.Characters[i] = c;
             }
