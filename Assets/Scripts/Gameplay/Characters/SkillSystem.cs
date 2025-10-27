@@ -15,7 +15,8 @@ namespace Gameplay.Characters
         /// <summary>守护充能阈值：攒满 3 充能兑换 1 护盾。</summary>
         private const int GuardianChargeThreshold = 3;
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
-        public static bool CanActivate(SkillDef skill, Character c)
+        /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不检查冷却（既有调用点兼容）。</param>
+        public static bool CanActivate(SkillDef skill, Character c, int skillIndex = -1)
         {
             if (skill == null || c == null || !c.CanAct) return false;
             if (skill.Activation != SkillActivationType.Active) return false; // 被动/响应型技能不可主动施放
@@ -27,6 +28,7 @@ namespace Gameplay.Characters
                 bool freeGrant = (skill.Id == GuardianSkillId && c.ASC.GetGuardianCharge() >= GuardianChargeThreshold);
                 if (!freeGrant && c.ActionPoints < skill.Cost.Amount) return false;
             }
+            if (skillIndex >= 0 && c.ASC.GetCooldown(skillIndex) > 0) return false;
             if (!HasResources(skill, c)) return false;
             return true;
         }
@@ -61,10 +63,15 @@ namespace Gameplay.Characters
         }
 
         /// <summary>激活技能：支付消耗后，将技能携带的全部 GE 应用到目标身上。</summary>
-        public static void Activate(SkillDef skill, Character c, Character target, WorldState state)
+        /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不记录冷却（既有调用点兼容）。</param>
+        public static void Activate(SkillDef skill, Character c, Character target, WorldState state, int skillIndex = -1)
         {
             if (!CanActivate(skill, c)) return;
             if (target == null || target.IsDead) return;
+
+            // 冷却记录：施放后按 CooldownTurns 锁定（skillIndex >= 0 才记录）
+            if (skillIndex >= 0 && skill.CooldownTurns > 0)
+                c.ASC.SetCooldown(skillIndex, skill.CooldownTurns);
 
             // 守护 (Id=2) 充能机制：总价 3AP 可攒 ——
             // - 充能未满时：花 1AP 攒 1 层充能，不关心目标

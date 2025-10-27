@@ -283,6 +283,13 @@ namespace Core.GAS
                     }
                 }
             }
+
+            // 技能冷却递减（Dead 跳过）
+            if (!Tags.HasTag(GameplayTagConstants.Dead))
+            {
+                for (int i = 0; i < _skillCooldownCount; i++)
+                    if (_skillCooldowns[i] > 0) _skillCooldowns[i]--;
+            }
         }
 
         /// <summary>
@@ -392,6 +399,30 @@ namespace Core.GAS
             _passiveIntervals[_passiveCount] = skill.PassiveInterval;
             _passiveTimers[_passiveCount] = skill.PassiveInterval;
             _passiveCount++;
+        }
+
+        // ---------------------------------------------------------------------
+        // 技能冷却 — CooldownTurns 按技能索引存储剩余回合
+        // ---------------------------------------------------------------------
+
+        // 技能冷却：按技能索引存储剩余冷却回合（与 CharacterDef.Skills 平行）
+        private int[] _skillCooldowns = new int[8];
+        private int _skillCooldownCount;
+
+        public void EnsureCooldownSlots(int skillCount)
+        {
+            if (skillCount > _skillCooldowns.Length)
+                System.Array.Resize(ref _skillCooldowns, skillCount);
+            _skillCooldownCount = skillCount;
+        }
+
+        public int GetCooldown(int skillIndex) =>
+            skillIndex >= 0 && skillIndex < _skillCooldowns.Length ? _skillCooldowns[skillIndex] : 0;
+
+        public void SetCooldown(int skillIndex, int turns)
+        {
+            if (skillIndex >= 0 && skillIndex < _skillCooldowns.Length)
+                _skillCooldowns[skillIndex] = turns;
         }
 
         // ---------------------------------------------------------------------
