@@ -26,7 +26,7 @@ namespace Gameplay.Characters
             if (SkillIndex < 0 || SkillIndex >= c.Definition.Skills.Length) return;
 
             SkillDef skill = c.Definition.Skills[SkillIndex];
-            SkillSystem.Activate(skill, c, target, state);
+            SkillSystem.Activate(skill, c, target, state, SkillIndex);
         }
     }
 }

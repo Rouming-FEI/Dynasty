@@ -46,5 +46,27 @@ namespace Dynasty.Tests.Characters
             c.ASC.TickEffects(state); // 冷却 1 → 0
             Assert.IsTrue(SkillSystem.CanActivate(s, c, 0), "冷却结束可再施放");
         }
+
+        [Test]
+        public void UseSkillCommand转发技能索引_冷却在生产路径生效()
+        {
+            var state = ScenarioBuilder.Create(2).WithAllAt(4).WithAP(0, 3).Build();
+            var c = state.GetCharacterByPlayer(0);
+
+            // 给角色挂一个带冷却技能的自定义定义（index 0 = 冷却技能），走生产路径 UseSkillCommand
+            var def = new CharacterDef
+            {
+                Id = 999,
+                Name = "测试冷却角色",
+                Skills = new[] { CooldownSkill() }
+            };
+            c.Definition = def;
+            c.ASC.EnsureCooldownSlots(def.Skills.Length);
+
+            var cmd = new UseSkillCommand(state.CurrentTick, 0, 0, 0);
+            cmd.Execute(state);
+
+            Assert.IsTrue(c.ASC.GetCooldown(0) > 0, "UseSkillCommand 转发 SkillIndex 后冷却应生效");
+        }
     }
 }
