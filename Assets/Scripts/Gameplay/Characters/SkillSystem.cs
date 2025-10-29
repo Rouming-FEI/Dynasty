@@ -66,7 +66,7 @@ namespace Gameplay.Characters
         /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不记录冷却（既有调用点兼容）。</param>
         public static void Activate(SkillDef skill, Character c, Character target, WorldState state, int skillIndex = -1)
         {
-            if (!CanActivate(skill, c)) return;
+            if (!CanActivate(skill, c, skillIndex)) return;
             if (target == null || target.IsDead) return;
 
             // 冷却记录：施放后按 CooldownTurns 锁定（skillIndex >= 0 才记录）

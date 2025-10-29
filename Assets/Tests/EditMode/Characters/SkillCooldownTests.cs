@@ -17,6 +17,28 @@ namespace Dynasty.Tests.Characters
                 CooldownTurns = 2
             };
 
+        private static SkillDef CooldownSkillWithAttackBonus()
+            => new SkillDef
+            {
+                Id = 971,
+                Cost = new SkillCost(SkillCostType.AP, 1),
+                Activation = SkillActivationType.Active,
+                Target = SkillTargetType.Self,
+                CooldownTurns = 2,
+                Effects = new[]
+                {
+                    new GameplayEffect
+                    {
+                        Id = 972,
+                        DurationType = GameplayEffectDurationType.Instant,
+                        Modifiers = new[]
+                        {
+                            new AttributeModifier(AttributeConstants.AttackBonus, AttributeModifierOp.Add, 0.5f)
+                        }
+                    }
+                }
+            };
+
         // 冷却按技能索引（CharacterDef.Skills 下标）存储，测试用 slot 0 验证机制。
         // 角色 ASC 的冷却槽由 TurnManager.StartGame 的 EnsureCooldownSlots 分配，
         // 测试角色（守护者）技能数 >= 1，slot 0 始终可用。
@@ -67,6 +89,22 @@ namespace Dynasty.Tests.Characters
             cmd.Execute(state);
 
             Assert.IsTrue(c.ASC.GetCooldown(0) > 0, "UseSkillCommand 转发 SkillIndex 后冷却应生效");
+        }
+
+        [Test]
+        public void 冷却中经Activate自检不可再施放()
+        {
+            var state = ScenarioBuilder.Create(2).WithAllAt(4).WithAP(0, 2).Build();
+            var c = state.GetCharacterByPlayer(0);
+            SkillDef s = CooldownSkillWithAttackBonus();
+
+            // 首次施放：扣 1 AP，应用 +0.5 AttackBonus，进入 2 回合冷却
+            SkillSystem.Activate(s, c, c, state, 0);
+            Assert.AreEqual(0.5f, c.ASC.GetAttributeValue(AttributeConstants.AttackBonus), 0.001f, "首次施放应用效果");
+
+            // 冷却中再次直接调 Activate：自检应拦截（转发 skillIndex），效果不二次应用
+            SkillSystem.Activate(s, c, c, state, 0);
+            Assert.AreEqual(0.5f, c.ASC.GetAttributeValue(AttributeConstants.AttackBonus), 0.001f, "冷却中自检拦截，不二次应用");
         }
     }
 }
