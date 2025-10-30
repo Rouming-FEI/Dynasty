@@ -19,5 +19,18 @@ namespace Core.GAS
         public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能（Task 7 接线，当前未消费）
         public int PassiveInterval;                     // 周期被动间隔（回合）；0 = 非周期被动
         public GameplayEffect[] PassiveEffects;         // 到期执行的负载
+        public SkillJudgment Judgment;              // 非 null = 技能内判定
+        public ReactiveTriggerType ReactiveTrigger; // Reactive 技能的触发点
+    }
+
+    /// <summary>响应式技能触发点。</summary>
+    public enum ReactiveTriggerType : byte { None, OnPreDamage, OnPostDamage, OnTurnEnd, OnKill }
+
+    /// <summary>技能内判定声明：对目标单对单判定，胜/败各绑定一套 GE。</summary>
+    public class SkillJudgment
+    {
+        public GameplayEffect[] OnWinEffects;   // 胜利时对目标应用
+        public GameplayEffect[] OnLoseEffects;  // 失败时对目标应用（null = 无事发生）
+        public bool CancelOnLose;               // 失败时主 Effects 不应用
     }
 }

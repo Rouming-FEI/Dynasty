@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Gameplay.Combat;
+using Gameplay.Judgment;
 
 namespace Gameplay.Characters
 {
@@ -100,6 +101,28 @@ namespace Gameplay.Characters
             if (skill.ExtraCosts != null)
                 for (int i = 0; i < skill.ExtraCosts.Length; i++)
                     PayResource(c, skill.ExtraCosts[i]);
+
+            // 技能内判定：胜利应用 OnWinEffects，失败应用 OnLoseEffects（若有）
+            if (skill.Judgment != null)
+            {
+                bool win = JudgmentDuel.Resolve(state, c, target);
+                GameplayEffect[] duelEffects = win ? skill.Judgment.OnWinEffects : skill.Judgment.OnLoseEffects;
+                if (duelEffects != null)
+                {
+                    for (int i = 0; i < duelEffects.Length; i++)
+                    {
+                        GameplayEffect ge = duelEffects[i];
+                        if (ge == null) continue;
+                        GameplayEffectSpec spec = target.ASC.RentSpec();
+                        spec.Definition = ge;
+                        spec.SourceId = c.Id;
+                        spec.TargetId = target.Id;
+                        spec.RemainingTurns = ge.DurationTurns;
+                        target.ASC.ApplyGameplayEffect(spec);
+                    }
+                }
+                if (skill.Judgment.CancelOnLose && !win) return; // 败则主效果不应用
+            }
 
             // 应用效果
             if (skill.Effects != null)
