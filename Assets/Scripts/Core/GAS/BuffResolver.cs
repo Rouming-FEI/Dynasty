@@ -69,19 +69,15 @@ namespace Core.GAS
                     if (IsDerivedAttribute(mods[j].AttributeId))
                         allMods[idx++] = new AttributeModifier(
                             mods[j].AttributeId, mods[j].Op,
-                            mods[j].Magnitude * scale, mods[j].Channel);
+                            mods[j].Magnitude * scale, mods[j].Channel, mods[j].DependsOn);
                 }
             }
 
-            // 4. 稳定排序：Op 优先 + Channel
-            for (int i = 0; i < modCount - 1; i++)
-            {
-                for (int j = 0; j < modCount - 1 - i; j++)
-                {
-                    if (CompareModifierPriority(allMods[j], allMods[j + 1]) > 0)
-                        (allMods[j], allMods[j + 1]) = (allMods[j + 1], allMods[j]);
-                }
-            }
+            // 4. 排序：有 DependsOn 声明 → Kahn 拓扑；否则优先级排序
+            if (HasDependency(allMods, idx))
+                TopoSort(ref allMods, idx);
+            else
+                PrioritySort(ref allMods, idx);
 
             // 5. Apply
             for (int i = 0; i < modCount; i++)
@@ -113,6 +109,82 @@ namespace Core.GAS
             AttributeModifierOp.Add => 2,
             _ => 3
         };
+
+        private static bool HasDependency(Span<AttributeModifier> mods, int count)
+        {
+            for (int i = 0; i < count; i++)
+                if (mods[i].DependsOn != 0) return true;
+            return false;
+        }
+
+        /// <summary>优先级排序（无依赖时沿用旧行为）：Op 优先 + Channel 升序。</summary>
+        private static void PrioritySort(ref Span<AttributeModifier> mods, int count)
+        {
+            for (int i = 0; i < count - 1; i++)
+                for (int j = 0; j < count - 1 - i; j++)
+                    if (CompareModifierPriority(mods[j], mods[j + 1]) > 0)
+                        (mods[j], mods[j + 1]) = (mods[j + 1], mods[j]);
+        }
+
+        /// <summary>
+        /// Kahn 拓扑排序：A.DependsOn == B.Channel 表示 A 依赖 B（B 先结算）。
+        /// 确定性：零入度节点按挂载顺序线性扫描选取；循环残留按挂载顺序裁决。
+        /// </summary>
+        private static void TopoSort(ref Span<AttributeModifier> mods, int count)
+        {
+            Span<int> indegree = stackalloc int[count];
+            Span<int> order = stackalloc int[count];
+            Span<int> resolved = stackalloc int[count];
+            for (int i = 0; i < count; i++)
+            {
+                indegree[i] = 0;
+                resolved[i] = 0;
+                order[i] = -1;
+            }
+
+            // 建入度：i 依赖 j（DependsOn == Channel[j]）
+            for (int i = 0; i < count; i++)
+            {
+                int dep = mods[i].DependsOn;
+                if (dep == 0) continue;
+                for (int j = 0; j < count; j++)
+                {
+                    if (i != j && mods[j].Channel == dep) indegree[i]++;
+                }
+            }
+
+            int outCount = 0;
+            while (outCount < count)
+            {
+                int pick = -1;
+                for (int i = 0; i < count; i++) // 挂载顺序线性扫描：确定性
+                {
+                    if (resolved[i] == 0 && indegree[i] == 0) { pick = i; break; }
+                }
+                if (pick < 0)
+                {
+                    // 循环依赖：取挂载顺序第一个未解决节点裁决断环
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (resolved[i] == 0) { pick = i; break; }
+                    }
+                    System.Diagnostics.Debug.WriteLine("[BuffResolver] circular dependency detected, deterministic fallback applied");
+                }
+                order[outCount++] = pick;
+                resolved[pick] = 1;
+                for (int i = 0; i < count; i++)
+                {
+                    int dep = mods[i].DependsOn;
+                    if (dep == mods[pick].Channel) indegree[i]--;
+                }
+            }
+
+            Span<AttributeModifier> sorted = stackalloc AttributeModifier[count];
+            for (int i = 0; i < count; i++)
+                sorted[i] = mods[order[i]];
+            for (int i = 0; i < count; i++)
+                mods[i] = sorted[i];
+        }
 
         private static void ApplyModifier(AttributeSet set, AttributeModifier mod)
         {
