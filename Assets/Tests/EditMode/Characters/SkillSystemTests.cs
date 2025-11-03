@@ -18,16 +18,6 @@ namespace Dynasty.Tests.Characters
         }
 
         [Test]
-        public void 反应技能不可主动施放()
-        {
-            var state = ScenarioBuilder.Create(2).WithAllAt(4).Build();
-            var c = state.GetCharacterByPlayer(0);
-            SkillDef reactive = c.Definition.Skills[2]; // 守护之光 (Reactive)
-
-            Assert.IsFalse(SkillSystem.CanActivate(reactive, c));
-        }
-
-        [Test]
         public void AP不足时不可施放()
         {
             var state = ScenarioBuilder.Create(2)

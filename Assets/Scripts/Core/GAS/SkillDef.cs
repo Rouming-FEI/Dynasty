@@ -16,7 +16,7 @@ namespace Core.GAS
         public GameplayTag[] BlockingTags;   // cannot have to activate
         public SkillCost[] ExtraCosts;                    // 多段成本（主 Cost + 这些全部支付）；空元素（default struct）视为无成本，安全忽略
         public SkillRestriction[] Restrictions;            // 前置条件（全部满足才可施放）；空元素（default struct）视为无条件，安全忽略
-        public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能（Task 7 接线，当前未消费）
+        public int ChargeThreshold;                        // 充能技能阈值；0 = 非充能技能（SkillSystem 已接线，0 值兜底为 3）
         public int PassiveInterval;                     // 周期被动间隔（回合）；0 = 非周期被动
         public GameplayEffect[] PassiveEffects;         // 到期执行的负载
         public SkillJudgment Judgment;              // 非 null = 技能内判定

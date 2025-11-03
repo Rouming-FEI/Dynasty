@@ -13,8 +13,6 @@ namespace Gameplay.Characters
     {
         /// <summary>守护技能 Id（GuardianDef 中定义，全技能表内唯一）。</summary>
         private const int GuardianSkillId = 2;
-        /// <summary>守护充能阈值：攒满 3 充能兑换 1 护盾。</summary>
-        private const int GuardianChargeThreshold = 3;
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不检查冷却（既有调用点兼容）。</param>
         public static bool CanActivate(SkillDef skill, Character c, int skillIndex = -1)
@@ -25,8 +23,9 @@ namespace Gameplay.Characters
             if (skill.BlockingTags != null && c.ASC.Tags.HasAny(skill.BlockingTags)) return false;
             if (skill.Cost.Type == SkillCostType.AP)
             {
-                // 守护满充能时免费给盾，不检查 AP
-                bool freeGrant = (skill.Id == GuardianSkillId && c.ASC.GetGuardianCharge() >= GuardianChargeThreshold);
+                // 守护满充能时免费给盾，不检查 AP（阈值取 skill.ChargeThreshold，0 值兜底 3）
+                bool freeGrant = (skill.Id == GuardianSkillId
+                    && (skill.ChargeThreshold > 0 ? skill.ChargeThreshold : 3) <= c.ASC.GetGuardianCharge());
                 if (!freeGrant && c.ActionPoints < skill.Cost.Amount) return false;
             }
             if (skillIndex >= 0 && c.ASC.GetCooldown(skillIndex) > 0) return false;
@@ -79,7 +78,7 @@ namespace Gameplay.Characters
             // - 充能满时：免费（0AP）给目标上盾，充能清零
             if (skill.Id == GuardianSkillId)
             {
-                if (c.ASC.GetGuardianCharge() >= GuardianChargeThreshold)
+                if ((skill.ChargeThreshold > 0 ? skill.ChargeThreshold : 3) <= c.ASC.GetGuardianCharge())
                 {
                     // 满充能：0AP，给目标上盾
                     ShieldSystem.GrantShield(state, target.ASC, c.Id);
