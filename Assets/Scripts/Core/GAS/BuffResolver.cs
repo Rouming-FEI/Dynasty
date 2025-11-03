@@ -175,6 +175,7 @@ namespace Core.GAS
                 for (int i = 0; i < count; i++)
                 {
                     int dep = mods[i].DependsOn;
+                    if (dep == 0) continue; // 无依赖节点不参与减入度
                     if (dep == mods[pick].Channel) indegree[i]--;
                 }
             }
