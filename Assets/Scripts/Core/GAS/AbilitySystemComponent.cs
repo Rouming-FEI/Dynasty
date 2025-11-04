@@ -1,4 +1,5 @@
 using Core.ObjectPool;
+using Gameplay.Characters;
 namespace Core.GAS
 {
     using System.Collections.Generic;
@@ -298,6 +299,47 @@ namespace Core.GAS
         /// </summary>
         private void ApplyPeriodicPayload(WorldState state, GameplayEffectSpec spec)
         {
+            // 鬼葬（Id=211）：按所在地人数三档结算（docs/项目介绍.md 7.12）
+            if (spec.Definition.Id == 211)
+            {
+                Character owner = state != null ? state.GetCharacter(OwnerId) : null;
+                if (owner == null || owner.IsDead) return;
+                int nearby = 0;
+                for (int i = 0; i < state.Characters.Length; i++)
+                {
+                    Character ch = state.Characters[i];
+                    if (ch != null && !ch.IsDead && ch.CurrentLocationId == owner.CurrentLocationId)
+                        nearby++;
+                }
+                if (nearby == 1)
+                {
+                    ModifyAttributeCurrentValue(AttributeConstants.Sanity, 0.5f);
+                }
+                else if (nearby == 2)
+                {
+                    for (int i = 0; i < state.Characters.Length; i++)
+                    {
+                        Character ch = state.Characters[i];
+                        if (ch == null || ch.IsDead || ch.Id == OwnerId) continue;
+                        if (ch.CurrentLocationId == owner.CurrentLocationId)
+                            DamagePipeline.ApplyDamage(state, OwnerId, ch.Id, 1f, DamageType.Effect);
+                    }
+                    DamagePipeline.ApplyDamage(state, OwnerId, OwnerId, 0.5f, DamageType.Effect);
+                }
+                else
+                {
+                    DamagePipeline.ApplyDamage(state, OwnerId, OwnerId, 1f, DamageType.Effect);
+                    for (int i = 0; i < state.Characters.Length; i++)
+                    {
+                        Character ch = state.Characters[i];
+                        if (ch == null || ch.IsDead || ch.Id == OwnerId) continue;
+                        if (ch.CurrentLocationId == owner.CurrentLocationId)
+                            DamagePipeline.ApplyDamage(state, OwnerId, ch.Id, 0.5f, DamageType.Effect);
+                    }
+                }
+                return;
+            }
+
             AttributeModifier[] modifiers = spec.Definition.Modifiers;
             for (int i = 0; i < modifiers.Length; i++)
             {

@@ -35,7 +35,7 @@ namespace Gameplay.Characters
                         }
                     },
 
-                    // 鬼葬 (主动, 1AP, 3回合) — P1 简化：每回合对自身造成 0.5 Effect 伤害
+                    // 鬼葬 (主动, 1AP, 3回合) — 按所在地人数三档联动结算（docs/项目介绍.md 7.12）
                     new SkillDef
                     {
                         Id = 11, Name = "鬼葬",
@@ -50,10 +50,7 @@ namespace Gameplay.Characters
                                 DurationType = GameplayEffectDurationType.HasDuration,
                                 DurationTurns = 3,
                                 Period = new GameplayEffectPeriod(1), // 每回合末
-                                Modifiers = new[]
-                                {
-                                    new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, -0.5f)
-                                }
+                                Modifiers = System.Array.Empty<AttributeModifier>()
                             }
                         }
                     },
