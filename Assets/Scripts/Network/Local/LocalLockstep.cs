@@ -23,6 +23,12 @@ namespace Network.Local
         /// </summary>
         public Func<int, ICommand> ManualInputProvider;
 
+        /// <summary>
+        /// Optional judgment chip input hook. When set, replaces AI chip allocation
+        /// for all players, making the judgment phase deterministic in tests.
+        /// </summary>
+        public Func<int, ChipAllocation> JudgmentInputProvider;
+
         /// <summary>Player id of the next actor eligible to act in the action phase, or -1 if none.</summary>
         public int CurrentActorPlayerId => GetNextActor();
 
@@ -52,7 +58,9 @@ namespace Network.Local
                 {
                     Character c = _state.GetCharacterByPlayer(i);
                     if (c != null && !c.IsDead)
-                        allocations[i] = _ais[i].GetJudgmentInput(_state, i);
+                        allocations[i] = JudgmentInputProvider != null
+                            ? JudgmentInputProvider(i)
+                            : _ais[i].GetJudgmentInput(_state, i);
                     else
                         allocations[i] = new ChipAllocation(i) { };
                     // Ensure dead players don't affect judgment — set to 0-0-0

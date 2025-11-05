@@ -475,6 +475,15 @@ namespace Core.GAS
         public bool CanAct   => !IsDead && !Tags.HasTag(GameplayTagConstants.CannotAct);
         public bool CanMove  => CanAct && !Tags.HasTag(GameplayTagConstants.CannotMove);
 
+        /// <summary>是否存在指定 Id 的活跃 GE（验收/调试工具用，非热路径）。</summary>
+        public bool HasActiveEffect(int geId)
+        {
+            for (int i = 0; i < _activeEffects.Count; i++)
+                if (_activeEffects[i].Definition != null && _activeEffects[i].Definition.Id == geId)
+                    return true;
+            return false;
+        }
+
         // ---------------------------------------------------------------------
         // Determinism hash — 确定性自检
         // ---------------------------------------------------------------------
