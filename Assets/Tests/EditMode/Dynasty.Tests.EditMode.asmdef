@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "Dynasty.Simulation",
+        "Dynasty.SkillAcceptance",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
