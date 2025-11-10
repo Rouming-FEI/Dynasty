@@ -29,7 +29,7 @@ namespace SkillAcceptance
                     break;
                 case 10: // 迷离之境
                     results.AddRange(VerifyMistRealm());
-                    results.Add(CheckResult.NotImplemented("文档对照-7.10 迷离之境",
+                    results.Add(CheckResult.NotImplemented("文档对照-7.12 迷离之境",
                         "攻击判定加成与心雾三层退出尚未实现（当前仅挂 MistState 标签）"));
                     break;
                 case 11: // 鬼葬
