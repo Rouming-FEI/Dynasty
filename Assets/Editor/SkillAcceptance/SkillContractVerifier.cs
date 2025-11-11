@@ -13,6 +13,9 @@ namespace SkillAcceptance
     /// </summary>
     public static class SkillContractVerifier
     {
+        /// <summary>与 SkillSystem.GuardianSkillId 保持一致的守护技能 Id（充能免费语义键）。</summary>
+        private const int GuardianSkillId = 2;
+
         public static List<CheckResult> Verify(CharacterDef def, SkillDef skill, int skillIndex)
         {
             var results = new List<CheckResult>();
@@ -22,6 +25,19 @@ namespace SkillAcceptance
             WorldState probe = AcceptanceScenes.BuildState();
             int casterPlayer = AcceptanceScenes.FindPlayerOfDef(probe, def);
             Character probeCaster = probe.GetCharacterByPlayer(casterPlayer);
+            // BuildState 未经过判定分发 AP（默认 0），注入足额 AP 并补齐前置标签/属性，
+            // 使本检查只验证「激活类型」而非资源是否充足
+            probeCaster.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
+            if (skill.RequiredTags != null)
+                for (int i = 0; i < skill.RequiredTags.Length; i++)
+                    probeCaster.ASC.Tags.AddTag(skill.RequiredTags[i]);
+            if (skill.Restrictions != null)
+                for (int r = 0; r < skill.Restrictions.Length; r++)
+                {
+                    SkillRestriction res = skill.Restrictions[r];
+                    if (res.AttributeId == 0) continue;
+                    probeCaster.ASC.SetAttributeBaseValue(res.AttributeId, res.MinValue);
+                }
             bool canAct = SkillSystem.CanActivate(skill, probeCaster, skillIndex);
 
             if (skill.Activation != SkillActivationType.Active)
@@ -39,9 +55,9 @@ namespace SkillAcceptance
             // ——— 2. 前置条件拦截 ———
             if (skill.Cost.Type == SkillCostType.AP)
             {
-                if (skill.ChargeThreshold > 0)
+                if (skill.Id == GuardianSkillId)
                 {
-                    results.Add(CheckResult.Skip("前置条件-AP 不足拦截", "充能技能（ChargeThreshold>0）AP 语义由特例表验证"));
+                    results.Add(CheckResult.Skip("前置条件-AP 不足拦截", "守护充能技能（Id=2）AP 语义由特例表验证"));
                 }
                 else
                 {
@@ -87,7 +103,7 @@ namespace SkillAcceptance
                 for (int r = 0; r < skill.Restrictions.Length; r++)
                 {
                     SkillRestriction restriction = skill.Restrictions[r];
-                    if (restriction.AttributeId == 0) continue; // default struct 视为无限制
+                    if (restriction.AttributeId == 0 && restriction.MinValue == 0f) continue; // default struct 视为无限制
                     var s = AcceptanceScenes.BuildState();
                     int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                     Character c = s.GetCharacterByPlayer(p);
@@ -110,7 +126,7 @@ namespace SkillAcceptance
                 ? caster
                 : AcceptanceScenes.FindOther(pos, pc);
 
-            float apBefore = caster.ActionPoints;
+            float apBefore = caster.ASC.GetAttributeValue(AttributeConstants.ActionPoints);
             float sanityBefore = caster.Sanity;
             float erosionBefore = caster.ErosionLimit;
             int chargeBefore = caster.ASC.GetGuardianCharge();
@@ -120,16 +136,17 @@ namespace SkillAcceptance
             float apExtra = SumExtraCost(skill, SkillCostType.AP);
             if (skill.Cost.Type == SkillCostType.AP)
             {
-                if (skill.ChargeThreshold > 0)
+                if (skill.Id == GuardianSkillId)
                 {
-                    results.Add(CheckResult.Skip("施放-AP 扣减", "充能技能（ChargeThreshold>0）AP 扣减语义由特例表验证"));
+                    results.Add(CheckResult.Skip("施放-AP 扣减", "守护充能技能（Id=2）AP 扣减语义由特例表验证"));
                 }
                 else
                 {
                     float expectedAp = apBefore - skill.Cost.Amount - apExtra;
-                    results.Add(Math.Abs(caster.ActionPoints - expectedAp) < 0.001f
-                        ? CheckResult.Pass("施放-AP 扣减", $"AP {apBefore} → {caster.ActionPoints}（期望 {expectedAp}）")
-                        : CheckResult.Fail("施放-AP 扣减", $"AP {apBefore} → {caster.ActionPoints}（期望 {expectedAp}）"));
+                    float apAfter = caster.ASC.GetAttributeValue(AttributeConstants.ActionPoints);
+                    results.Add(Math.Abs(apAfter - expectedAp) < 0.001f
+                        ? CheckResult.Pass("施放-AP 扣减", $"AP {apBefore} → {apAfter}（期望 {expectedAp}）")
+                        : CheckResult.Fail("施放-AP 扣减", $"AP {apBefore} → {apAfter}（期望 {expectedAp}）"));
                 }
             }
             else if (skill.Cost.Type != SkillCostType.AP && skill.Cost.Amount != 0f)
@@ -259,18 +276,29 @@ namespace SkillAcceptance
             {
                 var s = AcceptanceScenes.BuildState();
                 int p = AcceptanceScenes.FindPlayerOfDef(s, def);
-                Character c = s.GetCharacterByPlayer(p);
-                c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
-                Character t = skill.Target == SkillTargetType.Self ? c : AcceptanceScenes.FindOther(s, p);
+                Character t = skill.Target == SkillTargetType.Self
+                    ? s.GetCharacterByPlayer(p)
+                    : AcceptanceScenes.FindOther(s, p);
 
-                // 按 Op 顺序模拟 ApplySingleModifier，得到期望终值
-                float expected = t.ASC.GetAttributeValue(AttributeConstants.Sanity);
+                float before = t.ASC.GetAttributeValue(AttributeConstants.Sanity);
+                float maxSanity = t.ASC.GetAttributeValue(AttributeConstants.MaxSanity);
+
+                // 独立应用单个 GE，避免技能其余效果/判定分支干扰本检查
+                GameplayEffectSpec spec = t.ASC.RentSpec();
+                spec.Definition = ge;
+                spec.SourceId = t.Id;
+                spec.TargetId = t.Id;
+                t.ASC.ApplyGameplayEffect(spec);
+
+                // 按 ApplySingleModifier 语义逐步模拟：仅 Sanity 属性生效，每步 [0, MaxSanity] 钳制
+                float expected = before;
                 bool supported = true;
                 if (ge.Modifiers != null)
                 {
                     for (int m = 0; m < ge.Modifiers.Length; m++)
                     {
                         AttributeModifier mod = ge.Modifiers[m];
+                        if (mod.AttributeId != AttributeConstants.Sanity) continue;
                         switch (mod.Op)
                         {
                             case AttributeModifierOp.Add: expected += mod.Magnitude; break;
@@ -278,6 +306,7 @@ namespace SkillAcceptance
                             case AttributeModifierOp.Override: expected = mod.Magnitude; break;
                             default: supported = false; break;
                         }
+                        expected = Math.Max(0f, Math.Min(maxSanity, expected));
                     }
                 }
                 if (!supported)
@@ -286,8 +315,6 @@ namespace SkillAcceptance
                     return results;
                 }
 
-                float before = t.ASC.GetAttributeValue(AttributeConstants.Sanity);
-                SkillSystem.Activate(skill, c, t, s, skillIndex);
                 float after = t.ASC.GetAttributeValue(AttributeConstants.Sanity);
                 float expectedDelta = expected - before;
                 float actualDelta = after - before;
@@ -308,6 +335,17 @@ namespace SkillAcceptance
             List<CheckResult> results, SkillDef skill, CharacterDef def, int skillIndex)
         {
             if (skill.Judgment == null) return;
+
+            // 胜负收敛推导仅支持「Sanity Add 且非周期」的效果；复杂修改器/周期负载无法
+            // 从定义安全推导期望值，Skip 交由特例表（避免误报）
+            if (!IsSanityAddOnly(skill.Judgment.OnWinEffects)
+                || !IsSanityAddOnly(skill.Judgment.OnLoseEffects)
+                || !IsSanityAddOnly(skill.Effects))
+            {
+                results.Add(CheckResult.Skip("判定-胜负收敛",
+                    "效果含非 Sanity-Add 修改器或周期 GE，推导暂不支持，需特例表验证"));
+                return;
+            }
 
             float mainDelta = SumSanityAdd(skill.Effects);
             float winDelta = SumSanityAdd(skill.Judgment.OnWinEffects) + mainDelta;
@@ -367,6 +405,26 @@ namespace SkillAcceptance
                 }
             }
             return sum;
+        }
+
+        /// <summary>GE 数组是否全部为「Sanity Add 且非周期」修改器（可安全推导期望值）。</summary>
+        private static bool IsSanityAddOnly(GameplayEffect[] effects)
+        {
+            if (effects == null) return true;
+            for (int i = 0; i < effects.Length; i++)
+            {
+                GameplayEffect ge = effects[i];
+                if (ge == null) continue;
+                if (ge.Period.HasValue) return false;
+                if (ge.Modifiers == null) continue;
+                for (int m = 0; m < ge.Modifiers.Length; m++)
+                {
+                    AttributeModifier mod = ge.Modifiers[m];
+                    if (mod.AttributeId != AttributeConstants.Sanity || mod.Op != AttributeModifierOp.Add)
+                        return false;
+                }
+            }
+            return true;
         }
     }
 }
