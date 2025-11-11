@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Core;
 using Core.GAS;
 using Gameplay.Characters;
+using Gameplay.Judgment;
 
 namespace SkillAcceptance
 {
@@ -154,6 +155,149 @@ namespace SkillAcceptance
                 ? CheckResult.Pass("鬼葬-GE 挂载", "GE 211 已挂载")
                 : CheckResult.Fail("鬼葬-GE 挂载", "GE 211 未挂载"));
             return results;
+        }
+
+        /// <summary>链路层脚本：守护跨回合充能 + 鬼葬三档联动。</summary>
+        public static List<TurnScript> GetTurnScripts()
+        {
+            var scripts = new List<TurnScript>();
+            scripts.Add(GuardianCrossTurnCharge());
+            scripts.Add(GhostBurySolo());
+            scripts.Add(GhostBuryDuo());
+            scripts.Add(GhostBuryTrio());
+            return scripts;
+        }
+
+        /// <summary>固定筹码：魑魅 Winner（1 AP），其余 Neutral（0 AP）。总数 R4 S3 P2，Rock 胜。</summary>
+        private static ChipAllocation[] ChipsCharmWinner()
+        {
+            return new[]
+            {
+                new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 },
+                new ChipAllocation(1) { Rock = 2, Scissors = 1, Paper = 0 },
+                new ChipAllocation(2) { Rock = 1, Scissors = 1, Paper = 1 }
+            };
+        }
+
+        /// <summary>守护跨回合：充能 1 → 2 → 3 → 免费给盾清零；充能跨回合保留。</summary>
+        private static TurnScript GuardianCrossTurnCharge()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 2,
+                SkillName = "守护",
+                ScriptName = "守护-跨回合充能",
+                JudgmentInputs = new[] { ChipsGuardianWinner() }
+            };
+            script.Overrides.Add(s =>
+            {
+                Character g = s.GetCharacterByPlayer(0);
+                g.ASC.AddGuardianCharge(); // 充能 1
+                for (int i = 0; i < s.PlayerCount; i++)
+                    s.GetCharacterByPlayer(i).CurrentLocationId = 4;
+            });
+
+            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 守护(1AP) → 充能 2
+            script.Steps.Add(new AssertStep("第一回合充能", 2f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
+            script.Steps.Add(new EndTurnStep());
+            script.Steps.Add(new AssertStep("跨回合保留", 2f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
+            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 充能 3
+            script.Steps.Add(new AssertStep("第二回合充能满", 3f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
+            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 满充能免费给魑魅盾
+            script.Steps.Add(new AssertTrueStep("魑魅获盾",
+                s => s.GetCharacterByPlayer(1).ASC.Tags.HasTag(GameplayTagConstants.HasShield)));
+            script.Steps.Add(new AssertStep("充能清零", 0f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
+            return script;
+        }
+
+        /// <summary>固定筹码：守护者 Winner（1 AP），其余 Neutral。与 ChipsCharmWinner 同构换位。</summary>
+        private static ChipAllocation[] ChipsGuardianWinner()
+        {
+            return new[]
+            {
+                new ChipAllocation(0) { Rock = 2, Scissors = 1, Paper = 0 },
+                new ChipAllocation(1) { Rock = 1, Scissors = 1, Paper = 1 },
+                new ChipAllocation(2) { Rock = 1, Scissors = 1, Paper = 1 }
+            };
+        }
+
+        /// <summary>鬼葬档 1：所在地仅自己 → 每回合末 +0.5 理智，3 回合后 GE 移除。</summary>
+        private static TurnScript GhostBurySolo()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 11,
+                SkillName = "鬼葬",
+                ScriptName = "鬼葬-三档(1人)",
+                JudgmentInputs = new[] { ChipsCharmWinner() }
+            };
+            script.Overrides.Add(s =>
+            {
+                s.GetCharacterByPlayer(0).CurrentLocationId = 0;
+                s.GetCharacterByPlayer(1).CurrentLocationId = 4;   // 魑魅独处
+                s.GetCharacterByPlayer(2).CurrentLocationId = 6;
+                s.GetCharacterByPlayer(1).ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1.5f);
+            });
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
+            script.Steps.Add(new AssertTrueStep("鬼葬挂载",
+                s => s.GetCharacterByPlayer(1).ASC.HasActiveEffect(211)));
+            script.Steps.Add(new EndTurnStep());   // 结算 1：1.5 → 2.0
+            script.Steps.Add(new AssertStep("第1次结算", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new EndTurnStep());   // 2.0 → 2.5
+            script.Steps.Add(new AssertStep("第2次结算", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new EndTurnStep());   // 2.5 → 3.0，GE 移除
+            script.Steps.Add(new AssertStep("第3次结算", 3.0f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new AssertTrueStep("GE移除",
+                s => !s.GetCharacterByPlayer(1).ASC.HasActiveEffect(211)));
+            return script;
+        }
+
+        /// <summary>鬼葬档 2：两人同地点 → 对方 -1、自己 -0.5。</summary>
+        private static TurnScript GhostBuryDuo()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 11,
+                SkillName = "鬼葬",
+                ScriptName = "鬼葬-三档(2人)",
+                JudgmentInputs = new[] { ChipsCharmWinner() }
+            };
+            script.Overrides.Add(s =>
+            {
+                s.GetCharacterByPlayer(0).CurrentLocationId = 4;
+                s.GetCharacterByPlayer(1).CurrentLocationId = 4;
+                s.GetCharacterByPlayer(2).CurrentLocationId = 0;
+                s.GetCharacterByPlayer(0).ASC.Tags.RemoveTag(GameplayTagConstants.HasShield); // 守护者清盾防吸收
+            });
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
+            script.Steps.Add(new EndTurnStep());
+            script.Steps.Add(new AssertStep("对方受1", 2.0f, s => s.GetCharacterByPlayer(0).Sanity));
+            script.Steps.Add(new AssertStep("自己受05", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
+            return script;
+        }
+
+        /// <summary>鬼葬档 3：三人同地点 → 自己 -1、其余各 -0.5。</summary>
+        private static TurnScript GhostBuryTrio()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 11,
+                SkillName = "鬼葬",
+                ScriptName = "鬼葬-三档(3人)",
+                JudgmentInputs = new[] { ChipsCharmWinner() }
+            };
+            script.Overrides.Add(s =>
+            {
+                for (int i = 0; i < s.PlayerCount; i++)
+                    s.GetCharacterByPlayer(i).CurrentLocationId = 4;
+                s.GetCharacterByPlayer(0).ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+            });
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
+            script.Steps.Add(new EndTurnStep());
+            script.Steps.Add(new AssertStep("自己受1", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new AssertStep("守护者受05", 2.5f, s => s.GetCharacterByPlayer(0).Sanity));
+            script.Steps.Add(new AssertStep("普通人受05", 2.5f, s => s.GetCharacterByPlayer(2).Sanity));
+            return script;
         }
     }
 }
