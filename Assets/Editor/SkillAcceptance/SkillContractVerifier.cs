@@ -132,7 +132,7 @@ namespace SkillAcceptance
             int chargeBefore = caster.ASC.GetGuardianCharge();
             SkillSystem.Activate(skill, caster, target, pos, skillIndex);
 
-            // 主成本扣减（按 Type 断言；ChargeThreshold>0 的 AP 语义 Skip 交特例表）
+            // 主成本扣减（按 Type 断言；守护充能技能 Id==2 的 AP 语义 Skip 交特例表）
             float apExtra = SumExtraCost(skill, SkillCostType.AP);
             if (skill.Cost.Type == SkillCostType.AP)
             {
