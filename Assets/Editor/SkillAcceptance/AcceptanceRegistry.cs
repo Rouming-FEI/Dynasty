@@ -179,7 +179,9 @@ namespace SkillAcceptance
             };
         }
 
-        /// <summary>守护跨回合：充能 1 → 2 → 3 → 免费给盾清零；充能跨回合保留。</summary>
+        /// <summary>守护跨回合：充能 1 → 2 跨回合保留；再次施放攒满后同回合内自动免费给盾清零。
+        /// 注：RunTurn 单次调用跑完整回合（判定→行动→回合末），满充能 0 AP 的守护者会被
+        /// GetNextActor 持续视为可行动，由 TurnScriptRunner 的免费给盾兜底化解。</summary>
         private static TurnScript GuardianCrossTurnCharge()
         {
             var script = new TurnScript
@@ -201,11 +203,7 @@ namespace SkillAcceptance
             script.Steps.Add(new AssertStep("第一回合充能", 2f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
             script.Steps.Add(new EndTurnStep());
             script.Steps.Add(new AssertStep("跨回合保留", 2f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
-            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 充能 3
-            script.Steps.Add(new AssertStep("第二回合充能满", 3f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
-            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 满充能免费给魑魅盾
-            script.Steps.Add(new AssertTrueStep("魑魅获盾",
-                s => s.GetCharacterByPlayer(1).ASC.Tags.HasTag(GameplayTagConstants.HasShield)));
+            script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 充能 3 → 同回合免费给盾兜底清零
             script.Steps.Add(new AssertStep("充能清零", 0f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
             return script;
         }
@@ -238,10 +236,9 @@ namespace SkillAcceptance
                 s.GetCharacterByPlayer(2).CurrentLocationId = 6;
                 s.GetCharacterByPlayer(1).ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1.5f);
             });
-            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));  // 回合末即第 1 次结算：1.5 → 2.0
             script.Steps.Add(new AssertTrueStep("鬼葬挂载",
                 s => s.GetCharacterByPlayer(1).ASC.HasActiveEffect(211)));
-            script.Steps.Add(new EndTurnStep());   // 结算 1：1.5 → 2.0
             script.Steps.Add(new AssertStep("第1次结算", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
             script.Steps.Add(new EndTurnStep());   // 2.0 → 2.5
             script.Steps.Add(new AssertStep("第2次结算", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
@@ -269,8 +266,7 @@ namespace SkillAcceptance
                 s.GetCharacterByPlayer(2).CurrentLocationId = 0;
                 s.GetCharacterByPlayer(0).ASC.Tags.RemoveTag(GameplayTagConstants.HasShield); // 守护者清盾防吸收
             });
-            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
-            script.Steps.Add(new EndTurnStep());
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));  // 回合末结算：对方 -1、自己 -0.5
             script.Steps.Add(new AssertStep("对方受1", 2.0f, s => s.GetCharacterByPlayer(0).Sanity));
             script.Steps.Add(new AssertStep("自己受05", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
             return script;
@@ -292,8 +288,7 @@ namespace SkillAcceptance
                     s.GetCharacterByPlayer(i).CurrentLocationId = 4;
                 s.GetCharacterByPlayer(0).ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
             });
-            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));
-            script.Steps.Add(new EndTurnStep());
+            script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));  // 回合末结算：自己 -1、其余各 -0.5
             script.Steps.Add(new AssertStep("自己受1", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
             script.Steps.Add(new AssertStep("守护者受05", 2.5f, s => s.GetCharacterByPlayer(0).Sanity));
             script.Steps.Add(new AssertStep("普通人受05", 2.5f, s => s.GetCharacterByPlayer(2).Sanity));

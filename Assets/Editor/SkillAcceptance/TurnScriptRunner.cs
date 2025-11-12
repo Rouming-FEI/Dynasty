@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using AI;
 using Core;
+using Core.Command;
+using Gameplay.Characters;
 using Gameplay.Movement;
 using Network.Local;
 
@@ -32,19 +34,27 @@ namespace SkillAcceptance
             foreach (Action<WorldState> o in script.Overrides) o(state);
 
             int stepIndex = 0;
-            bool fillMode = false;
             ActStep pendingAct = null;
             bool pendingConsumed = false;
 
-            // 行动输入：fillMode 全员跳过；否则匹配 pendingAct.PlayerId 时交出指令，
-            // 其余行动者用 WasteAP 跳过（不阻塞脚本推进）。
+            // 行动输入：匹配 pendingAct.PlayerId 时交出指令（仅一次，随后置空防重复消费）；
+            // 满充能 0 AP 的守护者会被 GetNextActor 持续视为可行动（WasteAP 无效），
+            // 自动免费施放守护给盾化解，避免 RunTurn 行动循环空转；其余行动者 WasteAP 跳过。
             lockstep.ManualInputProvider = playerId =>
             {
-                if (fillMode) return new WasteAPCommand(state.CurrentTick, playerId);
                 if (pendingAct != null && pendingAct.PlayerId == playerId)
                 {
+                    ICommand cmd = pendingAct.Command;
+                    pendingAct = null;
                     pendingConsumed = true;
-                    return pendingAct.Command;
+                    return cmd;
+                }
+                Character actor = state.GetCharacterByPlayer(playerId);
+                if (actor != null && actor.ActionPoints <= 0 && actor.ASC.GetGuardianCharge() >= 3)
+                {
+                    int idx = FindGuardianSkillIndex(actor);
+                    if (idx >= 0)
+                        return new UseSkillCommand(state.CurrentTick, playerId, idx, playerId);
                 }
                 return new WasteAPCommand(state.CurrentTick, playerId);
             };
@@ -89,13 +99,12 @@ namespace SkillAcceptance
 
                 if (step is EndTurnStep)
                 {
-                    fillMode = true;
                     int guard = 0;
-                    while (state.Phase == TurnPhase.ActionPhase && guard++ < 1000)
+                    while (guard++ < 1000)
                     {
                         if (!lockstep.RunTurn()) break;
+                        if (state.Phase != TurnPhase.ActionPhase) break;
                     }
-                    fillMode = false;
                     stepIndex++;
                     continue;
                 }
@@ -121,6 +130,15 @@ namespace SkillAcceptance
             }
 
             return results;
+        }
+
+        /// <summary>按技能 Id 查找守护技能索引（免费给盾兜底用）；无则 -1。Id=2 与 SkillSystem.GuardianSkillId 一致。</summary>
+        private static int FindGuardianSkillIndex(Character c)
+        {
+            if (c.Definition?.Skills == null) return -1;
+            for (int i = 0; i < c.Definition.Skills.Length; i++)
+                if (c.Definition.Skills[i].Id == 2) return i;
+            return -1;
         }
     }
 }
