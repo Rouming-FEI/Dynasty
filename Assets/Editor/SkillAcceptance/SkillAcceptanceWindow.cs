@@ -39,7 +39,7 @@ namespace SkillAcceptance
                 if (!Foldout(section.CharacterName)) continue;
                 foreach (SkillResult skill in section.Skills)
                 {
-                    if (!Foldout($"{section.CharacterName}/{skill.SkillName}  [失败 {skill.FailCount}]")) continue;
+                    if (!Foldout($"{section.CharacterName}/{skill.SkillName}", $"{section.CharacterName}/{skill.SkillName}  [失败 {skill.FailCount}]")) continue;
                     foreach (CheckResult check in skill.Checks)
                         DrawCheck(check);
                 }
@@ -47,10 +47,10 @@ namespace SkillAcceptance
             GUILayout.EndScrollView();
         }
 
-        private bool Foldout(string key)
+        private bool Foldout(string key, string label)
         {
             if (!_foldouts.TryGetValue(key, out bool open)) open = true;
-            open = EditorGUILayout.Foldout(open, key);
+            open = EditorGUILayout.Foldout(open, label);
             _foldouts[key] = open;
             return open;
         }
@@ -64,6 +64,7 @@ namespace SkillAcceptance
                 case CheckStatus.Error: GUI.color = new Color(0.95f, 0.35f, 0.35f); break;
                 case CheckStatus.NotImplemented: GUI.color = new Color(0.95f, 0.85f, 0.3f); break;
                 case CheckStatus.Skip: GUI.color = Color.gray; break;
+                default: GUI.color = Color.white; break;
             }
             string message = string.IsNullOrEmpty(check.Message) ? "" : $" — {check.Message}";
             GUILayout.Label($"    [{check.Status}] {check.Name}{message}");
