@@ -13,9 +13,6 @@ namespace SkillAcceptance
     /// </summary>
     public static class SkillContractVerifier
     {
-        /// <summary>与 SkillSystem.GuardianSkillId 保持一致的守护技能 Id（充能免费语义键）。</summary>
-        private const int GuardianSkillId = 2;
-
         public static List<CheckResult> Verify(CharacterDef def, SkillDef skill, int skillIndex)
         {
             var results = new List<CheckResult>();
@@ -55,7 +52,7 @@ namespace SkillAcceptance
             // ——— 2. 前置条件拦截 ———
             if (skill.Cost.Type == SkillCostType.AP)
             {
-                if (skill.Id == GuardianSkillId)
+                if (skill.Id == SkillSystem.GuardianSkillId)
                 {
                     results.Add(CheckResult.Skip("前置条件-AP 不足拦截", "守护充能技能（Id=2）AP 语义由特例表验证"));
                 }
@@ -136,7 +133,7 @@ namespace SkillAcceptance
             float apExtra = SumExtraCost(skill, SkillCostType.AP);
             if (skill.Cost.Type == SkillCostType.AP)
             {
-                if (skill.Id == GuardianSkillId)
+                if (skill.Id == SkillSystem.GuardianSkillId)
                 {
                     results.Add(CheckResult.Skip("施放-AP 扣减", "守护充能技能（Id=2）AP 扣减语义由特例表验证"));
                 }

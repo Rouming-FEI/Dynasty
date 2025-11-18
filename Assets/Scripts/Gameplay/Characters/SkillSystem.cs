@@ -12,7 +12,7 @@ namespace Gameplay.Characters
     public static class SkillSystem
     {
         /// <summary>守护技能 Id（GuardianDef 中定义，全技能表内唯一）。</summary>
-        private const int GuardianSkillId = 2;
+        public const int GuardianSkillId = 2;
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不检查冷却（既有调用点兼容）。</param>
         public static bool CanActivate(SkillDef skill, Character c, int skillIndex = -1)

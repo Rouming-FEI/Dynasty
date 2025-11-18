@@ -83,12 +83,26 @@ namespace SkillAcceptance
                         return;
                     }
 
-            // 未归属：追加独立区块
+            // 未归属：先并入已有的「未归属链路检查」区块，再按 SkillId 合并；否则新建
+            AcceptanceSection orphanSection = null;
+            foreach (AcceptanceSection section in report.Sections)
+                if (section.CharacterName == "未归属链路检查") { orphanSection = section; break; }
+            if (orphanSection == null)
+            {
+                orphanSection = new AcceptanceSection { CharacterName = "未归属链路检查" };
+                report.Sections.Add(orphanSection);
+            }
+            foreach (SkillResult existing in orphanSection.Skills)
+            {
+                if (existing.SkillId == script.SkillId)
+                {
+                    existing.Checks.AddRange(results);
+                    return;
+                }
+            }
             var orphan = new SkillResult { SkillId = script.SkillId, SkillName = script.ScriptName };
             orphan.Checks.AddRange(results);
-            var orphanSection = new AcceptanceSection { CharacterName = "未归属链路检查" };
             orphanSection.Skills.Add(orphan);
-            report.Sections.Add(orphanSection);
         }
     }
 }

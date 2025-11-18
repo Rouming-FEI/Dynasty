@@ -55,6 +55,9 @@ namespace SkillAcceptance
                     int idx = FindGuardianSkillIndex(actor);
                     if (idx >= 0)
                         return new UseSkillCommand(state.CurrentTick, playerId, idx, playerId);
+                    // 非守护者异常充能（脚本配置错误）：清空充能强制解除 eligible，
+                    // 避免 RunTurn 行动循环无 guard 空转挂起
+                    actor.ASC.ResetGuardianCharge();
                 }
                 return new WasteAPCommand(state.CurrentTick, playerId);
             };
@@ -99,12 +102,9 @@ namespace SkillAcceptance
 
                 if (step is EndTurnStep)
                 {
-                    int guard = 0;
-                    while (guard++ < 1000)
-                    {
-                        if (!lockstep.RunTurn()) break;
-                        if (state.Phase != TurnPhase.ActionPhase) break;
-                    }
+                    // RunTurn 单次调用推进一个完整回合（判定→行动→回合末）
+                    if (state.Phase != TurnPhase.GameOver)
+                        lockstep.RunTurn();
                     stepIndex++;
                     continue;
                 }
@@ -132,12 +132,12 @@ namespace SkillAcceptance
             return results;
         }
 
-        /// <summary>按技能 Id 查找守护技能索引（免费给盾兜底用）；无则 -1。Id=2 与 SkillSystem.GuardianSkillId 一致。</summary>
+        /// <summary>按技能 Id 查找守护技能索引（免费给盾兜底用）；无则 -1。</summary>
         private static int FindGuardianSkillIndex(Character c)
         {
             if (c.Definition?.Skills == null) return -1;
             for (int i = 0; i < c.Definition.Skills.Length; i++)
-                if (c.Definition.Skills[i].Id == 2) return i;
+                if (c.Definition.Skills[i].Id == SkillSystem.GuardianSkillId) return i;
             return -1;
         }
     }

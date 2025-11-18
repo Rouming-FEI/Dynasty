@@ -195,6 +195,7 @@ namespace SkillAcceptance
             {
                 Character g = s.GetCharacterByPlayer(0);
                 g.ASC.AddGuardianCharge(); // 充能 1
+                g.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield); // 清开局盾，使给盾断言可区分
                 for (int i = 0; i < s.PlayerCount; i++)
                     s.GetCharacterByPlayer(i).CurrentLocationId = 4;
             });
@@ -205,6 +206,8 @@ namespace SkillAcceptance
             script.Steps.Add(new AssertStep("跨回合保留", 2f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
             script.Steps.Add(new ActStep(0, new UseSkillCommand(0, 0, 1, 1)));  // 充能 3 → 同回合免费给盾兜底清零
             script.Steps.Add(new AssertStep("充能清零", 0f, s => s.GetCharacterByPlayer(0).ASC.GetGuardianCharge()));
+            script.Steps.Add(new AssertTrueStep("免费给盾",
+                s => s.GetCharacterByPlayer(0).ASC.Tags.HasTag(GameplayTagConstants.HasShield)));
             return script;
         }
 
@@ -268,7 +271,7 @@ namespace SkillAcceptance
             });
             script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));  // 回合末结算：对方 -1、自己 -0.5
             script.Steps.Add(new AssertStep("对方受1", 2.0f, s => s.GetCharacterByPlayer(0).Sanity));
-            script.Steps.Add(new AssertStep("自己受05", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new AssertStep("自己受0.5", 2.5f, s => s.GetCharacterByPlayer(1).Sanity));
             return script;
         }
 
@@ -290,8 +293,8 @@ namespace SkillAcceptance
             });
             script.Steps.Add(new ActStep(1, new UseSkillCommand(0, 1, 1, 1)));  // 回合末结算：自己 -1、其余各 -0.5
             script.Steps.Add(new AssertStep("自己受1", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
-            script.Steps.Add(new AssertStep("守护者受05", 2.5f, s => s.GetCharacterByPlayer(0).Sanity));
-            script.Steps.Add(new AssertStep("普通人受05", 2.5f, s => s.GetCharacterByPlayer(2).Sanity));
+            script.Steps.Add(new AssertStep("守护者受0.5", 2.5f, s => s.GetCharacterByPlayer(0).Sanity));
+            script.Steps.Add(new AssertStep("普通人受0.5", 2.5f, s => s.GetCharacterByPlayer(2).Sanity));
             return script;
         }
     }
