@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Core.GAS;
 using Gameplay.Characters;
 
 namespace SkillAcceptance

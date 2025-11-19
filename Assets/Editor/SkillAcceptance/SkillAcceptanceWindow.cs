@@ -36,7 +36,7 @@ namespace SkillAcceptance
             _scroll = GUILayout.BeginScrollView(_scroll);
             foreach (AcceptanceSection section in _report.Sections)
             {
-                if (!Foldout(section.CharacterName)) continue;
+                if (!Foldout(section.CharacterName, section.CharacterName)) continue;
                 foreach (SkillResult skill in section.Skills)
                 {
                     if (!Foldout($"{section.CharacterName}/{skill.SkillName}", $"{section.CharacterName}/{skill.SkillName}  [失败 {skill.FailCount}]")) continue;
