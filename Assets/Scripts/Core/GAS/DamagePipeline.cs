@@ -31,8 +31,11 @@ namespace Core.GAS
                 if (damageType == DamageType.Magic && targetASC.Tags.HasTag(GameplayTagConstants.ImmuneMagic)) return 0f;
             }
 
-            // 2. 伤害计算：基础 + 攻击加成（仅物理/法术）
+            // 1.5 响应式前置钩子（OnPreDamage）：响应技能可修改本次伤害（如镜花水月）
             float finalDamage = baseDamage;
+            ReactiveSystem.TryOnPreDamage(state, source, target, ref finalDamage);
+
+            // 2. 伤害计算：基础 + 攻击加成（仅物理/法术）
             if (damageType == DamageType.Physical || damageType == DamageType.Magic)
                 finalDamage += source?.ASC.GetAttributeValue(AttributeConstants.AttackBonus) ?? 0f;
 
@@ -101,7 +104,10 @@ namespace Core.GAS
 
             // 7. 死亡检查
             if (target.Sanity <= 0f)
+            {
+                ReactiveSystem.TryOnKill(state, source, target);
                 state.Commands.Enqueue(new DeathCommand(state.CurrentTick, target.PlayerId, source?.PlayerId ?? -1));
+            }
 
             return finalDamage;
         }
