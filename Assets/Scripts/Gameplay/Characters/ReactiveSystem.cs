@@ -1,5 +1,6 @@
 using Core;
 using Core.GAS;
+using Gameplay.Judgment;
 
 namespace Gameplay.Characters
 {
@@ -65,10 +66,17 @@ namespace Gameplay.Characters
         }
     }
 
-    /// <summary>占位：Task 3 魔术师镜花水月实现后填充。</summary>
+    /// <summary>魔术师镜花水月（简化版）：受伤害时判定，胜 → 伤害抵消；败 → 伤害 +1。</summary>
     public static class MagicianMirror
     {
-        public static void Resolve(WorldState state, Character source, Character target, ref float finalDamage) { }
+        public static void Resolve(WorldState state, Character source, Character target, ref float finalDamage)
+        {
+            bool win = JudgmentDuel.Resolve(state, target, source); // 受伤害方 vs 来源
+            if (win)
+                finalDamage = 0f;
+            else
+                finalDamage += 1f;
+        }
     }
 
     /// <summary>占位：Task 6 倾听者击杀回复实现后填充。</summary>
