@@ -27,5 +27,10 @@ namespace Core.GAS
         public static readonly GameplayTag OnTurret          = new(19);
         public static readonly GameplayTag TurretLoaded      = new(20);
         public static readonly GameplayTag TurretAimed       = new(21);
+
+        public static readonly GameplayTag GhostForm     = new(22);
+        public static readonly GameplayTag BladeSheathed = new(23);
+        public static readonly GameplayTag BladeDrawn    = new(24);
+        public static readonly GameplayTag TimeStop      = new(25);
     }
 }

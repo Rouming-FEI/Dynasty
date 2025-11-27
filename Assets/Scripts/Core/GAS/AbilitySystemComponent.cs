@@ -109,6 +109,22 @@ namespace Core.GAS
             if (ge.Modifiers != null && !ge.Period.HasValue)
                 ApplyModifiers(ge.Modifiers, spec.MagnitudeMultiplier);
 
+            // 剑鬼绝症（Id=220）：周期被动负载，每回合末侵蚀 -0.5 最低 0.5；鬼化取消。
+            // 绝症经 RegisterPassive 的周期被动路径（TickEffects → ApplyGameplayEffect）
+            // 执行，与周期 GE 走 ApplyPeriodicPayload 的路径不同，故特例放在此处。
+            if (ge.Id == 220)
+            {
+                if (!Tags.HasTag(GameplayTagConstants.GhostForm))
+                {
+                    float ero = GetAttributeValue(AttributeConstants.ErosionLimit);
+                    float next = ero - 0.5f;
+                    if (next < 0.5f) next = 0.5f;
+                    _attributeSet.SetCurrentValue(AttributeConstants.ErosionLimit, next);
+                }
+                ReturnSpec(spec);
+                return;
+            }
+
             // --- Apply tag mutations ---
             if (ge.GrantTags != null)
             {

@@ -26,6 +26,9 @@ namespace Gameplay.Items
             ItemDef item = ItemRegistry.Get(ItemId);
             if (item == null) return;
 
+            // 鬼化：禁拾取武器
+            if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm) && item.Type == ItemType.Weapon) return;
+
             // 武器类进装备位（与 TurnManager.AddItemToInventory 一致）。
             // 修复：武器曾进背包，UseItemCommand 走武器路由后从不移除，
             // 核弹（Weapon 类）因此可无限复用。
@@ -68,6 +71,14 @@ namespace Gameplay.Items
             if (ItemIndex < 0 || ItemIndex >= c.Inventory.Consumables.Count) return;
             ItemDef item = c.Inventory.Consumables[ItemIndex];
             if (item == null) return;
+
+            // 鬼化：禁应急处理装置（Id=8）与武器类道具
+            if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm))
+            {
+                if (item.Id == 8) return;
+                if (item.Type == ItemType.Weapon) return;
+            }
+
             if (c.ActionPoints < item.UseAPCost) return;
 
             Character target = state.GetCharacterByPlayer(TargetPlayerId);

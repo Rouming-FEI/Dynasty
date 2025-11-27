@@ -29,6 +29,7 @@ namespace Gameplay.Combat
             if (!source.CanAct) return; // 死亡/眩晕/塔上(OnTurret 附带 CannotAct)不可攻击
             if (target.IsDead) return;
             if (source.ActionPoints <= 0) return;
+            if (source.ASC.Tags.HasTag(GameplayTagConstants.GhostForm)) return; // 灵体状态禁普通攻击
 
             // Spend 1 AP
             source.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
