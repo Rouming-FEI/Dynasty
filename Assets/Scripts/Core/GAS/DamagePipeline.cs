@@ -5,7 +5,7 @@ using Gameplay.Combat;
 namespace Core.GAS
 {
     /// <summary>
-    /// 统一伤害管线：免疫检查 → 攻击加成 → 护盾 → 抗性减免 → 应用 GE → 事件 → 死亡检查。
+    /// 统一伤害管线：免疫检查 → 攻击加成 → OnPreDamage → 护盾 → 抗性减免 → 应用 GE → 事件 → 死亡检查。
     /// 所有伤害来源（普攻、技能、道具、效果）统一走此入口，保证结算顺序确定。
     /// </summary>
     public static class DamagePipeline
@@ -31,13 +31,13 @@ namespace Core.GAS
                 if (damageType == DamageType.Magic && targetASC.Tags.HasTag(GameplayTagConstants.ImmuneMagic)) return 0f;
             }
 
-            // 1.5 响应式前置钩子（OnPreDamage）：响应技能可修改本次伤害（如镜花水月）
-            float finalDamage = baseDamage;
-            ReactiveSystem.TryOnPreDamage(state, source, target, ref finalDamage);
-
             // 2. 伤害计算：基础 + 攻击加成（仅物理/法术）
+            float finalDamage = baseDamage;
             if (damageType == DamageType.Physical || damageType == DamageType.Magic)
                 finalDamage += source?.ASC.GetAttributeValue(AttributeConstants.AttackBonus) ?? 0f;
+
+            // 2.5 响应式前置钩子（OnPreDamage）：攻击加成后调用，响应技能可抵消或增伤（如镜花水月）
+            ReactiveSystem.TryOnPreDamage(state, source, target, ref finalDamage);
 
             // 3. 护盾检查：吃掉本次伤害并破盾（真实伤害穿盾）
             if (damageType != DamageType.True && targetASC.Tags.HasTag(GameplayTagConstants.HasShield))
