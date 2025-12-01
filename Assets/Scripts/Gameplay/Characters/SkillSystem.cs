@@ -95,6 +95,18 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 旅行家旅途的准备 (Id=41)：1AP 攒 1 充能，攒满阈值层后授予免费旅行标记，
+            // 由 MoveCommand 消费该标记实现 0AP 旅行（免费旅行由命令层执行）
+            if (skill.Id == 41)
+            {
+                int threshold = skill.ChargeThreshold > 0 ? skill.ChargeThreshold : 2;
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+                c.ASC.AddGuardianCharge();
+                if (c.ASC.GetGuardianCharge() >= threshold)
+                    c.ASC.Tags.AddTag(GameplayTagConstants.FreeTravel);
+                return;
+            }
+
             // 支付消耗（非守护技能）：主成本 + 额外成本
             PayResource(c, skill.Cost);
             if (skill.ExtraCosts != null)

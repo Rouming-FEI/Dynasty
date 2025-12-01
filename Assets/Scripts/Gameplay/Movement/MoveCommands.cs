@@ -30,8 +30,12 @@ namespace Gameplay.Movement
             LocationRule targetRule = state.Locations.Rules[TargetLocationId];
             if (targetRule != null && !targetRule.CanEnter(state, c)) return;
 
-            // Spend 1 AP
-            c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+            // 免费旅行标记：旅行家攒满充能后的 0 AP 移动
+            bool freeTravel = c.ASC.Tags.HasTag(GameplayTagConstants.FreeTravel);
+            if (freeTravel)
+                c.ASC.Tags.RemoveTag(GameplayTagConstants.FreeTravel);
+            else
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
             int oldLoc = c.CurrentLocationId;
 
