@@ -55,5 +55,21 @@ namespace Dynasty.Tests.Characters
             Assert.AreEqual(9, t.CurrentLocationId);
             Assert.AreEqual(1, t.ActionPoints, "攒充能花 2 AP，免费旅行不扣");
         }
+
+        [Test]
+        public void 免费旅行消费后充能清零()
+        {
+            var state = BuildWithTraveler();
+            var t = state.GetCharacterByPlayer(3);
+            t.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            SkillDef prep = t.Definition.Skills[1];
+
+            SkillSystem.Activate(prep, t, t, state, 1); // 攒 1
+            SkillSystem.Activate(prep, t, t, state, 1); // 攒 2 → 满，授予免费旅行标记
+            Assert.AreEqual(2, t.ASC.GetGuardianCharge(), "满充能");
+
+            Execute(state, new MoveCommand(0, 3, 9));
+            Assert.AreEqual(0, t.ASC.GetGuardianCharge(), "免费旅行消费后充能清零");
+        }
     }
 }

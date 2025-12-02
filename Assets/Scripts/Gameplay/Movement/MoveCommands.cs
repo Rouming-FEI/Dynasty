@@ -33,7 +33,10 @@ namespace Gameplay.Movement
             // 免费旅行标记：旅行家攒满充能后的 0 AP 移动
             bool freeTravel = c.ASC.Tags.HasTag(GameplayTagConstants.FreeTravel);
             if (freeTravel)
+            {
                 c.ASC.Tags.RemoveTag(GameplayTagConstants.FreeTravel);
+                c.ASC.ResetGuardianCharge(); // 免费旅行消费后清空充能（仅旅行家持有该标记）
+            }
             else
                 c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
