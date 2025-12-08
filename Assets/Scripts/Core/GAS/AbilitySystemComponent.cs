@@ -229,6 +229,11 @@ namespace Core.GAS
                     Tags.RemoveTag(ge.GrantTags[i]);
             }
 
+            // 静止时空 (Id=250)：结束回复 1 理智（钳 MaxSanity 由 SetCurrentValue 保证）
+            if (ge != null && ge.Id == 250)
+                _attributeSet.SetCurrentValue(AttributeConstants.Sanity,
+                    GetAttributeValue(AttributeConstants.Sanity) + 1f);
+
             SendEvent(GameplayEventTypes.OnGERemoved, spec.SourceId, OwnerId, 0f);
 
             ReturnSpec(spec);

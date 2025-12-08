@@ -79,6 +79,10 @@ namespace Gameplay.Items
                 if (item.Type == ItemType.Weapon) return;
             }
 
+            // 静止时空：期间禁治疗道具（血包 Id=2 / 应急装置 Id=8）
+            if (c.ASC.Tags.HasTag(GameplayTagConstants.TimeStop) && IsHealingItem(item))
+                return;
+
             if (c.ActionPoints < item.UseAPCost) return;
 
             Character target = state.GetCharacterByPlayer(TargetPlayerId);
@@ -178,6 +182,10 @@ namespace Gameplay.Items
                     return -mods[i].Magnitude;
             return 0f;
         }
+
+        /// <summary>治疗类道具判定：血包（Id=2）/ 应急处理装置（Id=8）。</summary>
+        private static bool IsHealingItem(ItemDef item) =>
+            item.Id == 2 || item.Id == 8;
     }
 
     /// <summary>

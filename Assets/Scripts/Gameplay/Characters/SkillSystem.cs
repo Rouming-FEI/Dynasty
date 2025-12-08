@@ -113,6 +113,10 @@ namespace Gameplay.Characters
                 for (int i = 0; i < skill.ExtraCosts.Length; i++)
                     PayResource(c, skill.ExtraCosts[i]);
 
+            // 静止时空 (Id=50)：扣成本后理智扣至 0.5（SetAttributeBaseValue 同时写 base+current）
+            if (skill.Id == 50)
+                c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+
             // 技能内判定：胜利应用 OnWinEffects，失败应用 OnLoseEffects（若有）
             if (skill.Judgment != null)
             {
