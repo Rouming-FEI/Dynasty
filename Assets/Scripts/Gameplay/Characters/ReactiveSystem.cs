@@ -79,9 +79,14 @@ namespace Gameplay.Characters
         }
     }
 
-    /// <summary>占位：Task 6 倾听者击杀回复实现后填充。</summary>
+    /// <summary>倾听者击杀回复：理智与侵蚀上限回复至 4（理智钳 MaxSanity）。</summary>
     public static class ListenerWhisper
     {
-        public static void OnKill(Character killer) { }
+        public static void OnKill(Character killer)
+        {
+            killer.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 4f);
+            killer.ASC.SetAttributeBaseValue(AttributeConstants.Sanity,
+                killer.ASC.GetAttributeValue(AttributeConstants.MaxSanity));
+        }
     }
 }

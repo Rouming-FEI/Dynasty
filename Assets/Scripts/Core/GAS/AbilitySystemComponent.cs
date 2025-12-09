@@ -296,6 +296,12 @@ namespace Core.GAS
                     {
                         GameplayEffect ge = payload[e];
                         if (ge == null) continue;
+                        // 倾听者地狱的呓语（Id=260）：周期被动负载，与一人判定，不走通用 GE 挂载
+                        if (ge.Id == 260)
+                        {
+                            ApplyWhisperPayload(state);
+                            continue;
+                        }
                         GameplayEffectSpec spec = RentSpec();
                         spec.Definition = ge;
                         spec.SourceId = OwnerId;
@@ -378,6 +384,27 @@ namespace Core.GAS
 
                 ApplySingleModifier(mod, spec.MagnitudeMultiplier);
             }
+        }
+
+        /// <summary>
+        /// 倾听者地狱的呓语（Id=260）：周期被动负载，每 2 回合与一名存活角色判定。
+        /// 胜 → 永久攻击 +0.5；败 → 侵蚀上限 -1（SetCurrentValue 钳 ≥0）。
+        /// </summary>
+        private void ApplyWhisperPayload(WorldState state)
+        {
+            if (state == null) return;
+            Character target = null;
+            for (int i = 0; i < state.Characters.Length; i++)
+            {
+                Character ch = state.Characters[i];
+                if (ch != null && !ch.IsDead && ch.Id != OwnerId) { target = ch; break; }
+            }
+            if (target == null) return;
+            if (Gameplay.Judgment.JudgmentDuel.Resolve(state, state.GetCharacter(OwnerId), target))
+                ModifyAttributeCurrentValue(AttributeConstants.AttackBonus, 0.5f); // 胜：永久 +0.5
+            else
+                _attributeSet.SetCurrentValue(AttributeConstants.ErosionLimit,
+                    GetAttributeValue(AttributeConstants.ErosionLimit) - 1f); // 败：-1（钳 ≥0）
         }
 
         // ---------------------------------------------------------------------
