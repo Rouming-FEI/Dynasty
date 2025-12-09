@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Gameplay.Combat;
+using Gameplay.Items;
 using Gameplay.Judgment;
 
 namespace Gameplay.Characters
@@ -116,6 +117,25 @@ namespace Gameplay.Characters
             // 静止时空 (Id=50)：扣成本后理智扣至 0.5（SetAttributeBaseValue 同时写 base+current）
             if (skill.Id == 50)
                 c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+
+            // 海幻幻剑 (Id=70)：取得归鞘刀并进入归鞘状态（0.5 全减伤由 DamagePipeline 按标签结算）
+            if (skill.Id == 70)
+            {
+                c.Inventory.EquipWeapon(ItemRegistry.Get(12)); // 幻剑（ItemRegistry Id=12，Weapon 伤害 1.5）
+                c.ASC.Tags.AddTag(GameplayTagConstants.BladeSheathed);
+                return;
+            }
+
+            // 海幻蜃景 (Id=71)：1 远程法术伤（Effect 型无减免）+ 目标防御 ≥1 额外 0.5 + 判定胜瞬移
+            if (skill.Id == 71)
+            {
+                DamagePipeline.ApplyDamage(state, c.Id, target.Id, 1f, DamageType.Effect);
+                if (target.ASC.GetAttributeValue(AttributeConstants.PhysicalDefense) >= 1f)
+                    DamagePipeline.ApplyDamage(state, c.Id, target.Id, 0.5f, DamageType.Effect);
+                if (JudgmentDuel.Resolve(state, c, target))
+                    c.CurrentLocationId = target.CurrentLocationId;
+                return;
+            }
 
             // 技能内判定：胜利应用 OnWinEffects，失败应用 OnLoseEffects（若有）
             if (skill.Judgment != null)

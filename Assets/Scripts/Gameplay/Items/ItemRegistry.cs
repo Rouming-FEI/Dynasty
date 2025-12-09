@@ -156,7 +156,27 @@ namespace Gameplay.Items
                 UseEffect = null  // handled by EmergencyDeviceEffect.Apply (ItemCommands special case)
             };
 
-            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice };
+            // 幻剑 (Id=12) — 海幻的近战武器，对同地点目标造成 1.5 理智伤害；
+            // 归鞘持刀 0.5 全减伤与拔刀激活蜃景由 SkillSystem/DamagePipeline 按 BladeSheathed 标签处理
+            var mirageBlade = new ItemDef
+            {
+                Id = 12,
+                Name = "幻剑",
+                Type = ItemType.Weapon,
+                UseAPCost = 1,
+                TargetType = ItemTargetType.SameLocation,
+                UseEffect = new GameplayEffect
+                {
+                    Id = 107,
+                    DurationType = GameplayEffectDurationType.Instant,
+                    Modifiers = new[]
+                    {
+                        new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, -1.5f)
+                    }
+                }
+            };
+
+            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice, mirageBlade };
         }
 
         public static ItemDef Get(int id)

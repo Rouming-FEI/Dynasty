@@ -66,6 +66,11 @@ namespace Core.GAS
             else if (damageType == DamageType.Magic)
                 finalDamage -= targetASC.GetAttributeValue(AttributeConstants.MagicDefense);
 
+            // 海幻归鞘持刀：0.5 全减伤（物理/法术；Effect/True 不受）
+            if ((damageType == DamageType.Physical || damageType == DamageType.Magic)
+                && targetASC.Tags.HasTag(GameplayTagConstants.BladeSheathed))
+                finalDamage -= 0.5f;
+
             if (finalDamage < 0f) finalDamage = 0f;
 
             // 4.5 死亡豁免 — 应急处理装置（伤害应用前检查，避免死后再救）
