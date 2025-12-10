@@ -38,6 +38,40 @@ namespace SkillAcceptance
                     results.Add(CheckResult.Pass("文档对照-7.12 鬼葬",
                         "三档人数联动与实现一致（链路层验证）"));
                     break;
+                case 20: // 剑鬼飞剑
+                    results.AddRange(VerifyFlyingSword());
+                    break;
+                case 21: // 剑鬼绝症
+                    results.AddRange(VerifyTerminalIllness());
+                    break;
+                case 22: // 剑鬼鬼化
+                    results.AddRange(VerifyGhostForm());
+                    break;
+                case 30: // 魔术师镜花水月
+                    results.AddRange(VerifyMirror());
+                    break;
+                case 40: // 旅行家旅行
+                    results.Add(CheckResult.Pass("文档对照-7.4 旅行",
+                        "MoveCommand 不限相邻地点，任意地点可达（链路层验证）"));
+                    break;
+                case 41: // 旅途的准备
+                    results.AddRange(VerifyTravelPrep());
+                    break;
+                case 50: // 静止时空
+                    results.AddRange(VerifyTimeStop());
+                    break;
+                case 60: // 地狱的呓语
+                    results.AddRange(VerifyWhisper());
+                    break;
+                case 61: // 呓语击杀回复
+                    results.AddRange(VerifyWhisperKill());
+                    break;
+                case 70: // 幻剑
+                    results.AddRange(VerifyMirageBlade());
+                    break;
+                case 71: // 蜃景
+                    results.AddRange(VerifyMirageSkill());
+                    break;
             }
             return results;
         }
@@ -157,6 +191,286 @@ namespace SkillAcceptance
             return results;
         }
 
+        // ---------------- P3.2 六角色特例 ----------------
+
+        /// <summary>剑鬼飞剑：判定两态（胜 1.5 物理伤/败无事）+ 1 AP 消耗。</summary>
+        private static List<CheckResult> VerifyFlyingSword()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = SwordGhostDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character sg = state.GetCharacterByPlayer(p);
+            sg.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 5);
+            Character target = AcceptanceScenes.FindOther(state, p);
+            target.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+            float before = target.Sanity;
+
+            new FlyingSwordCommand(0, p, target.PlayerId).Execute(state);
+
+            float after = target.Sanity;
+            bool ok = after == before || Math.Abs(after - (before - 1.5f)) < 0.001f;
+            results.Add(ok
+                ? CheckResult.Pass("飞剑-判定两态", $"Sanity {before} → {after}（败无事/胜 -1.5）")
+                : CheckResult.Fail("飞剑-判定两态", $"Sanity {before} → {after}（期望 0 或 -1.5）"));
+            results.Add(sg.ActionPoints == 4
+                ? CheckResult.Pass("飞剑-扣 1 AP", "AP 5 → 4")
+                : CheckResult.Fail("飞剑-扣 1 AP", $"AP = {sg.ActionPoints}（期望 4）"));
+            return results;
+        }
+
+        /// <summary>剑鬼绝症：侵蚀每回合 -0.5 至 0.5 下限；鬼化取消。</summary>
+        private static List<CheckResult> VerifyTerminalIllness()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = SwordGhostDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character sg = state.GetCharacterByPlayer(p);
+            sg.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 1.5f);
+
+            sg.ASC.TickEffects(state);
+            float after1 = sg.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+            sg.ASC.TickEffects(state);
+            sg.ASC.TickEffects(state);
+            float after3 = sg.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+
+            results.Add(Math.Abs(after1 - 1.0f) < 0.001f
+                ? CheckResult.Pass("绝症-每回合扣 0.5", "1.5 → 1.0")
+                : CheckResult.Fail("绝症-每回合扣 0.5", $"实际 {after1}（期望 1.0）"));
+            results.Add(Math.Abs(after3 - 0.5f) < 0.001f
+                ? CheckResult.Pass("绝症-0.5 下限", "三次后停在 0.5")
+                : CheckResult.Fail("绝症-0.5 下限", $"实际 {after3}（期望 0.5）"));
+
+            // 鬼化取消绝症
+            var s2 = AcceptanceScenes.BuildState(def);
+            int p2 = AcceptanceScenes.FindPlayerOfDef(s2, def);
+            Character sg2 = s2.GetCharacterByPlayer(p2);
+            sg2.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 2f);
+            sg2.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            SkillSystem.Activate(sg2.Definition.Skills[2], sg2, sg2, s2, 2); // 鬼化
+            sg2.ASC.TickEffects(s2);
+            results.Add(Math.Abs(sg2.ASC.GetAttributeValue(AttributeConstants.ErosionLimit) - 2f) < 0.001f
+                ? CheckResult.Pass("绝症-鬼化取消", "鬼化后侵蚀不再扣减")
+                : CheckResult.Fail("绝症-鬼化取消", $"鬼化后侵蚀 = {sg2.ASC.GetAttributeValue(AttributeConstants.ErosionLimit)}（期望 2）"));
+            return results;
+        }
+
+        /// <summary>剑鬼鬼化：标签 + 攻防 +0.5 + 不可重复。</summary>
+        private static List<CheckResult> VerifyGhostForm()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = SwordGhostDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character sg = state.GetCharacterByPlayer(p);
+            sg.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+            SkillDef ghost = sg.Definition.Skills[2];
+
+            SkillSystem.Activate(ghost, sg, sg, state, 2);
+            bool tagged = sg.ASC.Tags.HasTag(GameplayTagConstants.GhostForm);
+            float def2 = sg.ASC.GetAttributeValue(AttributeConstants.PhysicalDefense);
+            float atk = sg.ASC.GetAttributeValue(AttributeConstants.AttackBonus);
+            bool blocked = !SkillSystem.CanActivate(ghost, sg, 2); // BlockingTags 不可重复
+
+            results.Add(tagged
+                ? CheckResult.Pass("鬼化-标签", "GhostForm 已挂")
+                : CheckResult.Fail("鬼化-标签", "GhostForm 未挂"));
+            results.Add(Math.Abs(def2 - 0.5f) < 0.001f && Math.Abs(atk - 0.5f) < 0.001f
+                ? CheckResult.Pass("鬼化-攻防加成", "防御 +0.5、攻击 +0.5")
+                : CheckResult.Fail("鬼化-攻防加成", $"防御 {def2}、攻击 {atk}（期望各 +0.5）"));
+            results.Add(blocked
+                ? CheckResult.Pass("鬼化-不可重复", "BlockingTags 拦截二次施放")
+                : CheckResult.Fail("鬼化-不可重复", "二次施放未被拦截"));
+            return results;
+        }
+
+        /// <summary>魔术师镜花水月：受伤害判定两态（胜 0 / 败 +1）。</summary>
+        private static List<CheckResult> VerifyMirror()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = MagicianDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character m = state.GetCharacterByPlayer(p);
+            Character src = AcceptanceScenes.FindOther(state, p);
+
+            float d = DamagePipeline.ApplyDamage(state, src.Id, m.Id, 2f, DamageType.Physical);
+            bool ok = d == 0f || Math.Abs(d - 3f) < 0.001f;
+            results.Add(ok
+                ? CheckResult.Pass("镜花水月-判定两态", $"伤害 {d}（胜 0 / 败 3）")
+                : CheckResult.Fail("镜花水月-判定两态", $"伤害 {d}（期望 0 或 3）"));
+            return results;
+        }
+
+        /// <summary>旅行家旅途的准备：1AP 攒 1 充能，满 2 获免费旅行标记。</summary>
+        private static List<CheckResult> VerifyTravelPrep()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = TravelerDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character t = state.GetCharacterByPlayer(p);
+            t.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+            SkillDef prep = t.Definition.Skills[1];
+
+            SkillSystem.Activate(prep, t, t, state, 1);
+            SkillSystem.Activate(prep, t, t, state, 1);
+
+            bool charged = t.ASC.GetGuardianCharge() >= 2;
+            bool freeTag = t.ASC.Tags.HasTag(GameplayTagConstants.FreeTravel);
+            results.Add(charged
+                ? CheckResult.Pass("旅途的准备-充能", "两次施放后充能 ≥ 2")
+                : CheckResult.Fail("旅途的准备-充能", $"充能 = {t.ASC.GetGuardianCharge()}（期望 ≥ 2）"));
+            results.Add(freeTag
+                ? CheckResult.Pass("旅途的准备-免费标记", "满充能后持有 FreeTravel")
+                : CheckResult.Fail("旅途的准备-免费标记", "未持有 FreeTravel"));
+            return results;
+        }
+
+        /// <summary>时间盗贼静止时空：前置拦截 + 理智 0.5 + AP 翻倍保底。</summary>
+        private static List<CheckResult> VerifyTimeStop()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = TimeThiefDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character t = state.GetCharacterByPlayer(p);
+            SkillDef skill = t.Definition.Skills[0];
+
+            t.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1.4f);
+            bool blockedLow = !SkillSystem.CanActivate(skill, t, 0);
+
+            t.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            SkillSystem.Activate(skill, t, t, state, 0);
+            float sanity = t.Sanity;
+            bool tagged = t.ASC.Tags.HasTag(GameplayTagConstants.TimeStop);
+
+            int ap2 = TimeStopHook.ApplyApBonus(t, 1);
+            int ap0 = TimeStopHook.ApplyApBonus(t, 0);
+
+            results.Add(blockedLow
+                ? CheckResult.Pass("静止时空-前置拦截", "理智 < 1.5 不可施放")
+                : CheckResult.Fail("静止时空-前置拦截", "低理智未被拦截"));
+            results.Add(Math.Abs(sanity - 0.5f) < 0.001f && tagged
+                ? CheckResult.Pass("静止时空-理智扣至 0.5", $"Sanity = {sanity}，标签已挂")
+                : CheckResult.Fail("静止时空-理智扣至 0.5", $"Sanity = {sanity}（期望 0.5）"));
+            results.Add(ap2 == 2 && ap0 == 1
+                ? CheckResult.Pass("静止时空-AP 翻倍保底", "1→2、0→1")
+                : CheckResult.Fail("静止时空-AP 翻倍保底", $"1→{ap2}、0→{ap0}（期望 2 与 1）"));
+            return results;
+        }
+
+        /// <summary>倾听者呓语：每 2 回合判定两态。</summary>
+        private static List<CheckResult> VerifyWhisper()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = ListenerDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character l = state.GetCharacterByPlayer(p);
+
+            l.ASC.TickEffects(state);
+            float atk1 = l.ASC.GetAttributeValue(AttributeConstants.AttackBonus);
+            l.ASC.TickEffects(state);
+            float atk2 = l.ASC.GetAttributeValue(AttributeConstants.AttackBonus);
+            float ero = l.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+
+            bool winState = Math.Abs(atk2 - 0.5f) < 0.001f && Math.Abs(ero - 4f) < 0.001f;
+            bool loseState = atk2 == 0f && Math.Abs(ero - 3f) < 0.001f;
+            results.Add(Math.Abs(atk1) < 0.001f
+                ? CheckResult.Pass("呓语-第 1 回合不触发", "AttackBonus = 0")
+                : CheckResult.Fail("呓语-第 1 回合不触发", $"AttackBonus = {atk1}"));
+            results.Add(winState || loseState
+                ? CheckResult.Pass("呓语-第 2 回合判定两态", $"atk={atk2}, ero={ero}")
+                : CheckResult.Fail("呓语-第 2 回合判定两态", $"atk={atk2}, ero={ero}（期望 胜 0.5/4 或 败 0/3）"));
+            return results;
+        }
+
+        /// <summary>倾听者击杀回复：理智与侵蚀回复至上限。</summary>
+        private static List<CheckResult> VerifyWhisperKill()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = ListenerDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character l = state.GetCharacterByPlayer(p);
+            l.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f);
+            l.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 2f);
+
+            ListenerWhisper.OnKill(l);
+
+            float sanity = l.Sanity;
+            float ero = l.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+            results.Add(Math.Abs(sanity - 3f) < 0.001f
+                ? CheckResult.Pass("呓语击杀-理智回复", "Sanity → 3（Max）")
+                : CheckResult.Fail("呓语击杀-理智回复", $"Sanity = {sanity}（期望 3）"));
+            results.Add(Math.Abs(ero - 4f) < 0.001f
+                ? CheckResult.Pass("呓语击杀-侵蚀回复", "ErosionLimit → 4")
+                : CheckResult.Fail("呓语击杀-侵蚀回复", $"ErosionLimit = {ero}（期望 4）"));
+            return results;
+        }
+
+        /// <summary>海幻幻剑：取得归鞘刀 + 减伤 0.5。</summary>
+        private static List<CheckResult> VerifyMirageBlade()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = SeaMirageDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character h = state.GetCharacterByPlayer(p);
+            h.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            SkillDef blade = h.Definition.Skills[0];
+
+            SkillSystem.Activate(blade, h, h, state, 0);
+
+            bool sheathed = h.ASC.Tags.HasTag(GameplayTagConstants.BladeSheathed);
+            bool equipped = h.Inventory.EquippedWeapon != null && h.Inventory.EquippedWeapon.Id == 12;
+            results.Add(sheathed && equipped
+                ? CheckResult.Pass("幻剑-归鞘装备", "BladeSheathed + 幻剑已装备")
+                : CheckResult.Fail("幻剑-归鞘装备", $"sheathed={sheathed}, weapon={h.Inventory.EquippedWeapon?.Id}"));
+
+            Character src = AcceptanceScenes.FindOther(state, p);
+            float d = DamagePipeline.ApplyDamage(state, src.Id, h.Id, 2f, DamageType.Physical);
+            results.Add(Math.Abs(d - 1.5f) < 0.001f
+                ? CheckResult.Pass("幻剑-归鞘减伤", "2 - 0.5 = 1.5")
+                : CheckResult.Fail("幻剑-归鞘减伤", $"伤害 {d}（期望 1.5）"));
+            return results;
+        }
+
+        /// <summary>海幻蜃景：1 效果伤 + 防御 ≥1 额外 0.5 + 位移两态。</summary>
+        private static List<CheckResult> VerifyMirageSkill()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = SeaMirageDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character h = state.GetCharacterByPlayer(p);
+            h.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            SkillSystem.Activate(h.Definition.Skills[0], h, h, state, 0); // 幻剑
+            new DrawBladeCommand(0, p).Execute(state);                   // 拔刀
+
+            Character target = AcceptanceScenes.FindOther(state, p);
+            target.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+            target.ASC.SetAttributeBaseValue(AttributeConstants.PhysicalDefense, 1f); // 触发额外 0.5
+            float before = target.Sanity;
+            int locBefore = h.CurrentLocationId;
+            target.CurrentLocationId = 8;
+
+            SkillSystem.Activate(h.Definition.Skills[1], h, target, state, 1); // 蜃景
+
+            float after = target.Sanity;
+            bool damaged = before - after >= 1f; // 1 + 0.5 效果伤（DeathSave/致死钳制下 ≥1 亦可）
+            bool moved = h.CurrentLocationId == 8 || h.CurrentLocationId == locBefore;
+            results.Add(damaged
+                ? CheckResult.Pass("蜃景-伤害", $"Sanity {before} → {after}")
+                : CheckResult.Fail("蜃景-伤害", $"Sanity {before} → {after}（期望 ≥1 伤害）"));
+            results.Add(moved
+                ? CheckResult.Pass("蜃景-位移两态", "败在原地 / 胜瞬移")
+                : CheckResult.Fail("蜃景-位移两态", $"位置 {h.CurrentLocationId}（期望 {locBefore} 或 8）"));
+            return results;
+        }
+
         /// <summary>链路层脚本：守护跨回合充能 + 鬼葬三档联动。</summary>
         public static List<TurnScript> GetTurnScripts()
         {
@@ -165,6 +479,8 @@ namespace SkillAcceptance
             scripts.Add(GhostBurySolo());
             scripts.Add(GhostBuryDuo());
             scripts.Add(GhostBuryTrio());
+            scripts.Add(TerminalIllnessTurns());
+            scripts.Add(TimeStopExpiry());
             return scripts;
         }
 
@@ -295,6 +611,105 @@ namespace SkillAcceptance
             script.Steps.Add(new AssertStep("自己受1", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
             script.Steps.Add(new AssertStep("守护者受0.5", 2.5f, s => s.GetCharacterByPlayer(0).Sanity));
             script.Steps.Add(new AssertStep("普通人受0.5", 2.5f, s => s.GetCharacterByPlayer(2).Sanity));
+            return script;
+        }
+
+        /// <summary>4 人局固定筹码：剑鬼（player 3）Neutral，其余同 ChipsCharmWinner。</summary>
+        private static ChipAllocation[][] ChipsFourNeutral()
+        {
+            return new[]
+            {
+                new[]
+                {
+                    new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 },
+                    new ChipAllocation(1) { Rock = 2, Scissors = 1, Paper = 0 },
+                    new ChipAllocation(2) { Rock = 1, Scissors = 1, Paper = 1 },
+                    new ChipAllocation(3) { Rock = 1, Scissors = 1, Paper = 1 }
+                }
+            };
+        }
+
+        /// <summary>剑鬼绝症跨回合：侵蚀 1.5 → 1.0 → 0.5 停（回合末被动触发）。</summary>
+        private static TurnScript TerminalIllnessTurns()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 21,
+                SkillName = "绝症",
+                ScriptName = "绝症-跨回合扣减",
+                PlayerCount = 4,
+                JudgmentInputs = ChipsFourNeutral()
+            };
+            script.Overrides.Add(s =>
+            {
+                CharacterDef def = SwordGhostDef.Create();
+                Character c = new Character(4, 3, def.Name) { CurrentLocationId = 3 };
+                def.ApplyTo(c);
+                for (int i = 0; i < c.Definition.Skills.Length; i++)
+                    c.ASC.RegisterPassive(c.Definition.Skills[i]);
+                c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
+                c.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 1.5f);
+                s.Characters[3] = c;
+                for (int i = 0; i < s.PlayerCount; i++)
+                    s.GetCharacterByPlayer(i).CurrentLocationId = 4;
+            });
+            script.Steps.Add(new AssertStep("初始侵蚀", 1.5f, s => s.GetCharacterByPlayer(3).ASC.GetAttributeValue(AttributeConstants.ErosionLimit)));
+            script.Steps.Add(new EndTurnStep()); // 回合末：1.5 → 1.0
+            script.Steps.Add(new AssertStep("第1回合末", 1.0f, s => s.GetCharacterByPlayer(3).ASC.GetAttributeValue(AttributeConstants.ErosionLimit)));
+            script.Steps.Add(new EndTurnStep()); // 1.0 → 0.5
+            script.Steps.Add(new AssertStep("第2回合末", 0.5f, s => s.GetCharacterByPlayer(3).ASC.GetAttributeValue(AttributeConstants.ErosionLimit)));
+            script.Steps.Add(new EndTurnStep()); // 0.5 停
+            script.Steps.Add(new AssertStep("0.5下限停", 0.5f, s => s.GetCharacterByPlayer(3).ASC.GetAttributeValue(AttributeConstants.ErosionLimit)));
+            return script;
+        }
+
+        /// <summary>4 人局固定筹码：时间盗贼（player 3）Winner（保底 1 AP 可行动）。</summary>
+        private static ChipAllocation[][] ChipsTimeThiefWinner()
+        {
+            return new[]
+            {
+                new[]
+                {
+                    new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 },
+                    new ChipAllocation(1) { Rock = 1, Scissors = 1, Paper = 1 },
+                    new ChipAllocation(2) { Rock = 1, Scissors = 1, Paper = 1 },
+                    new ChipAllocation(3) { Rock = 2, Scissors = 1, Paper = 0 }
+                }
+            };
+        }
+
+        /// <summary>时间盗贼静止时空：开启 → 2 回合后 GE 过期并回复 1 理智。</summary>
+        private static TurnScript TimeStopExpiry()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 50,
+                SkillName = "静止时空",
+                ScriptName = "静止时空-过期回复",
+                PlayerCount = 4,
+                JudgmentInputs = ChipsTimeThiefWinner()
+            };
+            script.Overrides.Add(s =>
+            {
+                CharacterDef def = TimeThiefDef.Create();
+                Character c = new Character(4, 3, def.Name) { CurrentLocationId = 3 };
+                def.ApplyTo(c);
+                c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
+                c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 5); // 保证行动阶段轮到 player 3
+                s.Characters[3] = c;
+                for (int i = 0; i < s.PlayerCount; i++)
+                    s.GetCharacterByPlayer(i).CurrentLocationId = 4;
+            });
+            script.Steps.Add(new ActStep(3, new UseSkillCommand(0, 3, 0, 3))); // 开启：Sanity 3 → 0.5 + TimeStop
+            script.Steps.Add(new AssertStep("开启后理智", 0.5f, s => s.GetCharacterByPlayer(3).Sanity));
+            script.Steps.Add(new AssertTrueStep("标签挂载",
+                s => s.GetCharacterByPlayer(3).ASC.Tags.HasTag(GameplayTagConstants.TimeStop)));
+            script.Steps.Add(new EndTurnStep()); // 第 1 回合末（GE 剩 1）
+            script.Steps.Add(new EndTurnStep()); // 第 2 回合末（GE 过期 → 回复 +1）
+            script.Steps.Add(new AssertTrueStep("标签移除",
+                s => !s.GetCharacterByPlayer(3).ASC.Tags.HasTag(GameplayTagConstants.TimeStop)));
+            script.Steps.Add(new AssertStep("过期回复", 1.5f, s => s.GetCharacterByPlayer(3).Sanity));
             return script;
         }
     }

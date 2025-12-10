@@ -8,13 +8,28 @@ namespace SkillAcceptance
     public static class AcceptanceScenes
     {
         /// <summary>3 人局（守护者/魑魅/普通人），直接站在行动阶段。与测试程序集 ScenarioBuilder.Build 同模式但自包含。</summary>
-        public static WorldState BuildState(int seed = 42)
+        public static WorldState BuildState(CharacterDef extra = null, int seed = 42)
         {
-            var state = new WorldState(3, seed);
+            int playerCount = extra != null ? 4 : 3;
+            var state = new WorldState(playerCount, seed);
             var turnManager = new TurnManager();
             state.TurnManager = turnManager;
             turnManager.StartGame(state);
             state.Phase = TurnPhase.ActionPhase;
+
+            if (extra != null)
+            {
+                // 第 4 个角色（player 3）替换为验收目标角色，与 TurnManager.StartGame 的角色创建同模式
+                Character c = new Character(4, 3, extra.Name)
+                {
+                    CurrentLocationId = 3
+                };
+                extra.ApplyTo(c);
+                for (int s = 0; s < c.Definition.Skills.Length; s++)
+                    c.ASC.RegisterPassive(c.Definition.Skills[s]);
+                c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
+                state.Characters[3] = c;
+            }
             return state;
         }
 

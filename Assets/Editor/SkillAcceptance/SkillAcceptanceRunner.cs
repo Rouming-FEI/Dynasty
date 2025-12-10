@@ -15,7 +15,13 @@ namespace SkillAcceptance
         {
             GuardianDef.Create(),
             CharmSpiritDef.Create(),
-            NormalPersonDef.Create()
+            NormalPersonDef.Create(),
+            SwordGhostDef.Create(),
+            MagicianDef.Create(),
+            TravelerDef.Create(),
+            TimeThiefDef.Create(),
+            ListenerDef.Create(),
+            SeaMirageDef.Create()
         };
 
         public static AcceptanceReport RunAll() => RunCore(includeLogic: true, includeTurn: true);

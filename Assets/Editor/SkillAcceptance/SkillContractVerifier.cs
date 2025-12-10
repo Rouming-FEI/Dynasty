@@ -19,7 +19,7 @@ namespace SkillAcceptance
             if (skill == null) return results;
 
             // ——— 1. 激活类型 ———
-            WorldState probe = AcceptanceScenes.BuildState();
+            WorldState probe = AcceptanceScenes.BuildState(def);
             int casterPlayer = AcceptanceScenes.FindPlayerOfDef(probe, def);
             Character probeCaster = probe.GetCharacterByPlayer(casterPlayer);
             // BuildState 未经过判定分发 AP（默认 0），注入足额 AP 并补齐前置标签/属性，
@@ -58,7 +58,7 @@ namespace SkillAcceptance
                 }
                 else
                 {
-                    var s = AcceptanceScenes.BuildState();
+                    var s = AcceptanceScenes.BuildState(def);
                     int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                     Character c = s.GetCharacterByPlayer(p);
                     c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, skill.Cost.Amount - 1);
@@ -71,7 +71,7 @@ namespace SkillAcceptance
 
             if (skill.RequiredTags != null && skill.RequiredTags.Length > 0)
             {
-                var s = AcceptanceScenes.BuildState();
+                var s = AcceptanceScenes.BuildState(def);
                 int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                 Character c = s.GetCharacterByPlayer(p);
                 for (int i = 0; i < skill.RequiredTags.Length; i++)
@@ -84,7 +84,7 @@ namespace SkillAcceptance
 
             if (skill.BlockingTags != null && skill.BlockingTags.Length > 0)
             {
-                var s = AcceptanceScenes.BuildState();
+                var s = AcceptanceScenes.BuildState(def);
                 int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                 Character c = s.GetCharacterByPlayer(p);
                 for (int i = 0; i < skill.BlockingTags.Length; i++)
@@ -101,7 +101,7 @@ namespace SkillAcceptance
                 {
                     SkillRestriction restriction = skill.Restrictions[r];
                     if (restriction.AttributeId == 0 && restriction.MinValue == 0f) continue; // default struct 视为无限制
-                    var s = AcceptanceScenes.BuildState();
+                    var s = AcceptanceScenes.BuildState(def);
                     int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                     Character c = s.GetCharacterByPlayer(p);
                     c.ASC.SetAttributeBaseValue(restriction.AttributeId, restriction.MinValue - 1f);
@@ -115,10 +115,16 @@ namespace SkillAcceptance
             }
 
             // ——— 3. 正向场景：施放后状态 ———
-            var pos = AcceptanceScenes.BuildState();
+            var pos = AcceptanceScenes.BuildState(def);
             int pc = AcceptanceScenes.FindPlayerOfDef(pos, def);
             Character caster = pos.GetCharacterByPlayer(pc);
             caster.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
+            if (skill.RequiredTags != null)
+                for (int i = 0; i < skill.RequiredTags.Length; i++)
+                    caster.ASC.Tags.AddTag(skill.RequiredTags[i]);
+            if (skill.BlockingTags != null)
+                for (int i = 0; i < skill.BlockingTags.Length; i++)
+                    caster.ASC.Tags.RemoveTag(skill.BlockingTags[i]);
             Character target = skill.Target == SkillTargetType.Self
                 ? caster
                 : AcceptanceScenes.FindOther(pos, pc);
@@ -145,6 +151,11 @@ namespace SkillAcceptance
                         ? CheckResult.Pass("施放-AP 扣减", $"AP {apBefore} → {apAfter}（期望 {expectedAp}）")
                         : CheckResult.Fail("施放-AP 扣减", $"AP {apBefore} → {apAfter}（期望 {expectedAp}）"));
                 }
+            }
+            else if (skill.Id == 50)
+            {
+                // 静止时空：理智扣至 0.5（非标准 -Amount 扣减），由特例表验证
+                results.Add(CheckResult.Skip("施放-主成本扣减(Sanity)", "静止时空理智扣至 0.5 由特例表验证"));
             }
             else if (skill.Cost.Type != SkillCostType.AP && skill.Cost.Amount != 0f)
             {
@@ -200,7 +211,7 @@ namespace SkillAcceptance
                         : CheckResult.Fail("目标-对敌人施放", "无可用敌人目标"));
                     break;
                 case SkillTargetType.Any:
-                    var selfState = AcceptanceScenes.BuildState();
+                    var selfState = AcceptanceScenes.BuildState(def);
                     int sp = AcceptanceScenes.FindPlayerOfDef(selfState, def);
                     Character sc = selfState.GetCharacterByPlayer(sp);
                     sc.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
@@ -271,7 +282,7 @@ namespace SkillAcceptance
 
             if (ge.IsInstant)
             {
-                var s = AcceptanceScenes.BuildState();
+                var s = AcceptanceScenes.BuildState(def);
                 int p = AcceptanceScenes.FindPlayerOfDef(s, def);
                 Character t = skill.Target == SkillTargetType.Self
                     ? s.GetCharacterByPlayer(p)
@@ -375,7 +386,7 @@ namespace SkillAcceptance
         /// <summary>跑一次判定技能，返回目标 Sanity 变化量。</summary>
         private static float RunJudgmentOnce(SkillDef skill, CharacterDef def, int skillIndex, int seed)
         {
-            var s = AcceptanceScenes.BuildState(seed);
+            var s = AcceptanceScenes.BuildState(def, seed);
             int p = AcceptanceScenes.FindPlayerOfDef(s, def);
             Character c = s.GetCharacterByPlayer(p);
             c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
