@@ -125,6 +125,34 @@ namespace Core.GAS
                 return;
             }
 
+            // 迷离之境心雾周期（Id=280）：周期被动负载（CharmSpiritDef Skills[2]），
+            // 2 层 -0.5 理智不致死；3 层 -1 理智并退出迷离（移除 MistState + GE 210 + 层数清零）。
+            // 与绝症同路径（TickEffects → ApplyGameplayEffect），故特例放在此处。
+            if (ge.Id == 280)
+            {
+                if (!Tags.HasTag(GameplayTagConstants.MistState)) { ReturnSpec(spec); return; }
+                if (_mistLayers >= 3)
+                {
+                    ModifyAttributeCurrentValue(AttributeConstants.Sanity, -1f);
+                    float s = GetAttributeValue(AttributeConstants.Sanity);
+                    if (s < 0.5f) _attributeSet.SetCurrentValue(AttributeConstants.Sanity, 0.5f);
+                    Tags.RemoveTag(GameplayTagConstants.MistState);
+                    ResetMistLayers();
+                    // 移除迷离之境 GE（Id=210）
+                    for (int i = _activeEffects.Count - 1; i >= 0; i--)
+                        if (_activeEffects[i].Definition != null && _activeEffects[i].Definition.Id == 210)
+                            RemoveGameplayEffect(_activeEffects[i]);
+                }
+                else if (_mistLayers >= 2)
+                {
+                    ModifyAttributeCurrentValue(AttributeConstants.Sanity, -0.5f);
+                    float s = GetAttributeValue(AttributeConstants.Sanity);
+                    if (s < 0.5f) _attributeSet.SetCurrentValue(AttributeConstants.Sanity, 0.5f);
+                }
+                ReturnSpec(spec);
+                return;
+            }
+
             // --- Apply tag mutations ---
             if (ge.GrantTags != null)
             {
@@ -469,6 +497,16 @@ namespace Core.GAS
             _guardianCharge += delta;
             if (_guardianCharge < 0) _guardianCharge = 0;
         }
+
+        // ---------------------------------------------------------------------
+        // 心雾层数 — 迷离之境计数器（跨回合保留，不随 GE 过期）
+        // ---------------------------------------------------------------------
+
+        private int _mistLayers;
+
+        public int GetMistLayers() => _mistLayers;
+        public void AddMistLayer() => _mistLayers++;
+        public void ResetMistLayers() => _mistLayers = 0;
 
         // ---------------------------------------------------------------------
         // 周期被动计时器 — PassiveInterval / PassiveEffects

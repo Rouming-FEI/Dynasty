@@ -71,6 +71,12 @@ namespace Core.GAS
                 && targetASC.Tags.HasTag(GameplayTagConstants.BladeSheathed))
                 finalDamage -= 0.5f;
 
+            // 迷离之境心雾一层：受到物理伤害 +0.5
+            if (damageType == DamageType.Physical
+                && targetASC.Tags.HasTag(GameplayTagConstants.MistState)
+                && targetASC.GetMistLayers() >= 1)
+                finalDamage += 0.5f;
+
             if (finalDamage < 0f) finalDamage = 0f;
 
             // 4.5 死亡豁免 — 应急处理装置（伤害应用前检查，避免死后再救）

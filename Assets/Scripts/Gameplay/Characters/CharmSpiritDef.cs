@@ -54,6 +54,23 @@ namespace Gameplay.Characters
                             }
                         }
                     },
+
+                    // 心雾周期 (被动, 每回合末) — 迷离之境的周期负载：2 层 -0.5 / 3 层 -1 并退出（docs/项目介绍.md 7.12）
+                    new SkillDef
+                    {
+                        Id = 12, Name = "心雾周期",
+                        Activation = SkillActivationType.Passive,
+                        PassiveInterval = 1,
+                        PassiveEffects = new[]
+                        {
+                            new GameplayEffect
+                            {
+                                Id = 280,
+                                DurationType = GameplayEffectDurationType.Instant,
+                                Modifiers = System.Array.Empty<AttributeModifier>()
+                            }
+                        }
+                    },
                 }
             };
         }

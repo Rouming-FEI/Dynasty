@@ -49,7 +49,20 @@ namespace Gameplay.Characters
                 case 30:  // 魔术师镜花水月（Task 3 实现）
                     MagicianMirror.Resolve(state, source, target, ref finalDamage);
                     break;
+                case 10:  // 迷离之境攻击判定：胜 → 伤害 + 1/2 原伤害；败 → 心雾 +1
+                    MistRealmResolve(state, source, target, ref finalDamage);
+                    break;
             }
+        }
+
+        private static void MistRealmResolve(WorldState state, Character source, Character target, ref float finalDamage)
+        {
+            if (source == null || !source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
+            bool win = JudgmentDuel.Resolve(state, source, target);
+            if (win)
+                finalDamage += finalDamage * 0.5f;
+            else
+                source.ASC.AddMistLayer();
         }
 
         private static void DispatchOnKill(WorldState state, Character killer, Character victim, int skillId)
