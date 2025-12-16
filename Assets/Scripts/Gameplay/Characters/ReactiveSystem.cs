@@ -24,6 +24,22 @@ namespace Gameplay.Characters
             }
         }
 
+        /// <summary>
+        /// 来源侧攻击判定（伤害应用前修改 finalDamage）：魑魅带 MistState 攻击时判定，
+        /// 胜 → 本次伤害 + 1/2；败 → 心雾 +1。与 TryOnPreDamage（目标侧分派）互补。
+        /// 直接改 finalDamage 而非追加伤害，避免追加 Effect 伤害再次触发本钩子导致递归。
+        /// </summary>
+        public static void TryOnAttack(WorldState state, Character source, Character target, ref float finalDamage)
+        {
+            if (source == null || target == null) return;
+            if (!source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
+            bool win = JudgmentDuel.Resolve(state, source, target);
+            if (win)
+                finalDamage += finalDamage * 0.5f;
+            else
+                source.ASC.AddMistLayer();
+        }
+
         public static void TryOnKill(WorldState state, Character killer, Character victim)
         {
             if (killer == null || killer.Definition == null || killer.Definition.Skills == null) return;
@@ -49,20 +65,7 @@ namespace Gameplay.Characters
                 case 30:  // 魔术师镜花水月（Task 3 实现）
                     MagicianMirror.Resolve(state, source, target, ref finalDamage);
                     break;
-                case 10:  // 迷离之境攻击判定：胜 → 伤害 + 1/2 原伤害；败 → 心雾 +1
-                    MistRealmResolve(state, source, target, ref finalDamage);
-                    break;
             }
-        }
-
-        private static void MistRealmResolve(WorldState state, Character source, Character target, ref float finalDamage)
-        {
-            if (source == null || !source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
-            bool win = JudgmentDuel.Resolve(state, source, target);
-            if (win)
-                finalDamage += finalDamage * 0.5f;
-            else
-                source.ASC.AddMistLayer();
         }
 
         private static void DispatchOnKill(WorldState state, Character killer, Character victim, int skillId)

@@ -34,6 +34,10 @@ namespace Dynasty.Tests.Characters
 
             Assert.AreEqual(d1, d2, 0.001f, "同 seed 确定性");
             Assert.IsTrue(d1 == 1f || d1 == 1.5f, $"胜 1.5 / 败 1.0，实际 {d1}");
+            if (d1 == 1.5f)
+                Assert.AreEqual(0, c1.ASC.GetMistLayers(), "胜：心雾层数不变");
+            else
+                Assert.AreEqual(1, c1.ASC.GetMistLayers(), "败：心雾层数 +1");
         }
 
         [Test]

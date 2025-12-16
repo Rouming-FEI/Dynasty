@@ -39,6 +39,9 @@ namespace Core.GAS
             // 2.5 响应式前置钩子（OnPreDamage）：攻击加成后调用，响应技能可抵消或增伤（如镜花水月）
             ReactiveSystem.TryOnPreDamage(state, source, target, ref finalDamage);
 
+            // 2.6 来源侧攻击判定（魑魅迷离之境）：胜 → 本次伤害 + 1/2；败 → 心雾 +1
+            ReactiveSystem.TryOnAttack(state, source, target, ref finalDamage);
+
             // 3. 护盾检查：吃掉本次伤害并破盾（真实伤害穿盾）
             if (damageType != DamageType.True && targetASC.Tags.HasTag(GameplayTagConstants.HasShield))
             {
