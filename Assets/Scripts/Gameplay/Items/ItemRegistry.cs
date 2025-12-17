@@ -156,6 +156,28 @@ namespace Gameplay.Items
                 UseEffect = null  // handled by EmergencyDeviceEffect.Apply (ItemCommands special case)
             };
 
+            // 净化药剂 (Id=9) — 消耗品，清除负面状态（标签清单 + 心雾清零）+ 3 回合防/攻增益；
+            // 实验室中 0 AP（UseItemCommand 判定）。GE 由 PurifierEffect.Apply 挂载。
+            var purifier = new ItemDef
+            {
+                Id = 9,
+                Name = "净化药剂",
+                Type = ItemType.Consumable,
+                UseAPCost = 1,
+                TargetType = ItemTargetType.Self,
+                UseEffect = new GameplayEffect
+                {
+                    Id = 290,
+                    DurationType = GameplayEffectDurationType.HasDuration,
+                    DurationTurns = 3,
+                    Modifiers = new[]
+                    {
+                        new AttributeModifier(AttributeConstants.PhysicalDefense, AttributeModifierOp.Add, 0.5f),
+                        new AttributeModifier(AttributeConstants.AttackBonus, AttributeModifierOp.Add, 0.5f)
+                    }
+                }
+            };
+
             // 幻剑 (Id=12) — 海幻的近战武器，对同地点目标造成 1.5 理智伤害；
             // 归鞘持刀 0.5 全减伤与拔刀激活蜃景由 SkillSystem/DamagePipeline 按 BladeSheathed 标签处理
             var mirageBlade = new ItemDef
@@ -176,7 +198,7 @@ namespace Gameplay.Items
                 }
             };
 
-            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice, mirageBlade };
+            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice, purifier, mirageBlade };
         }
 
         public static ItemDef Get(int id)

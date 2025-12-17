@@ -99,7 +99,10 @@ namespace Gameplay.Items
                     break;
             }
 
-            c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -(float)item.UseAPCost);
+            // 净化药剂 (Id=9)：实验室中使用 0 AP（其余道具按 UseAPCost 扣）
+            int apCost = item.UseAPCost;
+            if (item.Id == 9 && c.CurrentLocationId == 7) apCost = 0;
+            c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -apCost);
 
             // 触发式炸弹 (Id=7)：在自身位置安放陷阱
             if (item.Id == 7)
@@ -113,6 +116,14 @@ namespace Gameplay.Items
             if (item.Id == 8)
             {
                 EmergencyDeviceEffect.Apply(state, target);
+                c.Inventory.RemoveConsumable(ItemIndex);
+                return;
+            }
+
+            // 净化药剂 (Id=9)：清除负面状态 + 挂 3 回合防/攻增益（见 PurifierEffect）
+            if (item.Id == 9)
+            {
+                PurifierEffect.Apply(state, c);
                 c.Inventory.RemoveConsumable(ItemIndex);
                 return;
             }
@@ -369,6 +380,32 @@ namespace Gameplay.Items
             // RangedAttack 内部处理弹药扣减与藏匿瞄准检查，失败则不扣 AP
             if (WeaponSystem.RangedAttack(state, c, target, gun, 2f))
                 c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+        }
+    }
+
+    /// <summary>净化药剂：清除负面状态（标签清单 + 心雾清零）+ 挂增益 GE。实验室中 0 AP 由 UseItemCommand 判定。</summary>
+    public static class PurifierEffect
+    {
+        // Bound / BoundStrong / LifeFire：Task 2/3 引入对应 GameplayTagConstants 常量后补入清单
+        private static readonly GameplayTag[] NegativeTags =
+        {
+            GameplayTagConstants.MistState, GameplayTagConstants.TimeStop,
+            GameplayTagConstants.ThornPotionActive
+        };
+
+        public static void Apply(WorldState state, Character c)
+        {
+            for (int i = 0; i < NegativeTags.Length; i++)
+                c.ASC.Tags.RemoveTag(NegativeTags[i]);
+            c.ASC.ResetMistLayers();
+
+            GameplayEffect ge = ItemRegistry.Get(9).UseEffect;
+            GameplayEffectSpec spec = c.ASC.RentSpec();
+            spec.Definition = ge;
+            spec.SourceId = c.Id;
+            spec.TargetId = c.Id;
+            spec.RemainingTurns = ge.DurationTurns;
+            c.ASC.ApplyGameplayEffect(spec);
         }
     }
 }
