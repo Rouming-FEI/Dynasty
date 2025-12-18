@@ -33,5 +33,8 @@ namespace Core.GAS
         public static readonly GameplayTag BladeDrawn    = new(24);
         public static readonly GameplayTag TimeStop      = new(25);
         public static readonly GameplayTag FreeTravel    = new(26);
+        public static readonly GameplayTag Bound         = new(27);
+        public static readonly GameplayTag BoundStrong   = new(28);
+        public static readonly GameplayTag LifeFire      = new(29);
     }
 }

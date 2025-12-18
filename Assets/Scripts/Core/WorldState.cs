@@ -42,6 +42,10 @@ namespace Core
         // 本回合移动记录（用于荆棘素 DOT 判定）
         public bool[] MovedThisTurn;
 
+        // 木灵种子复活状态（-1 = 无种子）
+        public int WoodSeedPlayer;    // 安置种子的玩家 PlayerId
+        public int WoodSeedLocation;  // 种子所在地点
+
         public WorldState(int playerCount, int randomSeed = 42)
         {
             PlayerCount = playerCount;
@@ -54,6 +58,8 @@ namespace Core
             MovedThisTurn = new bool[GameConfig.MaxPlayers];
             LastAllocations = new ChipAllocation[GameConfig.MaxPlayers];
             ThornPotionTurnsRemaining = 0;
+            WoodSeedPlayer = -1;
+            WoodSeedLocation = -1;
             CurrentTick = 0;
             CurrentTurn = 0;
             Phase = TurnPhase.Waiting;
@@ -117,6 +123,8 @@ namespace Core
             // WorldState 层全局状态
             hash = hash * 31 + (long)Random.State;
             hash = hash * 31 + ThornPotionTurnsRemaining;
+            hash = hash * 31 + WoodSeedPlayer;
+            hash = hash * 31 + WoodSeedLocation;
             for (int i = 0; i < LocationTrapCounts.Length; i++)
                 hash = hash * 31 + LocationTrapCounts[i];
             for (int i = 0; i < MovedThisTurn.Length; i++)

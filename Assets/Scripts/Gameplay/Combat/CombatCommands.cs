@@ -57,6 +57,17 @@ namespace Gameplay.Combat
             Character target = state.GetCharacterByPlayer(PlayerId);
             if (target == null || target.IsDead) return;
 
+            // 木灵种子复活：死亡时种子生效 → 不死亡，复活于种子地点
+            if (state.WoodSeedPlayer == PlayerId && state.WoodSeedLocation >= 0)
+            {
+                target.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                target.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 3f);
+                target.CurrentLocationId = state.WoodSeedLocation;
+                state.WoodSeedPlayer = -1;
+                state.WoodSeedLocation = -1;
+                return;
+            }
+
             // Internal death event -> adds Dead tag
             target.ASC.SendEvent(GameplayEventTypes.OnDeath, KillerPlayerId, target.Id, 0f);
             target.ASC.ProcessEvents();

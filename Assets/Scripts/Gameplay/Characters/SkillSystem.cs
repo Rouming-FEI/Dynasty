@@ -118,6 +118,14 @@ namespace Gameplay.Characters
             if (skill.Id == 50)
                 c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
 
+            // 木灵续存 (Id=81)：安置种子于当前位置（1AP + 1 侵蚀已由 Cost/ExtraCosts 支付）
+            if (skill.Id == 81)
+            {
+                state.WoodSeedPlayer = c.PlayerId;
+                state.WoodSeedLocation = c.CurrentLocationId;
+                return;
+            }
+
             // 海幻幻剑 (Id=70)：取得归鞘刀并进入归鞘状态（0.5 全减伤由 DamagePipeline 按标签结算）
             if (skill.Id == 70)
             {

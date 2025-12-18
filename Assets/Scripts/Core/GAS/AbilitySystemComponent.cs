@@ -330,6 +330,12 @@ namespace Core.GAS
                             ApplyWhisperPayload(state);
                             continue;
                         }
+                        // 木灵瘟疫之源（Id=300）：周期被动负载，需 state 找同地点角色，不走通用 GE 挂载
+                        if (ge.Id == 300)
+                        {
+                            ApplyPlague(state);
+                            continue;
+                        }
                         GameplayEffectSpec spec = RentSpec();
                         spec.Definition = ge;
                         spec.SourceId = OwnerId;
@@ -433,6 +439,26 @@ namespace Core.GAS
             else
                 _attributeSet.SetCurrentValue(AttributeConstants.ErosionLimit,
                     GetAttributeValue(AttributeConstants.ErosionLimit) - 1f); // 败：-1（钳 ≥0）
+        }
+
+        /// <summary>
+        /// 木灵瘟疫之源（Id=300）：理智非满时，同地点其他角色受 0.5 法术效果伤（不含自己）。
+        /// </summary>
+        private void ApplyPlague(WorldState state)
+        {
+            if (state == null) return;
+            float sanity = GetAttributeValue(AttributeConstants.Sanity);
+            float max = GetAttributeValue(AttributeConstants.MaxSanity);
+            if (max > 0f && sanity >= max) return;
+            Character owner = state.GetCharacter(OwnerId);
+            if (owner == null) return;
+            for (int i = 0; i < state.Characters.Length; i++)
+            {
+                Character ch = state.Characters[i];
+                if (ch == null || ch.IsDead || ch.Id == OwnerId) continue;
+                if (ch.CurrentLocationId == owner.CurrentLocationId)
+                    DamagePipeline.ApplyDamage(state, OwnerId, ch.Id, 0.5f, DamageType.Effect);
+            }
         }
 
         // ---------------------------------------------------------------------

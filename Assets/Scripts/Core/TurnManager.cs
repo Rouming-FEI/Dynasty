@@ -134,6 +134,9 @@ namespace Core
                     int ap = result.APGained[i];
                     if (c.ASC.Tags.HasTag(GameplayTagConstants.TimeStop))
                         ap = TimeStopHook.ApplyApBonus(c, ap);
+                    // 木灵生命之火：每回合 AP +1
+                    if (c.ASC.Tags.HasTag(GameplayTagConstants.LifeFire))
+                        ap += 1;
                     c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, ap);
                     // Re-set current value to match
                     c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, 0f);
