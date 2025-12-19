@@ -145,6 +145,30 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 束缚 (Id=90)：阵盘不足不可施放；消耗 1 阵盘挂 2 回合束缚 GE
+            if (skill.Id == 90)
+            {
+                if (c.ASC.GetBloodSeals() < 1) return; // 阵盘不足
+                c.ASC.ModifyBloodSeals(-1);
+                // 挂 2 回合束缚 GE
+                GameplayEffect ge = new GameplayEffect
+                {
+                    Id = 310,
+                    DurationType = GameplayEffectDurationType.HasDuration,
+                    DurationTurns = 2,
+                    Period = new GameplayEffectPeriod(1),
+                    Modifiers = System.Array.Empty<AttributeModifier>(),
+                    GrantTags = new[] { GameplayTagConstants.Bound }
+                };
+                GameplayEffectSpec spec = target.ASC.RentSpec();
+                spec.Definition = ge;
+                spec.SourceId = c.Id;
+                spec.TargetId = target.Id;
+                spec.RemainingTurns = 2;
+                target.ASC.ApplyGameplayEffect(spec);
+                return;
+            }
+
             // 技能内判定：胜利应用 OnWinEffects，失败应用 OnLoseEffects（若有）
             if (skill.Judgment != null)
             {

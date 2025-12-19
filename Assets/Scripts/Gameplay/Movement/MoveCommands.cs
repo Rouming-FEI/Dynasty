@@ -23,6 +23,7 @@ namespace Gameplay.Movement
         {
             Character c = state.GetCharacterByPlayer(PlayerId);
             if (c == null || !c.CanMove) return;
+            if (c.ASC.Tags.HasTag(GameplayTagConstants.Bound)) return; // 束缚：不可移动
             if (!state.Locations.IsValidLocation(TargetLocationId)) return;
             if (c.ActionPoints <= 0) return;
 

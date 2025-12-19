@@ -113,9 +113,10 @@ namespace Gameplay.Items
             }
 
             // 应急处理装置 (Id=8)：HoT + DeathSave 标签 + ErosionLimit（见 EmergencyDeviceEffect）
+            // 阵法回路（阵法大师）：施放者 Definition.Id == 11 时跳过侵蚀加成
             if (item.Id == 8)
             {
-                EmergencyDeviceEffect.Apply(state, target);
+                EmergencyDeviceEffect.Apply(state, target, c.Definition?.Id != 11);
                 c.Inventory.RemoveConsumable(ItemIndex);
                 return;
             }
@@ -386,11 +387,11 @@ namespace Gameplay.Items
     /// <summary>净化药剂：清除负面状态（标签清单 + 心雾清零）+ 挂增益 GE。实验室中 0 AP 由 UseItemCommand 判定。</summary>
     public static class PurifierEffect
     {
-        // Bound / BoundStrong / LifeFire：Task 2/3 引入对应 GameplayTagConstants 常量后补入清单
         private static readonly GameplayTag[] NegativeTags =
         {
             GameplayTagConstants.MistState, GameplayTagConstants.TimeStop,
-            GameplayTagConstants.ThornPotionActive
+            GameplayTagConstants.ThornPotionActive,
+            GameplayTagConstants.LifeFire, GameplayTagConstants.Bound, GameplayTagConstants.BoundStrong
         };
 
         public static void Apply(WorldState state, Character c)

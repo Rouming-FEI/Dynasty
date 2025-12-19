@@ -78,6 +78,9 @@ namespace Gameplay.Characters
                 case 60:  // 倾听者地狱的呓语（Task 6 实现）
                     ListenerWhisper.OnKill(killer);
                     break;
+                case 92:  // 阵法大师阵法回路（Task 3 实现）
+                    FormationCircuit.OnKill(state, killer);
+                    break;
             }
         }
     }
@@ -103,6 +106,23 @@ namespace Gameplay.Characters
             killer.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 4f);
             killer.ASC.SetAttributeBaseValue(AttributeConstants.Sanity,
                 killer.ASC.GetAttributeValue(AttributeConstants.MaxSanity));
+        }
+    }
+
+    /// <summary>阵法大师阵法回路：杀人时侵蚀 +1，并与一名存活角色判定，胜理智 -0.5 / 败 -1。</summary>
+    public static class FormationCircuit
+    {
+        public static void OnKill(WorldState state, Character killer)
+        {
+            Character rival = null;
+            for (int i = 0; i < state.Characters.Length; i++)
+            {
+                Character ch = state.Characters[i];
+                if (ch != null && !ch.IsDead && ch.Id != killer.Id) { rival = ch; break; }
+            }
+            bool win = rival == null || JudgmentDuel.Resolve(state, killer, rival);
+            killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.ErosionLimit, 1f); // 侵蚀 +1
+            killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, win ? -0.5f : -1f);
         }
     }
 }

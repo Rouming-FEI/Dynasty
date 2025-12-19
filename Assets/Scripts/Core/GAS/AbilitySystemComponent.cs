@@ -267,6 +267,17 @@ namespace Core.GAS
             ReturnSpec(spec);
         }
 
+        /// <summary>移除所有指定 Id 的活跃 GE（倒序遍历，归还模式与 RemoveGameplayEffect 一致）。</summary>
+        public void RemoveEffectsById(int effectId)
+        {
+            for (int i = _activeEffects.Count - 1; i >= 0; i--)
+            {
+                GameplayEffectSpec spec = _activeEffects[i];
+                if (spec.Definition != null && spec.Definition.Id == effectId)
+                    RemoveGameplayEffect(spec);
+            }
+        }
+
         // ---------------------------------------------------------------------
         // Tick — called each turn end
         // ---------------------------------------------------------------------
@@ -360,6 +371,15 @@ namespace Core.GAS
         /// </summary>
         private void ApplyPeriodicPayload(WorldState state, GameplayEffectSpec spec)
         {
+            // 束缚（Id=310）：阵法大师束缚的周期负载，每回合末对目标 0.5 物理效果伤
+            if (spec.Definition.Id == 310)
+            {
+                Character owner = state != null ? state.GetCharacter(OwnerId) : null;
+                if (owner == null || owner.IsDead) return;
+                DamagePipeline.ApplyDamage(state, -1, OwnerId, 0.5f, DamageType.Effect);
+                return;
+            }
+
             // 鬼葬（Id=211）：按所在地人数三档结算（docs/项目介绍.md 7.12）
             if (spec.Definition.Id == 211)
             {
@@ -533,6 +553,16 @@ namespace Core.GAS
         public int GetMistLayers() => _mistLayers;
         public void AddMistLayer() => _mistLayers++;
         public void ResetMistLayers() => _mistLayers = 0;
+
+        // ---------------------------------------------------------------------
+        // 阵法大师阵盘 — 血炼计数器（跨回合保留，不随 GE 过期）
+        // ---------------------------------------------------------------------
+
+        private int _bloodSeals;
+
+        public int GetBloodSeals() => _bloodSeals;
+        public void SetBloodSeals(int v) => _bloodSeals = v;
+        public void ModifyBloodSeals(int delta) { _bloodSeals += delta; if (_bloodSeals < 0) _bloodSeals = 0; }
 
         // ---------------------------------------------------------------------
         // 周期被动计时器 — PassiveInterval / PassiveEffects

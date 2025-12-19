@@ -16,7 +16,7 @@ namespace Gameplay.Items
         private static GameplayEffect _deathSaveGE;
         private static GameplayEffect _erosionUpGE;
 
-        public static void Apply(WorldState state, Character user)
+        public static void Apply(WorldState state, Character user, bool addErosionLimit = true)
         {
             // 1. HoT GE: Period(1) x 5 turns, Sanity +0.5/turn
             if (_hotGE == null)
@@ -58,25 +58,28 @@ namespace Gameplay.Items
             deathSaveSpec.TargetId = user.Id;
             user.ASC.ApplyGameplayEffect(deathSaveSpec);
 
-            // 3. ErosionUp GE: Instant, ErosionLimit +1
-            if (_erosionUpGE == null)
+            // 3. ErosionUp GE: Instant, ErosionLimit +1（阵法回路 addErosionLimit=false 时跳过）
+            if (addErosionLimit)
             {
-                _erosionUpGE = new GameplayEffect
+                if (_erosionUpGE == null)
                 {
-                    Id = 109,
-                    DurationType = GameplayEffectDurationType.Instant,
-                    Modifiers = new[]
+                    _erosionUpGE = new GameplayEffect
                     {
-                        new AttributeModifier(AttributeConstants.ErosionLimit, AttributeModifierOp.Add, 1f)
-                    }
-                };
-            }
+                        Id = 109,
+                        DurationType = GameplayEffectDurationType.Instant,
+                        Modifiers = new[]
+                        {
+                            new AttributeModifier(AttributeConstants.ErosionLimit, AttributeModifierOp.Add, 1f)
+                        }
+                    };
+                }
 
-            GameplayEffectSpec erosionSpec = user.ASC.RentSpec();
-            erosionSpec.Definition = _erosionUpGE;
-            erosionSpec.SourceId = user.Id;
-            erosionSpec.TargetId = user.Id;
-            user.ASC.ApplyGameplayEffect(erosionSpec);
+                GameplayEffectSpec erosionSpec = user.ASC.RentSpec();
+                erosionSpec.Definition = _erosionUpGE;
+                erosionSpec.SourceId = user.Id;
+                erosionSpec.TargetId = user.Id;
+                user.ASC.ApplyGameplayEffect(erosionSpec);
+            }
         }
     }
 }

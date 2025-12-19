@@ -80,6 +80,13 @@ namespace Core.GAS
                 && targetASC.GetMistLayers() >= 1)
                 finalDamage += 0.5f;
 
+            // 阵法大师血炼：自动消耗 1 阵盘减伤 1（心雾增伤之后）
+            if (targetASC.GetBloodSeals() > 0 && finalDamage >= 1f)
+            {
+                targetASC.ModifyBloodSeals(-1);
+                finalDamage -= 1f;
+            }
+
             if (finalDamage < 0f) finalDamage = 0f;
 
             // 4.5 死亡豁免 — 应急处理装置（伤害应用前检查，避免死后再救）

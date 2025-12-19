@@ -68,6 +68,15 @@ namespace Gameplay.Combat
                 return;
             }
 
+            // 阵法大师血炼复活：阵盘 ≥ 3 → 复活（理智回满，消耗 3 阵盘）
+            if (target.ASC.GetBloodSeals() >= 3)
+            {
+                target.ASC.ModifyBloodSeals(-3);
+                target.ASC.SetAttributeBaseValue(AttributeConstants.Sanity,
+                    target.ASC.GetAttributeValue(AttributeConstants.MaxSanity));
+                return;
+            }
+
             // Internal death event -> adds Dead tag
             target.ASC.SendEvent(GameplayEventTypes.OnDeath, KillerPlayerId, target.Id, 0f);
             target.ASC.ProcessEvents();
