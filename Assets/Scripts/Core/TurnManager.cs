@@ -57,6 +57,10 @@ namespace Core
             if (guardian != null)
                 ShieldSystem.GrantShield(state, guardian.ASC, guardian.Id);
 
+            // 圣骑士持盾：其出生入口掉落一盾
+            if (state.PlayerCount >= 4 && state.GetCharacterByPlayer(3)?.Definition?.Id == 12)
+                state.Locations.DropItem(state.GetCharacterByPlayer(3).CurrentLocationId, 13, 1);
+
             // Pre-allocate action order array (sized once, reused every turn)
             _actionOrder = new int[state.PlayerCount];
 
@@ -274,6 +278,17 @@ namespace Core
                 var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
                 state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
                 return;
+            }
+
+            // 护佑：回合末移除圣骑士无敌（仅施放当回合有效）
+            if (state.PaladinAegisUsed)
+            {
+                for (int i = 0; i < state.PlayerCount; i++)
+                {
+                    Character c = state.GetCharacterByPlayer(i);
+                    if (c != null && c.Definition?.Id == 12)
+                        c.ASC.Tags.RemoveTag(GameplayTagConstants.ImmuneDamage);
+                }
             }
 
             // Next turn

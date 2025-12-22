@@ -24,6 +24,7 @@ namespace Gameplay.Characters
             ASC.SetAttributeSet(new DefaultAttributeSet());
             CurrentLocationId = -1;
             Inventory = new InventoryComponent();
+            Inventory.SetOwner(ASC);
         }
 
         public int ActionPoints => (int)ASC.GetAttributeValue(AttributeConstants.ActionPoints);

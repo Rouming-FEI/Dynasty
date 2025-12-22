@@ -36,5 +36,10 @@ namespace Core.GAS
         public static readonly GameplayTag Bound         = new(27);
         public static readonly GameplayTag BoundStrong   = new(28);
         public static readonly GameplayTag LifeFire      = new(29);
+        public static readonly GameplayTag KnightSpirit  = new(30);
+        public static readonly GameplayTag DivineProtect = new(31);
+        public static readonly GameplayTag JudgeMode     = new(32);
+        public static readonly GameplayTag NoStatus      = new(33);
+        public static readonly GameplayTag GuardLight    = new(34);
     }
 }

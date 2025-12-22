@@ -14,6 +14,13 @@ namespace Gameplay.Characters
         public static void TryOnPreDamage(WorldState state, Character source, Character target, ref float finalDamage)
         {
             if (target == null || target.Definition == null || target.Definition.Skills == null) return;
+
+            // 圣骑士受伤充能：目标侧，骑士精神开启时 +1（上限 4）
+            if (target.Definition.Id == 12
+                && target.ASC.Tags.HasTag(GameplayTagConstants.KnightSpirit)
+                && target.ASC.GetGuardianCharge() < 4)
+                target.ASC.AddGuardianCharge();
+
             SkillDef[] skills = target.Definition.Skills;
             for (int i = 0; i < skills.Length; i++)
             {
@@ -32,6 +39,15 @@ namespace Gameplay.Characters
         public static void TryOnAttack(WorldState state, Character source, Character target, ref float finalDamage)
         {
             if (source == null || target == null) return;
+
+            // 圣骑士攻击充能：来源侧，常态 +1；骑士精神开启时 +2（上限 4）
+            if (source.Definition != null && source.Definition.Id == 12 && source.ASC.GetGuardianCharge() < 4)
+            {
+                source.ASC.AddGuardianCharge();
+                if (source.ASC.Tags.HasTag(GameplayTagConstants.KnightSpirit) && source.ASC.GetGuardianCharge() < 4)
+                    source.ASC.AddGuardianCharge();
+            }
+
             if (!source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
             bool win = JudgmentDuel.Resolve(state, source, target);
             if (win)

@@ -46,6 +46,9 @@ namespace Core
         public int WoodSeedPlayer;    // 安置种子的玩家 PlayerId
         public int WoodSeedLocation;  // 种子所在地点
 
+        // 圣骑士护佑一次性标记（全局仅一次）
+        public bool PaladinAegisUsed;
+
         public WorldState(int playerCount, int randomSeed = 42)
         {
             PlayerCount = playerCount;
@@ -60,6 +63,7 @@ namespace Core
             ThornPotionTurnsRemaining = 0;
             WoodSeedPlayer = -1;
             WoodSeedLocation = -1;
+            PaladinAegisUsed = false;
             CurrentTick = 0;
             CurrentTurn = 0;
             Phase = TurnPhase.Waiting;
@@ -125,6 +129,7 @@ namespace Core
             hash = hash * 31 + ThornPotionTurnsRemaining;
             hash = hash * 31 + WoodSeedPlayer;
             hash = hash * 31 + WoodSeedLocation;
+            hash = hash * 31 + (PaladinAegisUsed ? 1 : 0);
             for (int i = 0; i < LocationTrapCounts.Length; i++)
                 hash = hash * 31 + LocationTrapCounts[i];
             for (int i = 0; i < MovedThisTurn.Length; i++)

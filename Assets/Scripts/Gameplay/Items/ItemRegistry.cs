@@ -198,7 +198,27 @@ namespace Gameplay.Items
                 }
             };
 
-            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice, purifier, mirageBlade };
+            // 圣骑士盾 (Id=13) — 武器，装备后 +0.5 物理防御（EquipEffect 长挂 999 回合，卸下时移除）
+            var paladinShield = new ItemDef
+            {
+                Id = 13,
+                Name = "圣骑士盾",
+                Type = ItemType.Weapon,
+                UseAPCost = 1,
+                TargetType = ItemTargetType.AnyPlayer,
+                EquipEffect = new GameplayEffect
+                {
+                    Id = 321,
+                    DurationType = GameplayEffectDurationType.HasDuration,
+                    DurationTurns = 999,
+                    Modifiers = new[]
+                    {
+                        new AttributeModifier(AttributeConstants.PhysicalDefense, AttributeModifierOp.Add, 0.5f)
+                    }
+                }
+            };
+
+            _items = new ItemDef[] { knife, healthPack, gun, hammer, nuke, thornPotion, trapBomb, emergencyDevice, purifier, mirageBlade, paladinShield };
         }
 
         public static ItemDef Get(int id)

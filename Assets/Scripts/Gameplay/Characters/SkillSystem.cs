@@ -169,6 +169,35 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 圣骑士守护之光 (Id=101)：目标挂 3 回合 GuardLight GE（下次受伤 -2，DamagePipeline 结算）
+            if (skill.Id == 101)
+            {
+                GameplayEffect ge = new GameplayEffect
+                {
+                    Id = 322,
+                    DurationType = GameplayEffectDurationType.HasDuration,
+                    DurationTurns = 3,
+                    GrantTags = new[] { GameplayTagConstants.GuardLight }
+                };
+                GameplayEffectSpec spec = target.ASC.RentSpec();
+                spec.Definition = ge;
+                spec.SourceId = c.Id;
+                spec.TargetId = target.Id;
+                spec.RemainingTurns = 3;
+                target.ASC.ApplyGameplayEffect(spec);
+                return;
+            }
+
+            // 圣骑士护佑 (Id=103)：当回合无敌 + 充能 +1；全局仅一次
+            if (skill.Id == 103)
+            {
+                if (state.PaladinAegisUsed) return;
+                state.PaladinAegisUsed = true;
+                c.ASC.Tags.AddTag(GameplayTagConstants.ImmuneDamage);
+                c.ASC.AddGuardianCharge();
+                return;
+            }
+
             // 技能内判定：胜利应用 OnWinEffects，失败应用 OnLoseEffects（若有）
             if (skill.Judgment != null)
             {

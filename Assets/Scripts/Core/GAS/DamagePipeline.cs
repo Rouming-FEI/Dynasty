@@ -21,6 +21,21 @@ namespace Core.GAS
             Character target = state.GetCharacter(targetId);
             if (target == null || target.IsDead) return 0f;
 
+            // 骑士的精神：同地点开启者（非伤害来源、非目标本身）转移伤害
+            if (source != null && !target.ASC.Tags.HasTag(GameplayTagConstants.KnightSpirit))
+            {
+                Character knight = null;
+                for (int i = 0; i < state.Characters.Length; i++)
+                {
+                    Character ch = state.Characters[i];
+                    if (ch == null || ch.IsDead || ch.Id == source.Id || ch.Id == target.Id) continue;
+                    if (ch.CurrentLocationId == target.CurrentLocationId
+                        && ch.ASC.Tags.HasTag(GameplayTagConstants.KnightSpirit))
+                    { knight = ch; break; }
+                }
+                if (knight != null) target = knight;
+            }
+
             AbilitySystemComponent targetASC = target.ASC;
 
             // 1. 免疫检查（真实伤害无视一切免疫）
@@ -68,6 +83,14 @@ namespace Core.GAS
                 finalDamage -= targetASC.GetAttributeValue(AttributeConstants.PhysicalDefense);
             else if (damageType == DamageType.Magic)
                 finalDamage -= targetASC.GetAttributeValue(AttributeConstants.MagicDefense);
+
+            // 圣骑士守护之光：下次受伤 -2，一次性消耗（移除标签与 GE）
+            if (targetASC.Tags.HasTag(GameplayTagConstants.GuardLight))
+            {
+                finalDamage -= 2f;
+                targetASC.Tags.RemoveTag(GameplayTagConstants.GuardLight);
+                targetASC.RemoveEffectsById(322);
+            }
 
             // 海幻归鞘持刀：0.5 全减伤（物理/法术；Effect/True 不受）
             if ((damageType == DamageType.Physical || damageType == DamageType.Magic)
