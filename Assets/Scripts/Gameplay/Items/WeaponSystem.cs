@@ -16,14 +16,18 @@ namespace Gameplay.Items
         /// </summary>
         public static bool RangedAttack(WorldState state, Character attacker, Character target, ItemDef weapon, float damage)
         {
-            // 藏匿处隐身：目标隐身且攻击者未同处藏匿状态 → 无法瞄准
+            // 审判者模式：无视藏匿
+            bool judge = attacker.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode);
+            // 藏匿处隐身：目标隐身且攻击者未同处藏匿状态（且非审判者）→ 无法瞄准
             if (target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) &&
-                !attacker.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden))
+                !attacker.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) && !judge)
                 return false;
 
             if (attacker.Inventory.EquippedWeaponAmmo <= 0) return false;
             attacker.Inventory.EquippedWeaponAmmo--;
-            DamagePipeline.ApplyDamage(state, attacker.Id, target.Id, damage, DamageType.Physical);
+            // 枪伤害 +0.5 且转法术（审判者）
+            DamagePipeline.ApplyDamage(state, attacker.Id, target.Id,
+                damage + (judge ? 0.5f : 0f), judge ? DamageType.Magic : DamageType.Physical);
             return true;
         }
 

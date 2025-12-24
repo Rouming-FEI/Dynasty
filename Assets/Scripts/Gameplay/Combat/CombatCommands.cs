@@ -77,6 +77,14 @@ namespace Gameplay.Combat
                 return;
             }
 
+            // 代行者主的庇护：致命伤 → 理智 0.5 + 本能 +2（免死）
+            if (target.Definition?.Id == 13)
+            {
+                target.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                target.ASC.ModifyInstinct(2);
+                return;
+            }
+
             // Internal death event -> adds Dead tag
             target.ASC.SendEvent(GameplayEventTypes.OnDeath, KillerPlayerId, target.Id, 0f);
             target.ASC.ProcessEvents();

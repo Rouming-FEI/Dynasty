@@ -26,6 +26,13 @@ namespace Gameplay.Items
             ItemDef item = ItemRegistry.Get(ItemId);
             if (item == null) return;
 
+            // 代行者孤狼限制：禁深度稳定器（血包 Id=2）/应急装置（Id=8）；武器只可用枪（Id=3）
+            if (c.Definition?.Id == 13)
+            {
+                if (item.Id == 2 || item.Id == 8) return;
+                if (item.Type == ItemType.Weapon && item.Id != 3) return;
+            }
+
             // 鬼化：禁拾取武器
             if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm) && item.Type == ItemType.Weapon) return;
 

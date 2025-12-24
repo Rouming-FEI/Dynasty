@@ -78,6 +78,15 @@ namespace Core.GAS
             }
             GameplayEffect ge = spec.Definition;
 
+            // 代行者主的庇护（NoStatus）：无法被施加任何状态（带 GrantTags 的 GE 拒绝；
+            // 纯伤害 Instant GE 无 GrantTags，放行）
+            if (Tags.HasTag(GameplayTagConstants.NoStatus)
+                && ge.GrantTags != null && ge.GrantTags.Length > 0)
+            {
+                ReturnSpec(spec);
+                return;
+            }
+
             // --- Tag condition check ---
             if (ge.ApplicationRequiredTags != null && ge.ApplicationRequiredTags.Length > 0)
             {
@@ -347,6 +356,18 @@ namespace Core.GAS
                             ApplyPlague(state);
                             continue;
                         }
+                        // 代行者孤狼（Id=330）：周期被动负载，理智 +0.5，不走通用 GE 挂载
+                        if (ge.Id == 330)
+                        {
+                            ApplyLoneWolf();
+                            continue;
+                        }
+                        // 代行者主的意志（Id=331）：周期被动负载，本能/侵蚀/防御联动，需 state 判伤害追踪
+                        if (ge.Id == 331)
+                        {
+                            ApplyLoneWill(state);
+                            continue;
+                        }
                         GameplayEffectSpec spec = RentSpec();
                         spec.Definition = ge;
                         spec.SourceId = OwnerId;
@@ -481,6 +502,38 @@ namespace Core.GAS
             }
         }
 
+        /// <summary>
+        /// 代行者孤狼（Id=330）：周期被动负载，理智 +0.5。
+        /// </summary>
+        private void ApplyLoneWolf()
+        {
+            ModifyAttributeCurrentValue(AttributeConstants.Sanity, 0.5f);
+        }
+
+        /// <summary>
+        /// 代行者主的意志（Id=331）：周期被动负载。
+        /// 本能 ≥4 进入审判者模式（<4 退出）；每 3 回合未造成伤害则本能 +1；
+        /// 侵蚀上限 -0.5、物理防御 +0.5（SetAttributeBaseValue 同时写 base+current，
+        /// 派生防御由 BuffResolver 下次 Resolve 以 base 重建，故 base 写入语义正确）。
+        /// </summary>
+        private void ApplyLoneWill(WorldState state)
+        {
+            // 审判者模式（本能 ≥4）：间隔 2；否则 3（PassiveInterval 已设 3，审判者由 TickEffects 特判）
+            if (_instinct >= 4 && !Tags.HasTag(GameplayTagConstants.JudgeMode))
+                Tags.AddTag(GameplayTagConstants.JudgeMode);
+            if (_instinct < 4 && Tags.HasTag(GameplayTagConstants.JudgeMode))
+                Tags.RemoveTag(GameplayTagConstants.JudgeMode);
+
+            // 「每 3 回合未造成伤害」→ 周期负载内检查距上次造成伤害的回合差
+            if (state == null || state.CurrentTurn - _lastDamageTurn >= 3)
+                ModifyInstinct(1);
+
+            SetAttributeBaseValue(AttributeConstants.ErosionLimit,
+                GetAttributeValue(AttributeConstants.ErosionLimit) - 0.5f);
+            SetAttributeBaseValue(AttributeConstants.PhysicalDefense,
+                GetAttributeValue(AttributeConstants.PhysicalDefense) + 0.5f);
+        }
+
         // ---------------------------------------------------------------------
         // Spec pooling
         // ---------------------------------------------------------------------
@@ -563,6 +616,18 @@ namespace Core.GAS
         public int GetBloodSeals() => _bloodSeals;
         public void SetBloodSeals(int v) => _bloodSeals = v;
         public void ModifyBloodSeals(int delta) { _bloodSeals += delta; if (_bloodSeals < 0) _bloodSeals = 0; }
+
+        // ---------------------------------------------------------------------
+        // 代行者本能 — 主的意志计数器（跨回合保留，不随 GE 过期）
+        // ---------------------------------------------------------------------
+
+        private int _instinct;
+        public int GetInstinct() => _instinct;
+        public void ModifyInstinct(int delta) { _instinct += delta; if (_instinct < 0) _instinct = 0; }
+
+        // 最近造成伤害的回合（主的意志判定用；-999 = 从未造成伤害）
+        private int _lastDamageTurn = -999;
+        public void MarkDamageDealt(int turn) => _lastDamageTurn = turn;
 
         // ---------------------------------------------------------------------
         // 周期被动计时器 — PassiveInterval / PassiveEffects

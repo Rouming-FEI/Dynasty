@@ -48,6 +48,10 @@ namespace Gameplay.Characters
                     source.ASC.AddGuardianCharge();
             }
 
+            // 代行者伤害追踪：记录最近造成伤害的回合（主的意志判定用）
+            if (source.Definition != null && source.Definition.Id == 13)
+                source.ASC.MarkDamageDealt(state.CurrentTurn);
+
             if (!source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
             bool win = JudgmentDuel.Resolve(state, source, target);
             if (win)
@@ -59,6 +63,11 @@ namespace Gameplay.Characters
         public static void TryOnKill(WorldState state, Character killer, Character victim)
         {
             if (killer == null || killer.Definition == null || killer.Definition.Skills == null) return;
+
+            // 代行者审判者模式：杀人后本能 -1（不退出审判者，退出由 ApplyLoneWill 按本能 <4 判定）
+            if (killer.Definition.Id == 13 && killer.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode))
+                killer.ASC.ModifyInstinct(-1);
+
             SkillDef[] skills = killer.Definition.Skills;
             for (int i = 0; i < skills.Length; i++)
             {

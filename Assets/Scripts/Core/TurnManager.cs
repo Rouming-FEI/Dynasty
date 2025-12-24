@@ -50,6 +50,10 @@ namespace Core
                 c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
                 GrantInitialItems(state, c, def);
                 state.Characters[i] = c;
+
+                // 代行者主的庇护：NoStatus 常驻被动（无法被施加任何状态）
+                if (c.Definition?.Id == 13)
+                    c.ASC.Tags.AddTag(GameplayTagConstants.NoStatus);
             }
 
             // 守护者被动「重装」：开局获得护盾
