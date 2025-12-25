@@ -25,6 +25,9 @@ namespace SkillAcceptance
             // BuildState 未经过判定分发 AP（默认 0），注入足额 AP 并补齐前置标签/属性，
             // 使本检查只验证「激活类型」而非资源是否充足
             probeCaster.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
+            if (skill.Cost.Type == SkillCostType.Charge)
+                for (int i = 0; i < (int)skill.Cost.Amount; i++)
+                    probeCaster.ASC.AddGuardianCharge(); // 充能成本注入，使激活类型检查只验证类型
             if (skill.RequiredTags != null)
                 for (int i = 0; i < skill.RequiredTags.Length; i++)
                     probeCaster.ASC.Tags.AddTag(skill.RequiredTags[i]);
@@ -119,6 +122,9 @@ namespace SkillAcceptance
             int pc = AcceptanceScenes.FindPlayerOfDef(pos, def);
             Character caster = pos.GetCharacterByPlayer(pc);
             caster.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
+            if (skill.Cost.Type == SkillCostType.Charge)
+                for (int i = 0; i < (int)skill.Cost.Amount; i++)
+                    caster.ASC.AddGuardianCharge();
             if (skill.RequiredTags != null)
                 for (int i = 0; i < skill.RequiredTags.Length; i++)
                     caster.ASC.Tags.AddTag(skill.RequiredTags[i]);
@@ -215,6 +221,9 @@ namespace SkillAcceptance
                     int sp = AcceptanceScenes.FindPlayerOfDef(selfState, def);
                     Character sc = selfState.GetCharacterByPlayer(sp);
                     sc.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 10);
+                    if (skill.Cost.Type == SkillCostType.Charge)
+                        for (int i = 0; i < (int)skill.Cost.Amount; i++)
+                            sc.ASC.AddGuardianCharge();
                     bool selfOk = SkillSystem.CanActivate(skill, sc, skillIndex);
                     SkillSystem.Activate(skill, sc, sc, selfState, skillIndex);
                     results.Add(selfOk

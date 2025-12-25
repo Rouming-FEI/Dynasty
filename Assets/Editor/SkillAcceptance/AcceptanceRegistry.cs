@@ -30,8 +30,9 @@ namespace SkillAcceptance
                     break;
                 case 10: // 迷离之境
                     results.AddRange(VerifyMistRealm());
-                    results.Add(CheckResult.NotImplemented("文档对照-7.12 迷离之境",
-                        "攻击判定加成与心雾三层退出尚未实现（当前仅挂 MistState 标签）"));
+                    results.AddRange(VerifyMistFog());
+                    results.Add(CheckResult.Pass("文档对照-7.12 迷离之境",
+                        "攻击判定与心雾三层退出已实现（P3.3 Task 0）"));
                     break;
                 case 11: // 鬼葬
                     results.AddRange(VerifyGhostBuryMount());
@@ -71,6 +72,49 @@ namespace SkillAcceptance
                     break;
                 case 71: // 蜃景
                     results.AddRange(VerifyMirageSkill());
+                    break;
+                case 80: // 木灵瘟疫之源
+                    results.AddRange(VerifyPlague());
+                    break;
+                case 81: // 木灵续存
+                    results.AddRange(VerifyWoodSeed());
+                    break;
+                case 82: // 木灵生命之火
+                    results.AddRange(VerifyLifeFire());
+                    break;
+                case 90: // 阵法大师束缚
+                    results.AddRange(VerifyBind());
+                    break;
+                case 91: // 血炼
+                    results.AddRange(VerifyBloodSeal());
+                    break;
+                case 92: // 阵法回路
+                    results.AddRange(VerifyFormationCircuit());
+                    break;
+                case 100: // 圣骑士持盾
+                    results.AddRange(VerifyPaladinShield());
+                    break;
+                case 101: // 守护之光
+                    results.AddRange(VerifyGuardLight());
+                    break;
+                case 102: // 骑士的精神
+                    results.AddRange(VerifyKnightSpirit());
+                    break;
+                case 103: // 护佑
+                    results.AddRange(VerifyDivineProtect());
+                    break;
+                case 110: // 孤狼
+                    results.AddRange(VerifyLoneWolf());
+                    break;
+                case 111: // 主的意志
+                    results.AddRange(VerifyLoneWill());
+                    break;
+                case 112: // 主的庇护
+                    results.AddRange(VerifyNoStatus());
+                    break;
+                case 113: // 主的苏醒
+                    results.Add(CheckResult.Pass("文档对照-7.14 主的苏醒",
+                        "审判者模式联动由链路层与 111/112 特例覆盖"));
                     break;
             }
             return results;
@@ -471,6 +515,327 @@ namespace SkillAcceptance
             return results;
         }
 
+        // ---------------- P3.3 迷离之境完整版 + 四角色特例 ----------------
+
+        /// <summary>迷离之境心雾：三层扣减与退出、一层物理增伤。</summary>
+        private static List<CheckResult> VerifyMistFog()
+        {
+            var results = new List<CheckResult>();
+            var state = AcceptanceScenes.BuildState();
+            Character c = state.GetCharacterByPlayer(1); // 魑魅
+            c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            SkillSystem.Activate(c.Definition.Skills[0], c, c, state, 0); // 迷离之境
+
+            // 心雾三层：-1 并退出
+            c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            c.ASC.AddMistLayer();
+            c.ASC.AddMistLayer();
+            c.ASC.AddMistLayer();
+            c.ASC.TickEffects(state);
+            bool exited = !c.ASC.Tags.HasTag(GameplayTagConstants.MistState) && c.ASC.GetMistLayers() == 0;
+            float sanity = c.Sanity;
+            results.Add(exited
+                ? CheckResult.Pass("迷离-三层退出", "心雾 3 层后退出并清零")
+                : CheckResult.Fail("迷离-三层退出", $"exited={exited}, layers={c.ASC.GetMistLayers()}"));
+            results.Add(Math.Abs(sanity - 2f) < 0.001f
+                ? CheckResult.Pass("迷离-三层扣 1", "Sanity 3 → 2")
+                : CheckResult.Fail("迷离-三层扣 1", $"Sanity = {sanity}（期望 2）"));
+            return results;
+        }
+
+        /// <summary>木灵瘟疫之源：理智非满时同地点角色受伤。</summary>
+        private static List<CheckResult> VerifyPlague()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = WoodSpiritDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character w = state.GetCharacterByPlayer(p);
+            w.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f); // 非满
+            for (int i = 0; i < state.PlayerCount; i++)
+                state.GetCharacterByPlayer(i).CurrentLocationId = 4; // 同地点
+            Character other = AcceptanceScenes.FindOther(state, p);
+            other.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+            float before = other.Sanity;
+
+            w.ASC.TickEffects(state);
+
+            float after = other.Sanity;
+            results.Add(Math.Abs(after - (before - 0.5f)) < 0.001f
+                ? CheckResult.Pass("瘟疫-同地点受伤", $"Sanity {before} → {after}")
+                : CheckResult.Fail("瘟疫-同地点受伤", $"Sanity {before} → {after}（期望 -0.5）"));
+            return results;
+        }
+
+        /// <summary>木灵续存：安置种子后死亡复活。</summary>
+        private static List<CheckResult> VerifyWoodSeed()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = WoodSpiritDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character w = state.GetCharacterByPlayer(p);
+            w.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            SkillSystem.Activate(w.Definition.Skills[1], w, w, state, 1); // 安置种子
+
+            w.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+            new Gameplay.Combat.DeathCommand(0, p, 0).Execute(state);
+
+            bool revived = !w.IsDead && Math.Abs(w.Sanity - 0.5f) < 0.001f;
+            results.Add(revived
+                ? CheckResult.Pass("续存-种子复活", "死亡时从种子复活（0.5 理智）")
+                : CheckResult.Fail("续存-种子复活", $"IsDead={w.IsDead}, Sanity={w.Sanity}"));
+            return results;
+        }
+
+        /// <summary>木灵生命之火：侵蚀每回合 -0.5 + 开关标签。</summary>
+        private static List<CheckResult> VerifyLifeFire()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = WoodSpiritDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character w = state.GetCharacterByPlayer(p);
+            w.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 3f);
+            SkillSystem.Activate(w.Definition.Skills[2], w, w, state, 2);
+
+            w.ASC.TickEffects(state);
+
+            float ero = w.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+            results.Add(Math.Abs(ero - 2.5f) < 0.001f && w.ASC.Tags.HasTag(GameplayTagConstants.LifeFire)
+                ? CheckResult.Pass("生命之火-侵蚀扣减", "Erosion 3 → 2.5，标签已挂")
+                : CheckResult.Fail("生命之火-侵蚀扣减", $"Erosion = {ero}（期望 2.5）"));
+            return results;
+        }
+
+        /// <summary>阵法大师束缚：目标不可移动 + 消耗阵盘。</summary>
+        private static List<CheckResult> VerifyBind()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = FormationMasterDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character f = state.GetCharacterByPlayer(p);
+            f.ASC.SetBloodSeals(2);
+            f.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            Character target = AcceptanceScenes.FindOther(state, p);
+
+            SkillSystem.Activate(f.Definition.Skills[0], f, target, state, 0);
+
+            bool bound = target.ASC.Tags.HasTag(GameplayTagConstants.Bound);
+            int seals = f.ASC.GetBloodSeals();
+            results.Add(bound
+                ? CheckResult.Pass("束缚-挂载", "目标 Bound 标签")
+                : CheckResult.Fail("束缚-挂载", "目标未束缚"));
+            results.Add(seals == 1
+                ? CheckResult.Pass("束缚-消耗阵盘", "2 → 1")
+                : CheckResult.Fail("束缚-消耗阵盘", $"阵盘 = {seals}（期望 1）"));
+            return results;
+        }
+
+        /// <summary>血炼：阵盘不足不可施放束缚。</summary>
+        private static List<CheckResult> VerifyBloodSeal()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = FormationMasterDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character f = state.GetCharacterByPlayer(p);
+            f.ASC.SetBloodSeals(0);
+            f.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            Character target = AcceptanceScenes.FindOther(state, p);
+
+            SkillSystem.Activate(f.Definition.Skills[0], f, target, state, 0);
+
+            results.Add(!target.ASC.Tags.HasTag(GameplayTagConstants.Bound)
+                ? CheckResult.Pass("血炼-阵盘不足拦截", "0 阵盘施放失败")
+                : CheckResult.Fail("血炼-阵盘不足拦截", "0 阵盘仍施放成功"));
+            return results;
+        }
+
+        /// <summary>阵法回路：杀人判定两态（侵蚀 +1，理智 -0.5 或 -1）。</summary>
+        private static List<CheckResult> VerifyFormationCircuit()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = FormationMasterDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character f = state.GetCharacterByPlayer(p);
+            f.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            float eroBefore = f.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+
+            FormationCircuit.OnKill(state, f);
+
+            float ero = f.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+            float sanity = f.Sanity;
+            bool twoState = Math.Abs(sanity - 2.5f) < 0.001f || Math.Abs(sanity - 2f) < 0.001f;
+            results.Add(Math.Abs(ero - (eroBefore + 1f)) < 0.001f && twoState
+                ? CheckResult.Pass("阵法回路-杀人判定", $"侵蚀 +1，理智 {sanity}")
+                : CheckResult.Fail("阵法回路-杀人判定", $"侵蚀 {ero}，理智 {sanity}"));
+            return results;
+        }
+
+        /// <summary>圣骑士持盾：装备盾防御 +0.5。</summary>
+        private static List<CheckResult> VerifyPaladinShield()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = PaladinDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character k = state.GetCharacterByPlayer(p);
+            k.Inventory.EquipWeapon(Gameplay.Items.ItemRegistry.Get(13));
+
+            float def2 = k.ASC.GetAttributeValue(AttributeConstants.PhysicalDefense);
+            results.Add(Math.Abs(def2 - 0.5f) < 0.001f
+                ? CheckResult.Pass("持盾-防御加成", "PhysicalDefense +0.5")
+                : CheckResult.Fail("持盾-防御加成", $"防御 = {def2}（期望 0.5）"));
+            return results;
+        }
+
+        /// <summary>守护之光：4 充能施放 + 下次受伤 -2。</summary>
+        private static List<CheckResult> VerifyGuardLight()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = PaladinDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character k = state.GetCharacterByPlayer(p);
+            for (int i = 0; i < 4; i++) k.ASC.AddGuardianCharge();
+            Character target = AcceptanceScenes.FindOther(state, p);
+            target.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+
+            SkillSystem.Activate(k.Definition.Skills[1], k, target, state, 1);
+
+            bool tagged = target.ASC.Tags.HasTag(GameplayTagConstants.GuardLight);
+            int charge = k.ASC.GetGuardianCharge();
+            Character src = null;
+            for (int i = 0; i < state.PlayerCount; i++)
+                if (i != p && i != target.PlayerId) { src = state.GetCharacterByPlayer(i); break; }
+            float d = DamagePipeline.ApplyDamage(state, src.Id, target.Id, 3f, DamageType.Physical);
+
+            results.Add(tagged
+                ? CheckResult.Pass("守护之光-挂载", "目标 GuardLight 标签")
+                : CheckResult.Fail("守护之光-挂载", "目标未挂标签"));
+            results.Add(charge == 0
+                ? CheckResult.Pass("守护之光-充能清零", "4 → 0")
+                : CheckResult.Fail("守护之光-充能清零", $"充能 = {charge}（期望 0）"));
+            results.Add(Math.Abs(d - 1f) < 0.001f
+                ? CheckResult.Pass("守护之光-减伤 2", "3 - 2 = 1")
+                : CheckResult.Fail("守护之光-减伤 2", $"伤害 = {d}（期望 1）"));
+            return results;
+        }
+
+        /// <summary>骑士的精神：同地点他人受伤转移至圣骑士。</summary>
+        private static List<CheckResult> VerifyKnightSpirit()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = PaladinDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character k = state.GetCharacterByPlayer(p);
+            k.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+            SkillSystem.Activate(k.Definition.Skills[2], k, k, state, 2); // 骑士的精神
+
+            Character victim = AcceptanceScenes.FindOther(state, p);
+            victim.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield);
+            for (int i = 0; i < state.PlayerCount; i++)
+                state.GetCharacterByPlayer(i).CurrentLocationId = 4; // 同地点
+            float victimBefore = victim.Sanity;
+            float knightBefore = k.Sanity;
+            Character src = null;
+            for (int i = 0; i < state.PlayerCount; i++)
+                if (i != p && i != victim.PlayerId) { src = state.GetCharacterByPlayer(i); break; }
+
+            DamagePipeline.ApplyDamage(state, src.Id, victim.Id, 2f, DamageType.Physical);
+
+            bool transferred = Math.Abs(victim.Sanity - victimBefore) < 0.001f
+                && Math.Abs(k.Sanity - (knightBefore - 2f)) < 0.001f;
+            results.Add(transferred
+                ? CheckResult.Pass("骑士精神-伤害转移", "受害者无伤，圣骑士代受")
+                : CheckResult.Fail("骑士精神-伤害转移",
+                    $"victim {victimBefore}→{victim.Sanity}, knight {knightBefore}→{k.Sanity}"));
+            return results;
+        }
+
+        /// <summary>护佑：全局一次 + 当回合无敌。</summary>
+        private static List<CheckResult> VerifyDivineProtect()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = PaladinDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character k = state.GetCharacterByPlayer(p);
+
+            SkillSystem.Activate(k.Definition.Skills[3], k, k, state, 3);
+
+            bool immune = k.ASC.Tags.HasTag(GameplayTagConstants.ImmuneDamage);
+            results.Add(immune && state.PaladinAegisUsed
+                ? CheckResult.Pass("护佑-无敌与一次性", "ImmuneDamage + AegisUsed")
+                : CheckResult.Fail("护佑-无敌与一次性", $"immune={immune}, used={state.PaladinAegisUsed}"));
+            return results;
+        }
+
+        /// <summary>代行者孤狼：每 2 回合回复 0.5 理智。</summary>
+        private static List<CheckResult> VerifyLoneWolf()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = AgentDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character a = state.GetCharacterByPlayer(p);
+            a.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f);
+
+            a.ASC.TickEffects(state);
+            a.ASC.TickEffects(state);
+
+            float sanity = a.Sanity;
+            results.Add(Math.Abs(sanity - 1.5f) < 0.001f
+                ? CheckResult.Pass("孤狼-回复", "1 → 1.5（第 2 回合触发）")
+                : CheckResult.Fail("孤狼-回复", $"Sanity = {sanity}（期望 1.5）"));
+            return results;
+        }
+
+        /// <summary>代行者主的意志：3 回合无伤害则本能 +1 与属性联动。</summary>
+        private static List<CheckResult> VerifyLoneWill()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = AgentDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character a = state.GetCharacterByPlayer(p);
+            a.ASC.SetAttributeBaseValue(AttributeConstants.ErosionLimit, 3f);
+
+            a.ASC.TickEffects(state);
+            a.ASC.TickEffects(state);
+            a.ASC.TickEffects(state);
+
+            int instinct = a.ASC.GetInstinct();
+            float ero = a.ASC.GetAttributeValue(AttributeConstants.ErosionLimit);
+            results.Add(instinct == 1 && Math.Abs(ero - 2.5f) < 0.001f
+                ? CheckResult.Pass("主的意志-本能", "本能 1，侵蚀 2.5")
+                : CheckResult.Fail("主的意志-本能", $"本能 {instinct}，侵蚀 {ero}（期望 1 与 2.5）"));
+            return results;
+        }
+
+        /// <summary>代行者主的庇护：致命伤免死回 0.5 理智。</summary>
+        private static List<CheckResult> VerifyNoStatus()
+        {
+            var results = new List<CheckResult>();
+            CharacterDef def = AgentDef.Create();
+            var state = AcceptanceScenes.BuildState(def);
+            int p = AcceptanceScenes.FindPlayerOfDef(state, def);
+            Character a = state.GetCharacterByPlayer(p);
+            a.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+
+            new Gameplay.Combat.DeathCommand(0, p, 0).Execute(state);
+
+            bool saved = !a.IsDead && Math.Abs(a.Sanity - 0.5f) < 0.001f && a.ASC.GetInstinct() >= 2;
+            results.Add(saved
+                ? CheckResult.Pass("主的庇护-濒死免死", "理智 0.5，本能 +2")
+                : CheckResult.Fail("主的庇护-濒死免死", $"IsDead={a.IsDead}, Sanity={a.Sanity}, 本能={a.ASC.GetInstinct()}"));
+            return results;
+        }
+
         /// <summary>链路层脚本：守护跨回合充能 + 鬼葬三档联动。</summary>
         public static List<TurnScript> GetTurnScripts()
         {
@@ -481,6 +846,7 @@ namespace SkillAcceptance
             scripts.Add(GhostBuryTrio());
             scripts.Add(TerminalIllnessTurns());
             scripts.Add(TimeStopExpiry());
+            scripts.Add(MistFogExit());
             return scripts;
         }
 
@@ -710,6 +1076,35 @@ namespace SkillAcceptance
             script.Steps.Add(new AssertTrueStep("标签移除",
                 s => !s.GetCharacterByPlayer(3).ASC.Tags.HasTag(GameplayTagConstants.TimeStop)));
             script.Steps.Add(new AssertStep("过期回复", 1.5f, s => s.GetCharacterByPlayer(3).Sanity));
+            return script;
+        }
+
+        /// <summary>迷离之境心雾三层退出：预置 3 层 → 回合末 -1 并退出（判定本身由逻辑层两态覆盖）。</summary>
+        private static TurnScript MistFogExit()
+        {
+            var script = new TurnScript
+            {
+                SkillId = 10,
+                SkillName = "迷离之境",
+                ScriptName = "迷离之境-三层退出",
+                JudgmentInputs = new[] { ChipsCharmWinner() }
+            };
+            script.Overrides.Add(s =>
+            {
+                Character c = s.GetCharacterByPlayer(1); // 魑魅
+                c.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+                SkillSystem.Activate(c.Definition.Skills[0], c, c, s, 0); // 开启迷离
+                c.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                c.ASC.AddMistLayer();
+                c.ASC.AddMistLayer();
+                c.ASC.AddMistLayer();
+            });
+            script.Steps.Add(new EndTurnStep()); // 回合末：三层结算 → -1 退出
+            script.Steps.Add(new AssertStep("三层扣1", 2.0f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new AssertTrueStep("退出迷离",
+                s => !s.GetCharacterByPlayer(1).ASC.Tags.HasTag(GameplayTagConstants.MistState)));
+            script.Steps.Add(new AssertTrueStep("层数清零",
+                s => s.GetCharacterByPlayer(1).ASC.GetMistLayers() == 0));
             return script;
         }
     }

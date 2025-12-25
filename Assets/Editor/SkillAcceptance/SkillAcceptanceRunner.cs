@@ -21,7 +21,11 @@ namespace SkillAcceptance
             TravelerDef.Create(),
             TimeThiefDef.Create(),
             ListenerDef.Create(),
-            SeaMirageDef.Create()
+            SeaMirageDef.Create(),
+            WoodSpiritDef.Create(),
+            FormationMasterDef.Create(),
+            PaladinDef.Create(),
+            AgentDef.Create()
         };
 
         public static AcceptanceReport RunAll() => RunCore(includeLogic: true, includeTurn: true);
