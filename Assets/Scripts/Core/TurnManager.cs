@@ -171,10 +171,10 @@ namespace Core
             int idx = 0;
 
             // Winners first, sorted by effective chips desc; then losers
+            Span<int> group = stackalloc int[playerCount];
             for (int pass = 0; pass < 2; pass++)
             {
                 // Collect indices for this role group
-                Span<int> group = stackalloc int[playerCount];
                 int groupCount = 0;
                 JudgmentRole targetRole = (pass == 0) ? JudgmentRole.Winner : JudgmentRole.Loser;
 
