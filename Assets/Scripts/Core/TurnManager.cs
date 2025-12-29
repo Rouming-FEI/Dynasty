@@ -21,7 +21,10 @@ namespace Core
             _actionOrder = Array.Empty<int>();
         }
 
-        public void StartGame(WorldState state)
+        public void StartGame(WorldState state) => StartGame(state, null);
+
+        /// <summary>注入角色 Def 数组（长度必须等于 PlayerCount）；null 走默认 3 角色轮换。</summary>
+        public void StartGame(WorldState state, CharacterDef[] injectedDefs)
         {
             state.Phase = TurnPhase.JudgmentPhase;
             state.CurrentTurn = 1;
@@ -29,13 +32,23 @@ namespace Core
             // Non-hot-path one-time init: registry + def allocations are acceptable here
             ItemRegistry.Initialize();
 
-            // Player 0 = 守护者, Player 1 = 魑魅, Player 2 = 普通人, then cycle
-            CharacterDef[] defs =
+            CharacterDef[] defs;
+            if (injectedDefs == null)
             {
-                GuardianDef.Create(),
-                CharmSpiritDef.Create(),
-                NormalPersonDef.Create()
-            };
+                defs = new CharacterDef[]
+                {
+                    GuardianDef.Create(),
+                    CharmSpiritDef.Create(),
+                    NormalPersonDef.Create()
+                };
+            }
+            else
+            {
+                if (injectedDefs.Length != state.PlayerCount)
+                    throw new ArgumentException(
+                        $"defs length {injectedDefs.Length} must equal PlayerCount {state.PlayerCount}");
+                defs = injectedDefs;
+            }
 
             for (int i = 0; i < state.PlayerCount; i++)
             {
@@ -56,16 +69,31 @@ namespace Core
                     c.ASC.Tags.AddTag(GameplayTagConstants.NoStatus);
             }
 
-            // 守护者被动「重装」：开局获得护盾
-            Character guardian = state.GetCharacterByPlayer(0);
-            if (guardian != null)
-                ShieldSystem.GrantShield(state, guardian.ASC, guardian.Id);
+            if (injectedDefs == null)
+            {
+                // 默认路径：保持既有行为字面不变（只给 P0 守护者开盾、只查 P3 圣骑士）
+                Character guardian = state.GetCharacterByPlayer(0);
+                if (guardian != null)
+                    ShieldSystem.GrantShield(state, guardian.ASC, guardian.Id);
+                if (state.PlayerCount >= 4 && state.GetCharacterByPlayer(3)?.Definition?.Id == 12)
+                {
+                    state.Locations.DropItem(state.GetCharacterByPlayer(3).CurrentLocationId, 13, 1);
+                }
+            }
+            else
+            {
+                // 注入路径：按 Def 归属结算开局特例（任意玩家位拿到对应 Def 均生效）
+                for (int i = 0; i < state.PlayerCount; i++)
+                {
+                    Character c = state.GetCharacterByPlayer(i);
+                    if (c == null) continue;
+                    if (c.Definition?.Id == 1)
+                        ShieldSystem.GrantShield(state, c.ASC, c.Id);
+                    if (c.Definition?.Id == 12)
+                        state.Locations.DropItem(c.CurrentLocationId, 13, 1);
+                }
+            }
 
-            // 圣骑士持盾：其出生入口掉落一盾
-            if (state.PlayerCount >= 4 && state.GetCharacterByPlayer(3)?.Definition?.Id == 12)
-                state.Locations.DropItem(state.GetCharacterByPlayer(3).CurrentLocationId, 13, 1);
-
-            // Pre-allocate action order array (sized once, reused every turn)
             _actionOrder = new int[state.PlayerCount];
 
             var evt = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
