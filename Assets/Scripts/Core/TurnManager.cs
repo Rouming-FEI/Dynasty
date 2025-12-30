@@ -23,9 +23,21 @@ namespace Core
 
         public void StartGame(WorldState state) => StartGame(state, null);
 
-        /// <summary>注入角色 Def 数组（长度必须等于 PlayerCount）；null 走默认 3 角色轮换。</summary>
+        /// <summary>注入角色 Def 数组（长度必须等于 PlayerCount，元素不可为 null）；null 走默认 3 角色轮换。</summary>
         public void StartGame(WorldState state, CharacterDef[] injectedDefs)
         {
+            // fail-fast：校验先于一切状态变更，非法调用不留下半初始化状态
+            bool useDefaultRotation = injectedDefs == null;
+            if (!useDefaultRotation)
+            {
+                if (injectedDefs.Length != state.PlayerCount)
+                    throw new ArgumentException(
+                        $"defs length {injectedDefs.Length} must equal PlayerCount {state.PlayerCount}");
+                for (int i = 0; i < injectedDefs.Length; i++)
+                    if (injectedDefs[i] == null)
+                        throw new ArgumentException($"defs[{i}] is null");
+            }
+
             state.Phase = TurnPhase.JudgmentPhase;
             state.CurrentTurn = 1;
 
@@ -33,7 +45,7 @@ namespace Core
             ItemRegistry.Initialize();
 
             CharacterDef[] defs;
-            if (injectedDefs == null)
+            if (useDefaultRotation)
             {
                 defs = new CharacterDef[]
                 {
@@ -44,9 +56,6 @@ namespace Core
             }
             else
             {
-                if (injectedDefs.Length != state.PlayerCount)
-                    throw new ArgumentException(
-                        $"defs length {injectedDefs.Length} must equal PlayerCount {state.PlayerCount}");
                 defs = injectedDefs;
             }
 
@@ -69,9 +78,10 @@ namespace Core
                     c.ASC.Tags.AddTag(GameplayTagConstants.NoStatus);
             }
 
-            if (injectedDefs == null)
+            if (useDefaultRotation)
             {
-                // 默认路径：保持既有行为字面不变（只给 P0 守护者开盾、只查 P3 圣骑士）
+                // 默认路径：保持既有行为字面不变（只给 P0 守护者开盾、只查 P3 圣骑士）。
+                // 默认 4 人局 P3 亦为守护者但不开盾（历史行为，勿「修复」）；默认轮换不含圣骑士，P3 检查仅为字面保留。
                 Character guardian = state.GetCharacterByPlayer(0);
                 if (guardian != null)
                     ShieldSystem.GrantShield(state, guardian.ASC, guardian.Id);
