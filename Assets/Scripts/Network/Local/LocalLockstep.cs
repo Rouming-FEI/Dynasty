@@ -34,7 +34,8 @@ namespace Network.Local
 
         /// <summary>
         /// 真人判定筹码钩子。返回 null = 未提交，RunTurn 暂停返回（与
-        /// ManualInputProvider 行动暂停语义一致）。仅对 HumanPlayers[i]=true 生效。
+        /// ManualInputProvider 行动暂停语义一致）。仅对 HumanPlayers[i]=true 生效；
+        /// 若玩家在掩码中但本钩子为 null，回退 JudgmentInputProvider/AI 取值。
         /// </summary>
         public Func<int, ChipAllocation?> HumanJudgmentInput;
 
@@ -56,6 +57,12 @@ namespace Network.Local
 
         public void StartGame()
         {
+            // 弃局重开：清掉判定暂停的中间状态，否则 Resume 分支会跳过 AI
+            // 重收集、复用上一局缓存的筹码（随机流漂移、判定用旧值）。
+            // 也覆盖 Advance 返回 false（GameOver）退出时未清理的路径。
+            _pendingAllocations = null;
+            _humanSlotFilled = null;
+            _judgmentCollected = false;
             _turnManager.StartGame(_state);
         }
 
@@ -80,9 +87,7 @@ namespace Network.Local
                             && i < HumanPlayers.Length && HumanPlayers[i];
                         if (c == null || c.IsDead)
                         {
-                            _pendingAllocations[i] = new ChipAllocation(i);
-                            _pendingAllocations[i].Set(0, 0, 0);
-                            _humanSlotFilled[i] = true;
+                            ZeroFill(i);
                             continue;
                         }
                         if (isHuman && HumanJudgmentInput != null)
@@ -118,9 +123,7 @@ namespace Network.Local
                         if (!isHuman || HumanJudgmentInput == null || c == null || c.IsDead)
                         {
                             // 防御分支：非真人槽不该处于未填状态；真人中途死亡补零
-                            _pendingAllocations[i] = new ChipAllocation(i);
-                            _pendingAllocations[i].Set(0, 0, 0);
-                            _humanSlotFilled[i] = true;
+                            ZeroFill(i);
                             continue;
                         }
                         ChipAllocation? submitted = HumanJudgmentInput(i);
@@ -180,6 +183,13 @@ namespace Network.Local
 
             // Final advance to check end conditions
             return _turnManager.Advance(_state, Span<ChipAllocation>.Empty);
+        }
+
+        /// <summary>填零分配（ChipAllocation 构造即全零）并标记槽位已填。</summary>
+        private void ZeroFill(int i)
+        {
+            _pendingAllocations[i] = new ChipAllocation(i);
+            _humanSlotFilled[i] = true;
         }
 
         private int GetNextActor()
