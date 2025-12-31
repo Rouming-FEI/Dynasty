@@ -29,6 +29,20 @@ namespace Network.Local
         /// </summary>
         public Func<int, ChipAllocation> JudgmentInputProvider;
 
+        /// <summary>真人玩家掩码（热座 = 仅 1 位）。null/空 = 全 AI，走既有路径。</summary>
+        public bool[] HumanPlayers;
+
+        /// <summary>
+        /// 真人判定筹码钩子。返回 null = 未提交，RunTurn 暂停返回（与
+        /// ManualInputProvider 行动暂停语义一致）。仅对 HumanPlayers[i]=true 生效。
+        /// </summary>
+        public Func<int, ChipAllocation?> HumanJudgmentInput;
+
+        // 判定收集状态（跨 RunTurn 调用保留：暂停期间 AI 分配不重算，避免随机流漂移）
+        private ChipAllocation[] _pendingAllocations;
+        private bool[] _humanSlotFilled;
+        private bool _judgmentCollected;
+
         /// <summary>Player id of the next actor eligible to act in the action phase, or -1 if none.</summary>
         public int CurrentActorPlayerId => GetNextActor();
 
@@ -50,29 +64,82 @@ namespace Network.Local
         {
             if (_state.Phase == TurnPhase.GameOver) return false;
 
-            // Judgment phase: collect chips from all AIs
+            // Judgment phase: collect chips (AI 即时一次并缓存；真人待提交，未提交则暂停)
             if (_state.Phase == TurnPhase.JudgmentPhase)
             {
-                Span<ChipAllocation> allocations = stackalloc ChipAllocation[_state.PlayerCount];
-                for (int i = 0; i < _state.PlayerCount; i++)
+                if (!_judgmentCollected)
                 {
-                    Character c = _state.GetCharacterByPlayer(i);
-                    if (c != null && !c.IsDead)
-                        allocations[i] = JudgmentInputProvider != null
-                            ? JudgmentInputProvider(i)
-                            : _ais[i].GetJudgmentInput(_state, i);
-                    else
-                        allocations[i] = new ChipAllocation(i) { };
-                    // Ensure dead players don't affect judgment — set to 0-0-0
-                    if (c == null || c.IsDead)
-                        allocations[i].Set(0, 0, 0);
+                    // 首次收集：AI 全部取值（消耗随机流，仅此一次）；真人槽有提交即填
+                    _pendingAllocations = new ChipAllocation[_state.PlayerCount];
+                    _humanSlotFilled = new bool[_state.PlayerCount];
+                    bool anyPending = false;
+                    for (int i = 0; i < _state.PlayerCount; i++)
+                    {
+                        Character c = _state.GetCharacterByPlayer(i);
+                        bool isHuman = HumanPlayers != null
+                            && i < HumanPlayers.Length && HumanPlayers[i];
+                        if (c == null || c.IsDead)
+                        {
+                            _pendingAllocations[i] = new ChipAllocation(i);
+                            _pendingAllocations[i].Set(0, 0, 0);
+                            _humanSlotFilled[i] = true;
+                            continue;
+                        }
+                        if (isHuman && HumanJudgmentInput != null)
+                        {
+                            ChipAllocation? submitted = HumanJudgmentInput(i);
+                            if (submitted == null) { anyPending = true; continue; }
+                            _pendingAllocations[i] = submitted.Value;
+                        }
+                        else if (JudgmentInputProvider != null)
+                        {
+                            _pendingAllocations[i] = JudgmentInputProvider(i);
+                        }
+                        else
+                        {
+                            _pendingAllocations[i] = _ais[i].GetJudgmentInput(_state, i);
+                        }
+                        _humanSlotFilled[i] = true;
+                    }
+                    _judgmentCollected = true;
+                    if (anyPending)
+                        return true;   // 真人未就绪：暂停；AI 值留在 _pendingAllocations 缓存
+                }
+                else
+                {
+                    // 已收集过：只补查未就绪的真人槽，AI 不再消耗随机流
+                    bool anyPending = false;
+                    for (int i = 0; i < _state.PlayerCount; i++)
+                    {
+                        if (_humanSlotFilled[i]) continue;
+                        Character c = _state.GetCharacterByPlayer(i);
+                        bool isHuman = HumanPlayers != null
+                            && i < HumanPlayers.Length && HumanPlayers[i];
+                        if (!isHuman || HumanJudgmentInput == null || c == null || c.IsDead)
+                        {
+                            // 防御分支：非真人槽不该处于未填状态；真人中途死亡补零
+                            _pendingAllocations[i] = new ChipAllocation(i);
+                            _pendingAllocations[i].Set(0, 0, 0);
+                            _humanSlotFilled[i] = true;
+                            continue;
+                        }
+                        ChipAllocation? submitted = HumanJudgmentInput(i);
+                        if (submitted == null) { anyPending = true; continue; }
+                        _pendingAllocations[i] = submitted.Value;
+                        _humanSlotFilled[i] = true;
+                    }
+                    if (anyPending) return true;
                 }
 
-                if (!_turnManager.Advance(_state, allocations))
+                if (!_turnManager.Advance(_state, _pendingAllocations))
                     return false;
 
-                // 全局平筹码作废重来：Phase 仍是 JudgmentPhase，
-                // 本轮结束，下一轮 RunTurn 重新收集筹码再判定
+                // 本轮判定完成（或全局平作废重判）：清理，下轮重新收集
+                _judgmentCollected = false;
+                _pendingAllocations = null;
+                _humanSlotFilled = null;
+
+                // 全局平筹码作废重来：Phase 仍 JudgmentPhase，下轮 RunTurn 重新收集
                 if (_state.Phase == TurnPhase.JudgmentPhase)
                     return true;
             }
