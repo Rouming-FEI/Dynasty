@@ -14,6 +14,8 @@ namespace UI.Presenter
     /// <summary>
     /// UI 与模拟的单一通道（纯 C#，无 UnityEngine 引用）。
     /// 读 WorldState 构建快照；消费输入意图（输入意图在后续任务扩展）。
+    /// 生命周期约束：一个 WorldState 仅对应一个 BattlePresenter（EventBus 无解绑 API，
+    /// 重复挂载会日志重复入队且闭包被 Events 强持有）；换局请连同 WorldState 一起新建。
     /// </summary>
     public class BattlePresenter
     {
@@ -182,13 +184,16 @@ namespace UI.Presenter
             {
                 var c = _state.GetCharacter(e.TargetId);
                 var killer = _state.GetCharacterByPlayer(e.IntArg1);
-                EnqueueLog($"{c?.Name ?? "?"} 被 {killer?.Name ?? "?"} 击杀");
+                // DamagePipeline 环境伤害（陷阱/潮汐/荆棘素）KillerPlayerId = -1 → 显示「环境」
+                string killerName = killer?.Name ?? (e.IntArg1 < 0 ? "环境" : "?");
+                EnqueueLog($"{c?.Name ?? "?"} 被 {killerName} 击杀");
             });
             events.Subscribe(GameplayEventTypes.DamageDealt, 0, (ref GameplayEvent e) =>
             {
                 var src = _state.GetCharacter(e.SourceId);
                 var tgt = _state.GetCharacter(e.TargetId);
-                EnqueueLog($"{src?.Name ?? "?"} → {tgt?.Name ?? "?"} : {e.Magnitude:F1} 伤害");
+                string srcName = src?.Name ?? (e.SourceId < 0 ? "环境" : "?");
+                EnqueueLog($"{srcName} → {tgt?.Name ?? "?"} : {e.Magnitude:F1} 伤害");
             });
             events.Subscribe(GameplayEventTypes.OnShieldGranted, 0, (ref GameplayEvent e) =>
             {

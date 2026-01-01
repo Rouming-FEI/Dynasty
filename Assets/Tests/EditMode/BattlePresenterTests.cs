@@ -1,5 +1,6 @@
 using Core;
 using Core.GAS;
+using Gameplay.Judgment;
 using UI.Presenter;
 using NUnit.Framework;
 
@@ -73,6 +74,67 @@ namespace Dynasty.Tests
 
             Assert.Greater(snap.LogTail.Count, 0);
             StringAssert.Contains("击杀", snap.LogTail[snap.LogTail.Count - 1]);
+        }
+
+        [Test]
+        public void Log_EnvironmentalDeath_ShowsEnvironmentAsKiller()
+        {
+            // DamagePipeline.cs:153 — 环境伤害（陷阱/潮汐/荆棘素）来源为 null 时
+            // KillerPlayerId = -1，日志应显示「环境」而非「?」
+            WorldState state = NewState();
+            var presenter = new BattlePresenter(state);
+
+            var evt = new GameplayEvent(GameplayEventTypes.PlayerDied, 1, 2) { IntArg1 = -1 };
+            state.Events.Dispatch(GameplayEventTypes.PlayerDied, ref evt);
+
+            var snap = presenter.BuildSnapshot();
+
+            Assert.Greater(snap.LogTail.Count, 0);
+            StringAssert.Contains("环境", snap.LogTail[snap.LogTail.Count - 1]);
+            StringAssert.Contains("击杀", snap.LogTail[snap.LogTail.Count - 1]);
+        }
+
+        [Test]
+        public void Snapshot_JudgmentSummary_FormattedWhenActionPhase()
+        {
+            WorldState state = NewState();
+            state.HasJudgmentResult = true;
+            state.Phase = TurnPhase.ActionPhase;
+            state.LastJudgment = new JudgmentResult
+            {
+                WinnerHand = 0,   // 石头
+                LoserHand = 1,    // 剪刀
+                Roles = new[]
+                {
+                    JudgmentRole.Winner,
+                    JudgmentRole.Loser,
+                    JudgmentRole.Winner,
+                    JudgmentRole.Neutral
+                },
+                APGained = new[] { 2, 0, 1, 0 }
+            };
+            var presenter = new BattlePresenter(state);
+
+            var snap = presenter.BuildSnapshot();
+
+            Assert.IsNotNull(snap.JudgmentSummary);
+            StringAssert.Contains("胜手:石头", snap.JudgmentSummary);
+            StringAssert.Contains("败手:剪刀", snap.JudgmentSummary);
+            StringAssert.Contains("+2AP", snap.JudgmentSummary);
+        }
+
+        [Test]
+        public void Snapshot_GameOver_WinnerTextListsSurvivors()
+        {
+            WorldState state = NewState();
+            state.Phase = TurnPhase.GameOver;
+            state.GetCharacterByPlayer(1).ASC.Tags.AddTag(GameplayTagConstants.Dead);   // 魑魅阵亡
+            var presenter = new BattlePresenter(state);
+
+            var snap = presenter.BuildSnapshot();
+
+            Assert.AreEqual("胜者：守护者、普通人、守护者", snap.WinnerText);
+            Assert.AreEqual("游戏结束", snap.PhaseText);
         }
     }
 }
