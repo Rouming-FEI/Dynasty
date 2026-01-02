@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using Core;
+using Core.Command;
 using Core.GAS;
 using Gameplay.Characters;
 using Gameplay.Items;
@@ -13,7 +14,7 @@ namespace UI.Presenter
 {
     /// <summary>
     /// UI 与模拟的单一通道（纯 C#，无 UnityEngine 引用）。
-    /// 读 WorldState 构建快照；消费输入意图（输入意图在后续任务扩展）。
+    /// 读 WorldState 构建快照；Bind 后消费输入意图（筹码/指令，恰好一次）。
     /// 生命周期约束：一个 WorldState 仅对应一个 BattlePresenter（EventBus 无解绑 API，
     /// 重复挂载会日志重复入队且闭包被 Events 强持有）；换局请连同 WorldState 一起新建。
     /// </summary>
@@ -25,9 +26,7 @@ namespace UI.Presenter
         private readonly WorldState _state;
         private readonly Queue<string> _log = new Queue<string>(LogCapacity);
         private readonly string[] _handNames = { "石头", "剪刀", "布" };
-#pragma warning disable CS0649 // Task 4 的 Bind 将赋值；未绑定时 CurrentActorPlayerId 返回 -1
-        private LocalLockstep _lockstep;
-#pragma warning restore CS0649
+        private LocalLockstep _lockstep;   // Bind 后赋值；未绑定时 CurrentActorPlayerId 返回 -1
 
         internal WorldState State => _state;
 
@@ -128,7 +127,7 @@ namespace UI.Presenter
             return snap;
         }
 
-        /// <summary>当前行动者（未绑定 lockstep 时 -1）。后续任务的 Bind 赋 _lockstep。</summary>
+        /// <summary>当前行动者（未绑定 lockstep 时 -1）。Bind 赋 _lockstep。</summary>
         private int CurrentActorPlayerId()
             => _lockstep != null ? _lockstep.CurrentActorPlayerId : -1;
 
@@ -165,6 +164,9 @@ namespace UI.Presenter
             => h >= 0 && h < 3 ? _handNames[h] : "-";
 
         // ---------------- 日志 ----------------
+
+        /// <summary>完整战斗日志（容量截断后的当前队列内容，供日志面板全量展示）。</summary>
+        public string[] GetFullLog() => _log.ToArray();
 
         private void EnqueueLog(string message)
         {
@@ -226,6 +228,62 @@ namespace UI.Presenter
             {
                 EnqueueLog("实验室深度潮汐判定完成");
             });
+        }
+
+        // ---------------- 输入意图（热座） ----------------
+        // （_lockstep 字段已在上方声明，此处不重复）
+
+        private int _humanPlayerId = -1;
+        private ChipAllocation? _pendingJudgment;
+        private ICommand _pendingCommand;
+
+        /// <summary>真人玩家 id（Bind 后有效；-1 = 未绑定）。</summary>
+        public int HumanPlayerId => _humanPlayerId;
+
+        /// <summary>是否有待消费的筹码提交（UI 判定面板显隐依据）。</summary>
+        public bool HasPendingJudgment => _pendingJudgment != null;
+
+        /// <summary>绑定 LocalLockstep：设置真人掩码并接管该玩家的两类输入。</summary>
+        public void Bind(LocalLockstep lockstep, int humanPlayerId)
+        {
+            _lockstep = lockstep;
+            _humanPlayerId = humanPlayerId;
+            lockstep.HumanPlayers = new bool[lockstep.State.PlayerCount];
+            lockstep.HumanPlayers[humanPlayerId] = true;
+            lockstep.HumanJudgmentInput = GetHumanJudgmentInput;
+            lockstep.ManualInputProvider = GetHumanActionInput;
+        }
+
+        public void SubmitChipAllocation(int playerId, int rock, int scissors, int paper)
+        {
+            _pendingJudgment = new ChipAllocation(playerId)
+            {
+                Rock = rock, Scissors = scissors, Paper = paper
+            };
+        }
+
+        public void SubmitCommand(ICommand cmd) => _pendingCommand = cmd;
+
+        private ChipAllocation? GetHumanJudgmentInput(int playerId)
+        {
+            if (_pendingJudgment != null && _pendingJudgment.Value.PlayerId == playerId)
+            {
+                ChipAllocation a = _pendingJudgment.Value;
+                _pendingJudgment = null;
+                return a;
+            }
+            return null;
+        }
+
+        private ICommand GetHumanActionInput(int playerId)
+        {
+            if (_pendingCommand != null && _pendingCommand.PlayerId == playerId)
+            {
+                ICommand cmd = _pendingCommand;
+                _pendingCommand = null;
+                return cmd;
+            }
+            return null;
         }
     }
 }
