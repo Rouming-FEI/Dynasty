@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Style src="BattleUI.uss" />
+    <ui:VisualElement name="root" style="flex-grow:1;">
+        <ui:VisualElement name="top-bar" class="panel row">
+            <ui:Label text="回合 1" name="turn-label" class="title" />
+            <ui:Label text="阶段" name="phase-label" />
+            <ui:Label text="存活 4/4" name="alive-label" />
+            <ui:Button text="日志" name="log-button" />
+        </ui:VisualElement>
+        <ui:Label text="" name="judgment-bar" class="panel judgment-bar" />
+        <ui:VisualElement name="main-area" class="main-area">
+            <ui:VisualElement name="map-area" class="map-area">
+                <ui:VisualElement name="map-nodes" class="map-nodes" />
+            </ui:VisualElement>
+            <ui:VisualElement name="side-panel" class="panel side-panel">
+                <ui:VisualElement name="info-rows" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="action-bar" class="panel action-bar">
+            <ui:Label text="等待…" name="action-hint" />
+        </ui:VisualElement>
+        <ui:VisualElement name="log-area" class="panel log-area">
+            <ui:Label text="" name="log-label" class="log-label" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

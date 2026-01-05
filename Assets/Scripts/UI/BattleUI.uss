@@ -1,0 +1,63 @@
+.panel {
+    background-color: rgb(32, 36, 44);
+    border-color: rgb(70, 78, 92);
+    border-width: 1px;
+    border-radius: 4px;
+    padding: 6px;
+    margin: 2px;
+}
+.title {
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: rgb(235, 240, 245);
+}
+.row { flex-direction: row; align-items: center; }
+.row-wrap { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.main-area { flex-grow: 1; flex-direction: row; }
+.map-area { flex-grow: 1; }
+.map-nodes { flex-direction: row; flex-wrap: wrap; align-content: flex-start; flex-grow: 1; }
+.map-node {
+    background-color: rgb(44, 50, 62);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgb(90, 100, 118);
+    padding: 4px;
+    margin: 4px;
+    width: 150px;
+}
+.map-node--actor-here { border-color: rgb(255, 200, 60); border-width: 2px; }
+.map-node-title { font-size: 14px; -unity-font-style: bold; color: rgb(220, 226, 235); }
+.map-node-line { font-size: 11px; color: rgb(170, 178, 192); white-space: normal; }
+.map-badge { font-size: 11px; color: rgb(255, 200, 60); }
+.map-badge--trap { color: rgb(255, 120, 120); }
+.side-panel { width: 320px; }
+.info-row { flex-direction: row; padding: 2px 0; }
+.info-row--dead { opacity: 0.45; }
+.info-row--hidden { color: rgb(150, 150, 150); }
+.info-row--current-actor { background-color: rgb(50, 60, 76); border-radius: 4px; }
+.info-text { font-size: 12px; color: rgb(210, 216, 226); white-space: normal; }
+.judgment-bar {
+    background-color: rgb(24, 34, 24);
+    color: rgb(180, 230, 180);
+    font-size: 13px;
+    white-space: normal;
+}
+.action-bar { min-height: 60px; }
+.action-button { margin: 2px; }
+.log-area { height: 110px; }
+.log-label { font-size: 11px; color: rgb(160, 168, 182); white-space: normal; }
+.overlay {
+    position: absolute;
+    left: 0; top: 0; right: 0; bottom: 0;
+    background-color: rgba(10, 12, 16, 0.92);
+    justify-content: center;
+    align-items: center;
+}
+.overlay-box { width: 640px; }
+.char-grid { flex-direction: row; flex-wrap: wrap; }
+.char-button { width: 140px; height: 44px; margin: 3px; }
+.chip-row { flex-direction: row; align-items: center; margin: 4px 0; }
+.chip-count { width: 30px; -unity-text-align: middle-center; font-size: 18px; }
+.chip-name { width: 60px; }
+.big-button { height: 40px; font-size: 16px; margin: 4px; }
+.result-text { font-size: 24px; -unity-font-style: bold; color: rgb(240, 240, 230); margin: 8px; }
