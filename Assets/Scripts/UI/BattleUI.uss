@@ -53,7 +53,7 @@
     justify-content: center;
     align-items: center;
 }
-.overlay-box { width: 640px; }
+.overlay-box { width: 640px; max-height: 640px; }
 .char-grid { flex-direction: row; flex-wrap: wrap; }
 .char-button { width: 140px; height: 44px; margin: 3px; }
 .chip-row { flex-direction: row; align-items: center; margin: 4px 0; }

@@ -17,7 +17,7 @@
                 <ui:VisualElement name="info-rows" />
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="action-bar" class="panel action-bar">
+        <ui:VisualElement name="action-bar" class="panel row-wrap action-bar">
             <ui:Label text="等待…" name="action-hint" />
         </ui:VisualElement>
         <ui:VisualElement name="log-area" class="panel log-area">

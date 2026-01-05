@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Text;
 using Bootstrap;
 using Core;
-using Core.Command;
 using Core.GAS;
 using Gameplay.Characters;
 using Gameplay.Combat;
@@ -43,11 +42,21 @@ namespace UI
         // 行动按钮脏检查签名（玩家|AP|回合|阶段 变化才重建按钮）
         private string _actionSignature;
 
+        // 日志尾巴脏检查（条数 + 末条字符串引用都未变则跳过重建）
+        private int _lastLogTailCount = -1;
+        private string _lastLogTailLastRef;
+
         private const int ChipsTotal = 3;
 
         private void Start()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
+            if (_root == null)
+            {
+                Debug.LogError("[BattleUI] UIDocument.rootVisualElement 为空——请在 Inspector 中为 UIDocument 拖入 BattleUI.uxml");
+                enabled = false;
+                return;
+            }
             _turnLabel = _root.Q<Label>("turn-label");
             _phaseLabel = _root.Q<Label>("phase-label");
             _aliveLabel = _root.Q<Label>("alive-label");
@@ -95,14 +104,20 @@ namespace UI
 
         private void RenderTopBar(BattleSnapshot s)
         {
-            _turnLabel.text = $"回合 {s.CurrentTurn}";
-            _phaseLabel.text = $"阶段：{s.PhaseText}";
-            _aliveLabel.text = $"存活 {s.AliveCount}/{s.PlayerCount}";
+            SetLabelIfChanged(_turnLabel, $"回合 {s.CurrentTurn}");
+            SetLabelIfChanged(_phaseLabel, $"阶段：{s.PhaseText}");
+            SetLabelIfChanged(_aliveLabel, $"存活 {s.AliveCount}/{s.PlayerCount}");
 
             bool showJudgment = s.JudgmentSummary != null;
             _judgmentBar.style.display = showJudgment ? DisplayStyle.Flex : DisplayStyle.None;
             if (showJudgment)
                 _judgmentBar.text = s.JudgmentSummary;
+        }
+
+        /// <summary>文本有变化才赋值，避免每帧触发布局脏标记。</summary>
+        private static void SetLabelIfChanged(Label label, string text)
+        {
+            if (label.text != text) label.text = text;
         }
 
         private void RenderInfoRows(BattleSnapshot s)
@@ -176,6 +191,13 @@ namespace UI
 
         private void RenderLogTail(BattleSnapshot s)
         {
+            // 脏检查：条数与末条引用都未变则跳过（日志队列容量 200，引用稳定）
+            string lastRef = s.LogTail.Count > 0 ? s.LogTail[s.LogTail.Count - 1] : null;
+            if (s.LogTail.Count == _lastLogTailCount && ReferenceEquals(lastRef, _lastLogTailLastRef))
+                return;
+            _lastLogTailCount = s.LogTail.Count;
+            _lastLogTailLastRef = lastRef;
+
             var sb = new StringBuilder();
             int start = Math.Max(0, s.LogTail.Count - 4);
             for (int i = start; i < s.LogTail.Count; i++)
@@ -188,7 +210,7 @@ namespace UI
         private void RenderActionBar(BattleSnapshot s)
         {
             string signature = BuildActionSignature(s);
-            if (signature == _actionSignature && _actionBar.childCount > 1) return;
+            if (signature == _actionSignature) return;
             _actionSignature = signature;
             while (_actionBar.childCount > 1)
                 _actionBar.RemoveAt(_actionBar.childCount - 1);
@@ -556,7 +578,11 @@ namespace UI
             box.AddToClassList("overlay-box");
             _logFullLabel = new Label("");
             _logFullLabel.AddToClassList("info-text");
-            box.Add(_logFullLabel);
+
+            // 长日志走 ScrollView 滚动；关闭按钮留在滚动区外
+            var scroll = new ScrollView();
+            scroll.Add(_logFullLabel);
+            box.Add(scroll);
 
             var close = new Button(CloseLogOverlay) { text = "关闭" };
             close.AddToClassList("big-button");
