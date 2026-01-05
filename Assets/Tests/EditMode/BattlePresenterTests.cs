@@ -124,6 +124,22 @@ namespace Dynasty.Tests
         }
 
         [Test]
+        public void Log_CapacityCapped_At200()
+        {
+            WorldState state = NewState();
+            var presenter = new BattlePresenter(state);
+            for (int i = 0; i < 205; i++)
+            {
+                var evt = new GameplayEvent(GameplayEventTypes.PlayerDied, 1, 2) { IntArg1 = 0 };
+                state.Events.Dispatch(GameplayEventTypes.PlayerDied, ref evt);
+            }
+
+            string[] fullLog = presenter.GetFullLog();
+
+            Assert.AreEqual(200, fullLog.Length);
+        }
+
+        [Test]
         public void Snapshot_GameOver_WinnerTextListsSurvivors()
         {
             WorldState state = NewState();

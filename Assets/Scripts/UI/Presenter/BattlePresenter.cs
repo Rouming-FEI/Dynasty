@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Core;
@@ -231,7 +232,6 @@ namespace UI.Presenter
         }
 
         // ---------------- 输入意图（热座） ----------------
-        // （_lockstep 字段已在上方声明，此处不重复）
 
         private int _humanPlayerId = -1;
         private ChipAllocation? _pendingJudgment;
@@ -243,27 +243,47 @@ namespace UI.Presenter
         /// <summary>是否有待消费的筹码提交（UI 判定面板显隐依据）。</summary>
         public bool HasPendingJudgment => _pendingJudgment != null;
 
-        /// <summary>绑定 LocalLockstep：设置真人掩码并接管该玩家的两类输入。</summary>
+        /// <summary>
+        /// 绑定 LocalLockstep：设置真人掩码并接管该玩家的判定/行动输入钩子。
+        /// 行动钩子仅接管真人槽（AI 槽由 LocalLockstep 掩码分流至 SimpleAI）；
+        /// 旧模式（无掩码，如 ManualTestUI 全手动）下 ManualInputProvider 全接管。
+        /// 重复 Bind 覆盖掩码与钩子，并清空未消费意图。
+        /// </summary>
         public void Bind(LocalLockstep lockstep, int humanPlayerId)
         {
+            if (humanPlayerId < 0 || humanPlayerId >= lockstep.State.PlayerCount)
+                throw new ArgumentException(
+                    $"humanPlayerId {humanPlayerId} 超出玩家范围 [0, {lockstep.State.PlayerCount - 1}]",
+                    nameof(humanPlayerId));
             _lockstep = lockstep;
             _humanPlayerId = humanPlayerId;
+            _pendingJudgment = null;
+            _pendingCommand = null;
             lockstep.HumanPlayers = new bool[lockstep.State.PlayerCount];
             lockstep.HumanPlayers[humanPlayerId] = true;
             lockstep.HumanJudgmentInput = GetHumanJudgmentInput;
             lockstep.ManualInputProvider = GetHumanActionInput;
         }
 
-        public void SubmitChipAllocation(int playerId, int rock, int scissors, int paper)
+        /// <summary>暂存筹码分配意图（归属 Bind 绑定的真人玩家，后提交覆盖先提交）。</summary>
+        public void SubmitChipAllocation(int rock, int scissors, int paper)
         {
-            _pendingJudgment = new ChipAllocation(playerId)
+            _pendingJudgment = new ChipAllocation(_humanPlayerId)
             {
                 Rock = rock, Scissors = scissors, Paper = paper
             };
         }
 
-        public void SubmitCommand(ICommand cmd) => _pendingCommand = cmd;
+        /// <summary>暂存行动指令意图；非绑定玩家的指令直接丢弃（防误用输入进入确定性流）。</summary>
+        public void SubmitCommand(ICommand cmd)
+        {
+            if (_humanPlayerId >= 0 && cmd.PlayerId != _humanPlayerId)
+                return;
+            _pendingCommand = cmd;
+        }
 
+        // 不匹配时保留槽位等待（与 ManualTestUI 的全手动丢弃不同——掩码分流下
+        // AI 不经此轮询，丢弃反而会吞掉真人刚提交的指令）
         private ChipAllocation? GetHumanJudgmentInput(int playerId)
         {
             if (_pendingJudgment != null && _pendingJudgment.Value.PlayerId == playerId)
@@ -275,6 +295,8 @@ namespace UI.Presenter
             return null;
         }
 
+        // 不匹配时保留槽位等待（与 ManualTestUI 的全手动丢弃不同——掩码分流下
+        // AI 不经此轮询，丢弃反而会吞掉真人刚提交的指令）
         private ICommand GetHumanActionInput(int playerId)
         {
             if (_pendingCommand != null && _pendingCommand.PlayerId == playerId)

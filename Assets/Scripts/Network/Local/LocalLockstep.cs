@@ -155,7 +155,13 @@ namespace Network.Local
                 if (actorPlayerId < 0) break; // no one can act
 
                 ICommand cmd;
-                if (ManualInputProvider != null)
+                // 掩码分流：真人槽走 ManualInputProvider（null 暂停）；AI 槽走 SimpleAI
+                // （绝不暂停）。旧模式（HumanPlayers == null，如 ManualTestUI 全手动）
+                // 下 ManualInputProvider 全接管。掩码标记真人但钩子为 null 时回退 AI
+                // （与判定段 HumanJudgmentInput 缺省回退语义一致）。
+                bool isHuman = HumanPlayers != null
+                    && actorPlayerId < HumanPlayers.Length && HumanPlayers[actorPlayerId];
+                if (ManualInputProvider != null && (isHuman || HumanPlayers == null))
                 {
                     cmd = ManualInputProvider(actorPlayerId);
                     // Input not ready yet — pause here without consuming AP or

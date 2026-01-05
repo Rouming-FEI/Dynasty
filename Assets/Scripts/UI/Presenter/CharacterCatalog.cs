@@ -24,7 +24,7 @@ namespace UI.Presenter
             { 13, AgentDef.Create },
         };
 
-        public static readonly int[] AllIds =
+        private static readonly int[] AllIds =
             { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
 
         public static CharacterDef Create(int id) => Factories[id]();
