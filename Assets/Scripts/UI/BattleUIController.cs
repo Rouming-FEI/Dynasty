@@ -25,7 +25,7 @@ namespace UI
     {
         [SerializeField] private GameBootstrap _bootstrap;
 
-        private BattlePresenter _presenter;          // Task 6 的 OnCharacterSelected 赋值；选角前为 null
+        private BattlePresenter _presenter;          // 选角完成后赋值（OnCharacterSelected）；选角前为 null
         private VisualElement _root;
         private Label _turnLabel, _phaseLabel, _aliveLabel, _judgmentBar;
         private VisualElement _mapNodes, _infoRows, _actionBar;
@@ -88,6 +88,10 @@ namespace UI
                 bool selecting = !_bootstrap.IsGameStarted();
                 _charSelectOverlay.style.display =
                     selecting ? DisplayStyle.Flex : DisplayStyle.None;
+                // 防御：presenter 为空时除选角层外不应有任何游戏 UI 可见
+                // （正常流程 RequestRestart 已收起，此处兜底，幂等）
+                _resultOverlay.style.display = DisplayStyle.None;
+                _chipOverlay.style.display = DisplayStyle.None;
                 return;
             }
 
@@ -647,13 +651,15 @@ namespace UI
 
         private void OnCharacterSelected(int characterId)
         {
+            if (_presenter != null) return;   // 双击/重复回调防重入
+
             // P0=真人选定角色；AI 从剩余 12 个不重复抽取（确定性随机）
             WorldState state = _bootstrap.GetState();
             var remaining = new List<int>();
             foreach (int id in CharacterCatalog.GetAllIds())
                 if (id != characterId) remaining.Add(id);
 
-            var defs = new Gameplay.Characters.CharacterDef[_bootstrap.PlayerCount];
+            var defs = new CharacterDef[_bootstrap.PlayerCount];
             defs[0] = CharacterCatalog.Create(characterId);
             for (int i = 1; i < defs.Length; i++)
             {
@@ -666,6 +672,9 @@ namespace UI
             _presenter = new BattlePresenter(state);
             _presenter.Bind(_bootstrap.GetLockstep(), 0);
             _actionSignature = null;
+
+            // 立即收起选角层：不等下一帧 Update，关闭双击窗口
+            _charSelectOverlay.style.display = DisplayStyle.None;
         }
 
         private void RequestRestart()
@@ -673,6 +682,13 @@ namespace UI
             _bootstrap.RestartHotseat();
             _presenter = null;
             _actionSignature = null;
+
+            // 重开回到选角：立即收起结果/筹码/日志层并复位筹码计数——
+            // 选角层由下一帧 Update 显示，期间不应残留可交互的游戏 UI
+            _resultOverlay.style.display = DisplayStyle.None;
+            _chipOverlay.style.display = DisplayStyle.None;
+            CloseLogOverlay();
+            ResetChipCounts();
         }
     }
 }

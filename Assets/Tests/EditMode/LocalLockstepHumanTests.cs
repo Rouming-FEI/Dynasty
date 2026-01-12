@@ -124,16 +124,7 @@ namespace Dynasty.Tests
         public void StartGame_AbandonedMidJudgmentPause_RecollsAIAllocations()
         {
             // 参照局：暂停一次后提交 —— AI 用的是暂停时缓存的第 1 次随机流取样
-            LocalLockstep refLs = CreateLs(out WorldState refState);
-            refLs.HumanPlayers = new bool[] { true, false, false, false };
-            bool refSubmitted = false;
-            refLs.HumanJudgmentInput = _ => refSubmitted
-                ? new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 }
-                : (ChipAllocation?)null;
-            refLs.StartGame();
-            refLs.RunTurn();
-            refSubmitted = true;
-            refLs.RunTurn();
+            RunPausedReferenceGame(null, out WorldState refState);
 
             // 重启局：暂停（AI 已消耗第 1 潮随机流取样）后 StartGame 弃局重开 ——
             // 必须重新收集，不得复用陈旧缓存（否则随机流漂移、判定用旧值）
@@ -158,16 +149,7 @@ namespace Dynasty.Tests
         public void StartGame_WithDefs_InjectsCharacters()
         {
             // 参照局：暂停一次后提交 —— AI 用的是暂停时缓存的第 1 次随机流取样
-            LocalLockstep refLs = CreateLs(out WorldState refState);
-            refLs.HumanPlayers = new bool[] { true, false, false, false };
-            bool refSubmitted = false;
-            refLs.HumanJudgmentInput = _ => refSubmitted
-                ? new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 }
-                : (ChipAllocation?)null;
-            refLs.StartGame(HotseatDefs());
-            refLs.RunTurn();
-            refSubmitted = true;
-            refLs.RunTurn();
+            RunPausedReferenceGame(HotseatDefs(), out WorldState refState);
             Assert.IsTrue(refState.HasJudgmentResult);
 
             // 测试局：注入开局 → 判定暂停（AI 槽缓存第 1 次取样）→ defs 弃局重开
@@ -213,6 +195,24 @@ namespace Dynasty.Tests
             PaladinDef.Create(), GuardianDef.Create(),
             AgentDef.Create(), ListenerDef.Create()
         };
+
+        /// <summary>
+        /// 参照局：暂停一次后提交跑通首回合 —— AI 用的是暂停时缓存的
+        /// 第 1 次随机流取样。defs 为 null 时走默认角色轮换（= 无参 StartGame）。
+        /// </summary>
+        private static void RunPausedReferenceGame(CharacterDef[] defs, out WorldState refState)
+        {
+            LocalLockstep refLs = CreateLs(out refState);
+            refLs.HumanPlayers = new bool[] { true, false, false, false };
+            bool refSubmitted = false;
+            refLs.HumanJudgmentInput = _ => refSubmitted
+                ? new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 }
+                : (ChipAllocation?)null;
+            if (defs == null) refLs.StartGame(); else refLs.StartGame(defs);
+            refLs.RunTurn();
+            refSubmitted = true;
+            refLs.RunTurn();
+        }
 
         /// <summary>
         /// 跑一局带真人 P0 的 4 人对战并返回最终状态哈希。

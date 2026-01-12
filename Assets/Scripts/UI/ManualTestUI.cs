@@ -13,7 +13,9 @@ namespace UI
 {
     /// <summary>
     /// 手动测试面板 — 基于 IMGUI (OnGUI) 的调试 UI，无需搭建 Canvas。
-    /// 注册为 LocalLockstep.ManualInputProvider 后接管所有角色的行动输入（热座模式）。
+    /// 注册为 LocalLockstep.ManualInputProvider 后接管所有角色的行动输入。
+    /// 与热座 UI 不兼容：BattlePresenter.Bind 会先占用 ManualInputProvider，
+    /// 检测到占用即自行禁用（本面板仅用于无 BattleUI 的全手动调试配置）。
     /// 工作方式：行动阶段 Lockstep 轮询 GetManualInput —— 未点击时返回 null（回合
     /// 暂停、不扣 AP），点击按钮后缓存 Command，下一次轮询被取走并结算。
     /// 仅用于测试；UI 层不受 Hot Path 零 GC 约束。
@@ -27,6 +29,7 @@ namespace UI
         private Character _currentChar;
         private ICommand _pendingCommand;
         private bool _waitingForInput;
+        private bool _selfDisabled;
 
         private void Start()
         {
@@ -35,19 +38,31 @@ namespace UI
 
         private void Update()
         {
-            // GameBootstrap 与本组件的 Start 顺序不确定，注册失败则每帧重试
+            // GameBootstrap 与本组件的 Start 顺序不确定，注册失败则每帧重试；
+            // 自禁用（钩子被占用）后不再重试
+            if (_selfDisabled) return;
             if (_lockstep == null) TryRegister();
         }
 
         private void TryRegister()
         {
             if (_bootstrap == null) return;
-            _lockstep = _bootstrap.GetLockstep();
-            if (_lockstep == null) return;
+            LocalLockstep ls = _bootstrap.GetLockstep();
+            if (ls == null) return;
 
+            // 占用检测：热座模式下 BattlePresenter.Bind 已先注册 ManualInputProvider，
+            // 覆盖会劫持真人输入。无人占用才接管（旧全手动调试配置）
+            if (ls.ManualInputProvider != null)
+            {
+                _selfDisabled = true;
+                Debug.LogWarning("[ManualTestUI] 检测到 ManualInputProvider 已被占用（热座模式？），ManualTestUI 自行禁用");
+                return;
+            }
+
+            _lockstep = ls;
             _state = _bootstrap.GetState();
             _lockstep.ManualInputProvider = GetManualInput;
-            Debug.Log("[ManualTestUI] 已接管手动输入（热座模式）");
+            Debug.Log("[ManualTestUI] 已接管手动输入（全手动调试模式）");
         }
 
         /// <summary>

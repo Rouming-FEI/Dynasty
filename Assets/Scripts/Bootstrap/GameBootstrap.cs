@@ -78,7 +78,7 @@ namespace Bootstrap
                 }
 
                 // 手动模式用短间隔轮询输入；AI 模式保持原节奏
-                yield return _hotseatMode || _lockstep.ManualInputProvider != null
+                yield return (_hotseatMode || _lockstep.ManualInputProvider != null)
                     ? _manualWait : _wait;
             }
 
@@ -245,7 +245,7 @@ namespace Bootstrap
         public bool IsGameStarted() => _gameStarted;
 
         /// <summary>热座开局：用注入角色建局并启动主循环（UI 选角后调用）。</summary>
-        public void BeginHotseat(Gameplay.Characters.CharacterDef[] defs)
+        public void BeginHotseat(CharacterDef[] defs)
         {
             if (_gameStarted) return;
             _lockstep = new LocalLockstep(_state, _ais);
@@ -254,7 +254,10 @@ namespace Bootstrap
             StartCoroutine(RunGameLoop());
         }
 
-        /// <summary>热座重开：重置世界回到待选角状态。</summary>
+        /// <summary>
+        /// 热座重开：重置世界回到待选角状态。
+        /// 同种子重开 = 可复现对局（AI 角色抽取与初始状态一致，走向由真人输入分化）。
+        /// </summary>
         public void RestartHotseat()
         {
             StopAllCoroutines();
