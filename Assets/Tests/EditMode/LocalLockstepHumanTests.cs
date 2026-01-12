@@ -1,4 +1,5 @@
 using Core;
+using Gameplay.Characters;
 using Gameplay.Judgment;
 using Network.Local;
 using AI;
@@ -152,6 +153,66 @@ namespace Dynasty.Tests
             Assert.AreNotEqual(FormatAiAllocations(refState), FormatAiAllocations(state),
                 "重开后 AI 应取第 2 次随机流取样，而非复用暂停时的陈旧缓存");
         }
+
+        [Test]
+        public void StartGame_WithDefs_InjectsCharacters()
+        {
+            // 参照局：暂停一次后提交 —— AI 用的是暂停时缓存的第 1 次随机流取样
+            LocalLockstep refLs = CreateLs(out WorldState refState);
+            refLs.HumanPlayers = new bool[] { true, false, false, false };
+            bool refSubmitted = false;
+            refLs.HumanJudgmentInput = _ => refSubmitted
+                ? new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 }
+                : (ChipAllocation?)null;
+            refLs.StartGame(HotseatDefs());
+            refLs.RunTurn();
+            refSubmitted = true;
+            refLs.RunTurn();
+            Assert.IsTrue(refState.HasJudgmentResult);
+
+            // 测试局：注入开局 → 判定暂停（AI 槽缓存第 1 次取样）→ defs 弃局重开
+            LocalLockstep ls = CreateLs(out WorldState state);
+            ls.HumanPlayers = new bool[] { true, false, false, false };
+            ChipAllocation? pending = null;
+            ls.HumanJudgmentInput = _ => pending;
+
+            ls.StartGame(HotseatDefs());
+            Assert.AreEqual(12, state.Characters[0].Definition.Id);
+            Assert.AreEqual(1, state.Characters[1].Definition.Id);
+            Assert.AreEqual(13, state.Characters[2].Definition.Id);
+            Assert.AreEqual(8, state.Characters[3].Definition.Id);
+            Assert.AreEqual(TurnPhase.JudgmentPhase, state.Phase);
+
+            bool paused = ls.RunTurn();
+            Assert.IsTrue(paused);
+            Assert.AreEqual(TurnPhase.JudgmentPhase, state.Phase);
+
+            // 弃局重开（同一实例，暂停中间态为非默认值）；清钩子 = 全 AI 无人工干预
+            ls.HumanPlayers = null;
+            ls.HumanJudgmentInput = null;
+            ls.StartGame(HotseatDefs());
+
+            Assert.AreEqual(12, state.Characters[0].Definition.Id);
+            Assert.AreEqual(1, state.Characters[1].Definition.Id);
+            Assert.AreEqual(TurnPhase.JudgmentPhase, state.Phase);
+
+            // 无钩子全 AI：完整跑通一回合；若未重置暂停缓存，AI 筹码会复用第 1 次
+            // 取样（与参照局相同）而非重新收集
+            bool running = ls.RunTurn();
+
+            Assert.IsTrue(running);
+            Assert.IsTrue(state.HasJudgmentResult);
+            Assert.AreEqual(2, state.CurrentTurn);
+            Assert.AreNotEqual(FormatAiAllocations(refState), FormatAiAllocations(state),
+                "StartGame(defs) 重开后 AI 应重新收集，而非复用暂停时的陈旧缓存");
+        }
+
+        /// <summary>热座注入局四人组：圣骑士(12)/守护者(1)/代行者(13)/倾听者(8)。</summary>
+        private static CharacterDef[] HotseatDefs() => new CharacterDef[]
+        {
+            PaladinDef.Create(), GuardianDef.Create(),
+            AgentDef.Create(), ListenerDef.Create()
+        };
 
         /// <summary>
         /// 跑一局带真人 P0 的 4 人对战并返回最终状态哈希。

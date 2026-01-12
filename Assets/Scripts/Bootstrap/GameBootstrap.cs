@@ -15,10 +15,13 @@ namespace Bootstrap
         [SerializeField] private bool _autoStart = true;
         [SerializeField] private float _turnDelay = 0.5f;
         [SerializeField] private float _manualPollDelay = 0.05f;
+        [SerializeField] private bool _hotseatMode = true;   // P4 默认热座
 
         private WorldState _state;
         private LocalLockstep _lockstep;
+        private SimpleAI[] _ais;
         private bool _running;
+        private bool _gameStarted;
         private WaitForSeconds _wait;
         private WaitForSeconds _manualWait;
 
@@ -27,21 +30,22 @@ namespace Bootstrap
             _wait = new WaitForSeconds(_turnDelay);
             _manualWait = new WaitForSeconds(_manualPollDelay);
 
-            // 在 Start 中同步创建世界与 Lockstep，保证其他组件（如 ManualTestUI）
-            // 在自己的 Start/Update 里能通过 GetLockstep() 拿到实例并注册输入
             _state = new WorldState(_playerCount, _randomSeed);
-
-            // Subscribe to all global events for battle log
             SubscribeEvents(_state.Events);
 
-            SimpleAI[] ais = new SimpleAI[_playerCount];
+            _ais = new SimpleAI[_playerCount];
             for (int i = 0; i < _playerCount; i++)
-                ais[i] = new SimpleAI(i);
+                _ais[i] = new SimpleAI(i);
 
-            _lockstep = new LocalLockstep(_state, ais);
-
-            if (_autoStart)
+            // 热座模式：等 UI 选角后 BeginHotseat；纯 AI 模式直接开。
+            // （热座下 _lockstep 延迟到 BeginHotseat 创建，ManualTestUI 已停用）
+            if (!_hotseatMode && _autoStart)
+            {
+                _lockstep = new LocalLockstep(_state, _ais);
+                _lockstep.StartGame();
+                _gameStarted = true;   // 纯 AI 也是已开局：选角层不弹、BeginHotseat 不重入
                 StartCoroutine(RunGameLoop());
+            }
         }
 
         private IEnumerator RunGameLoop()
@@ -52,7 +56,6 @@ namespace Bootstrap
 
             Debug.Log($"========== Dynasty 对战开始 (seed={_randomSeed}) ==========");
 
-            _lockstep.StartGame();
             _running = true;
 
             // Log initial state
@@ -75,7 +78,8 @@ namespace Bootstrap
                 }
 
                 // 手动模式用短间隔轮询输入；AI 模式保持原节奏
-                yield return _lockstep.ManualInputProvider != null ? _manualWait : _wait;
+                yield return _hotseatMode || _lockstep.ManualInputProvider != null
+                    ? _manualWait : _wait;
             }
 
             Debug.Log($"========== 游戏结束: {_state.CurrentTurn} rounds ==========");
@@ -235,5 +239,30 @@ namespace Bootstrap
 
         public WorldState GetState() => _state;
         public LocalLockstep GetLockstep() => _lockstep;
+        public int PlayerCount => _playerCount;
+
+        /// <summary>是否已开局（热座选角画面显隐依据）。</summary>
+        public bool IsGameStarted() => _gameStarted;
+
+        /// <summary>热座开局：用注入角色建局并启动主循环（UI 选角后调用）。</summary>
+        public void BeginHotseat(Gameplay.Characters.CharacterDef[] defs)
+        {
+            if (_gameStarted) return;
+            _lockstep = new LocalLockstep(_state, _ais);
+            _lockstep.StartGame(defs);
+            _gameStarted = true;
+            StartCoroutine(RunGameLoop());
+        }
+
+        /// <summary>热座重开：重置世界回到待选角状态。</summary>
+        public void RestartHotseat()
+        {
+            StopAllCoroutines();
+            _running = false;
+            _gameStarted = false;
+            _lockstep = null;
+            _state = new WorldState(_playerCount, _randomSeed);
+            SubscribeEvents(_state.Events);
+        }
     }
 }

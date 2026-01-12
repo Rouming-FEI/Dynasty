@@ -643,16 +643,36 @@ namespace UI
                 _presenter?.GetFullLog() ?? Array.Empty<string>());
         }
 
-        // ---------------- Task 6 接线桩（Task 6 替换方法体） ----------------
+        // ---------------- 热座接线（Bootstrap 提供开局/重开，UI 不碰 Simulation 内部） ----------------
 
         private void OnCharacterSelected(int characterId)
         {
-            UnityEngine.Debug.Log($"[BattleUI] 角色选择: {characterId}（等待 Task 6 接线 BeginHotseat）");
+            // P0=真人选定角色；AI 从剩余 12 个不重复抽取（确定性随机）
+            WorldState state = _bootstrap.GetState();
+            var remaining = new List<int>();
+            foreach (int id in CharacterCatalog.GetAllIds())
+                if (id != characterId) remaining.Add(id);
+
+            var defs = new Gameplay.Characters.CharacterDef[_bootstrap.PlayerCount];
+            defs[0] = CharacterCatalog.Create(characterId);
+            for (int i = 1; i < defs.Length; i++)
+            {
+                int pick = state.Random.Next(remaining.Count);
+                defs[i] = CharacterCatalog.Create(remaining[pick]);
+                remaining.RemoveAt(pick);
+            }
+
+            _bootstrap.BeginHotseat(defs);
+            _presenter = new BattlePresenter(state);
+            _presenter.Bind(_bootstrap.GetLockstep(), 0);
+            _actionSignature = null;
         }
 
         private void RequestRestart()
         {
-            UnityEngine.Debug.Log("[BattleUI] 再来一局（等待 Task 6 接线 RestartHotseat）");
+            _bootstrap.RestartHotseat();
+            _presenter = null;
+            _actionSignature = null;
         }
     }
 }

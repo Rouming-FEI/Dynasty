@@ -60,10 +60,23 @@ namespace Network.Local
             // 弃局重开：清掉判定暂停的中间状态，否则 Resume 分支会跳过 AI
             // 重收集、复用上一局缓存的筹码（随机流漂移、判定用旧值）。
             // 也覆盖 Advance 返回 false（GameOver）退出时未清理的路径。
+            ResetJudgmentPauseState();
+            _turnManager.StartGame(_state);
+        }
+
+        /// <summary>带注入角色开局（热座/选角用）。无参版保持原行为。</summary>
+        public void StartGame(CharacterDef[] defs)
+        {
+            ResetJudgmentPauseState();
+            _turnManager.StartGame(_state, defs);
+        }
+
+        /// <summary>判定收集中间态复位（两个 StartGame 入口共用，语义见无参版注释）。</summary>
+        private void ResetJudgmentPauseState()
+        {
             _pendingAllocations = null;
             _humanSlotFilled = null;
             _judgmentCollected = false;
-            _turnManager.StartGame(_state);
         }
 
         /// <summary>Run one full turn (judgment + action phase). Returns false if game over.</summary>
