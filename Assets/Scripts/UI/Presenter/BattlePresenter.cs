@@ -118,6 +118,11 @@ namespace UI.Presenter
                 snap.MapNodes.Add(node);
             }
 
+            // 最近一次判定是否为全局平局：筹码面板据此显示「全局平局，重新分配」。
+            // 平局作废后 TurnManager 保留作废结果（HasJudgmentResult/LastJudgment 不清）
+            // 且 Phase 停留判定阶段——该窗口内此标记即「正在重判」信号。
+            snap.LastJudgmentGlobalFlat = _state.HasJudgmentResult && _state.LastJudgment.IsGlobalFlat;
+
             if (_state.HasJudgmentResult && _state.Phase == TurnPhase.ActionPhase)
                 snap.JudgmentSummary = BuildJudgmentSummary();
 

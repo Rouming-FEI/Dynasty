@@ -9,6 +9,9 @@ namespace Gameplay.Movement
 {
     public class MoveCommand : ICommand
     {
+        /// <summary>旅行家「旅行」技能 Id：持有者可 1AP 前往任意地点（docs/项目介绍.md 7.4）。</summary>
+        private const int TravelSkillId = 40;
+
         public int Tick { get; set; }
         public int PlayerId { get; set; }
         public int TargetLocationId { get; set; }
@@ -25,6 +28,19 @@ namespace Gameplay.Movement
             if (c == null || !c.CanMove) return;
             if (c.ASC.Tags.HasTag(GameplayTagConstants.Bound)) return; // 束缚：不可移动
             if (!state.Locations.IsValidLocation(TargetLocationId)) return;
+            // 邻接校验（防御纵深，UI 按钮过期时拦截非法传送）：普通移动仅允许相邻地点。
+            // 例外：旅行家凭旅行 (Id=40) 或免费旅行标记可前往任意地点（技能验收特例
+            // 「MoveCommand 任意地点可达」）；非法目标整体忽略——不扣 AP、不触发规则，无日志。
+            if (!c.ASC.Tags.HasTag(GameplayTagConstants.FreeTravel) && !HasTravelSkill(c))
+            {
+                int[] connected = state.Locations.GetConnectedLocations(c.CurrentLocationId);
+                bool adjacent = false;
+                for (int i = 0; i < connected.Length; i++)
+                {
+                    if (connected[i] == TargetLocationId) { adjacent = true; break; }
+                }
+                if (!adjacent) return;
+            }
             if (c.ActionPoints <= 0) return;
 
             // 地点准入检查（如实验室大门关闭时拒绝进入），拒绝时不消耗 AP
@@ -67,6 +83,16 @@ namespace Gameplay.Movement
             state.Events.Dispatch(GameplayEventTypes.EntityMoved, ref evt);
 
             // 到达新地点后掉落物可通过 Locations.GetRemainingItemCount / GetLocatedItems 查询，供 UI 展示
+        }
+
+        /// <summary>是否持有旅行技能（任意地点移动的资格来源；FreeTravel 免费标记亦仅旅行家可获得）。</summary>
+        private static bool HasTravelSkill(Character c)
+        {
+            SkillDef[] skills = c.Definition?.Skills;
+            if (skills == null) return false;
+            for (int i = 0; i < skills.Length; i++)
+                if (skills[i] != null && skills[i].Id == TravelSkillId) return true;
+            return false;
         }
     }
 

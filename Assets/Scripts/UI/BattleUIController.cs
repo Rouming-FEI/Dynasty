@@ -31,7 +31,7 @@ namespace UI
         private VisualElement _mapNodes, _infoRows, _actionBar;
         private Label _actionHint, _logLabel;
         private VisualElement _charSelectOverlay, _chipOverlay, _resultOverlay, _logOverlay;
-        private Label _chipHint, _resultLabel, _logFullLabel;
+        private Label _chipSubtitle, _chipHint, _resultLabel, _logFullLabel;
         private readonly Dictionary<string, Label> _chipCountLabels = new Dictionary<string, Label>();
 
         // 筹码面板计数（石头/剪刀/布）。0-0-0 起步：玩家需有意识分配满 3 枚才能提交，
@@ -39,7 +39,8 @@ namespace UI
         private int _chipRock, _chipScissors, _chipPaper;
         private bool _logOverlayOpen;
 
-        // 行动按钮脏检查签名（玩家|AP|回合|阶段 变化才重建按钮）
+        // 行动按钮脏检查签名（玩家|AP|地点|回合|阶段 变化才重建按钮；地点入签名
+        // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变）
         private string _actionSignature;
 
         // 日志尾巴脏检查（条数 + 末条字符串引用都未变则跳过重建）
@@ -265,7 +266,7 @@ namespace UI
             {
                 BattleSnapshot.CharacterRow r = s.CharacterRows[i];
                 if (r.IsCurrentActor && !r.IsDead)
-                    return $"{r.PlayerId}|{r.ActionPoints}|{s.CurrentTurn}|{s.PhaseText}";
+                    return $"{r.PlayerId}|{r.ActionPoints}|{r.LocationName}|{s.CurrentTurn}|{s.PhaseText}";
             }
             return "none";
         }
@@ -486,6 +487,10 @@ namespace UI
             title.AddToClassList("result-text");
             box.Add(title);
 
+            // 语境副标题：默认「其余玩家已就绪」；平局作废重判时由 RenderOverlays 切换文案
+            _chipSubtitle = new Label("其余玩家已就绪，等待你提交…");
+            box.Add(_chipSubtitle);
+
             BuildChipRow(box, "石头", () => _chipRock, v => _chipRock = v);
             BuildChipRow(box, "剪刀", () => _chipScissors, v => _chipScissors = v);
             BuildChipRow(box, "布", () => _chipPaper, v => _chipPaper = v);
@@ -609,7 +614,15 @@ namespace UI
                          && !IsHumanDead(s);
             _chipOverlay.style.display = showChip ? DisplayStyle.Flex : DisplayStyle.None;
             if (showChip)
+            {
                 _chipHint.text = $"剩余 {ChipsTotal - (_chipRock + _chipScissors + _chipPaper)}";
+                // 面板可见时必处判定阶段：最近一次判定为全局平（作废保留的那次）→ 重判提示。
+                // 局限（P5 待办）：LastJudgment 跨回合残留，连续平局保底进入行动后的
+                // 下一回合判定期会误报；精确检测需在快照中记录判定所属回合。
+                _chipSubtitle.text = s.LastJudgmentGlobalFlat
+                    ? "全局平局，重新分配"
+                    : "其余玩家已就绪，等待你提交…";
+            }
 
             _resultOverlay.style.display = s.GameOver ? DisplayStyle.Flex : DisplayStyle.None;
             if (s.GameOver)

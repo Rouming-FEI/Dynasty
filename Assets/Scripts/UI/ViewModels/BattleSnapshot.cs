@@ -12,6 +12,7 @@ namespace UI.ViewModels
         public bool GameOver;
         public string WinnerText;         // GameOver 时非 null
         public string JudgmentSummary;    // 开牌条文本；null = 不显示
+        public bool LastJudgmentGlobalFlat; // 最近一次判定为全局平局（判定阶段提示用）
         public readonly List<CharacterRow> CharacterRows = new List<CharacterRow>();
         public readonly List<MapNodeInfo> MapNodes = new List<MapNodeInfo>();
         public readonly List<string> LogTail = new List<string>();
