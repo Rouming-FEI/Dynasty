@@ -38,6 +38,7 @@ namespace UI
         // 提交后同样归零复位，下次判定阶段面板重新打开时是干净状态。
         private int _chipRock, _chipScissors, _chipPaper;
         private bool _logOverlayOpen;
+        private bool _bootstrapWarned;               // _bootstrap 未接线只告警一次
 
         // 行动按钮脏检查签名（玩家|AP|地点|回合|阶段 变化才重建按钮；地点入签名
         // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变）
@@ -81,7 +82,14 @@ namespace UI
 
         private void Update()
         {
-            if (_bootstrap == null) return;
+            if (_bootstrap == null)
+            {
+                if (_bootstrapWarned) return;
+                _bootstrapWarned = true;
+                Debug.LogError("[BattleUI] 未指定 GameBootstrap 引用——请在 Inspector 拖入 GameBootstrap 对象");
+                enabled = false;
+                return;
+            }
 
             // 选角前（_presenter == null）只刷选角层
             if (_presenter == null)

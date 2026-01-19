@@ -77,9 +77,20 @@ namespace Bootstrap
                     lastLoggedTurn = _state.CurrentTurn;
                 }
 
-                // 手动模式用短间隔轮询输入；AI 模式保持原节奏
-                yield return (_hotseatMode || _lockstep.ManualInputProvider != null)
-                    ? _manualWait : _wait;
+                // 热座：真人存活用短轮询（随时提交输入）；真人死亡观战切回串场节奏。
+                // ManualInputProvider 在热座 Bind 后常驻（不因死亡解绑），故热座下
+                // 只看真人存活；非热座保留旧判据（ManualTestUI 全手动接管时轮询）
+                bool fastPoll;
+                if (_hotseatMode)
+                {
+                    Character human = _state.GetCharacterByPlayer(0);
+                    fastPoll = human != null && !human.IsDead;
+                }
+                else
+                {
+                    fastPoll = _lockstep.ManualInputProvider != null;
+                }
+                yield return fastPoll ? _manualWait : _wait;
             }
 
             Debug.Log($"========== 游戏结束: {_state.CurrentTurn} rounds ==========");
