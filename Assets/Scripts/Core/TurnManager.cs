@@ -196,6 +196,9 @@ namespace Core
             var evt = new GameplayEvent(GameplayEventTypes.JudgmentResolved, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.JudgmentResolved, ref evt);
 
+            // 判定结算完成：推进逻辑 Tick（作废重判的提前 return 路径不计）
+            state.CurrentTick++;
+            state.OnTickAdvanced?.Invoke(state.CurrentTick);
             state.Phase = TurnPhase.ActionPhase;
             _currentActorIndex = 0;
 
@@ -259,6 +262,9 @@ namespace Core
 
         private void EndTurn(WorldState state)
         {
+            // 回合末结算开始：推进逻辑 Tick
+            state.CurrentTick++;
+            state.OnTickAdvanced?.Invoke(state.CurrentTick);
             state.Phase = TurnPhase.TurnEnd;
 
             var turnEndEvt = new GameplayEvent(GameplayEventTypes.TurnEnd, -1, -1);

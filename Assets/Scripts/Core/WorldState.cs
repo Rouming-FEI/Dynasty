@@ -1,3 +1,4 @@
+using System;
 using Core.GAS;
 using Core.Command;
 using Gameplay.Characters;
@@ -32,6 +33,10 @@ namespace Core
         public int CurrentTurn;
         public TurnPhase Phase;
         public int PlayerCount;
+
+        /// <summary>调试/录制用：每次 CurrentTick 递增后回调（null 零开销，录制器挂载）。
+        /// 回调不得修改状态、不得抛异常——违反会破坏帧同步一致性。</summary>
+        public Action<int> OnTickAdvanced;
 
         // 陷阱炸弹存储（定长数组，确定性安全）
         public int[] LocationTrapCounts;

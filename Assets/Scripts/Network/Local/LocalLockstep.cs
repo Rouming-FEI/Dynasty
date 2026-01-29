@@ -188,6 +188,9 @@ namespace Network.Local
 
                 if (cmd != null)
                 {
+                    // 每条行动命令执行前：推进逻辑 Tick（录制器经 OnTickAdvanced 挂载）
+                    _state.CurrentTick++;
+                    _state.OnTickAdvanced?.Invoke(_state.CurrentTick);
                     _state.Commands.Enqueue(cmd);
                     _state.Commands.ExecuteAll(_state);
                     _state.Commands.Clear();
