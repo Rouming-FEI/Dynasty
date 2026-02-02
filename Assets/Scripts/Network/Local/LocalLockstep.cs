@@ -39,6 +39,19 @@ namespace Network.Local
         /// </summary>
         public Func<int, ChipAllocation?> HumanJudgmentInput;
 
+        /// <summary>判定旁观钩子：每个玩家槽筹码收集完成时调用（含死亡零填充槽）。isHuman=真人槽。
+        /// 回调约束：禁止修改状态/抛异常——违反会破坏帧同步一致性。</summary>
+        public Action<int, ChipAllocation, bool> OnJudgmentCollected;
+        /// <summary>判定旁观钩子：整轮判定提交结算后调用（含全局平作废重判轮）。
+        /// 回调约束：禁止修改状态/抛异常——违反会破坏帧同步一致性。</summary>
+        public Action<ChipAllocation[]> OnJudgmentCommitted;
+        /// <summary>行动旁观钩子：输入命令入队后调用。isHuman=真人槽。
+        /// 回调约束：禁止修改状态/抛异常——违反会破坏帧同步一致性。
+        /// 注意：HumanPlayers == null 旧全手动模式下命令实际来自 ManualInputProvider，
+        /// 但 isHuman 报 false（与行动段分流条件「isHuman || HumanPlayers == null」
+        /// 不一致）——录制器按 isHuman 区分人机输入时需注意此特例。</summary>
+        public Action<int, ICommand, bool> OnActionCommand;
+
         // 判定收集状态（跨 RunTurn 调用保留：暂停期间 AI 分配不重算，避免随机流漂移）
         private ChipAllocation[] _pendingAllocations;
         private bool[] _humanSlotFilled;
@@ -100,7 +113,7 @@ namespace Network.Local
                             && i < HumanPlayers.Length && HumanPlayers[i];
                         if (c == null || c.IsDead)
                         {
-                            ZeroFill(i);
+                            ZeroFill(i, isHuman);
                             continue;
                         }
                         if (isHuman && HumanJudgmentInput != null)
@@ -117,6 +130,7 @@ namespace Network.Local
                         {
                             _pendingAllocations[i] = _ais[i].GetJudgmentInput(_state, i);
                         }
+                        OnJudgmentCollected?.Invoke(i, _pendingAllocations[i], isHuman);
                         _humanSlotFilled[i] = true;
                     }
                     _judgmentCollected = true;
@@ -136,12 +150,13 @@ namespace Network.Local
                         if (!isHuman || HumanJudgmentInput == null || c == null || c.IsDead)
                         {
                             // 防御分支：非真人槽不该处于未填状态；真人中途死亡补零
-                            ZeroFill(i);
+                            ZeroFill(i, isHuman);
                             continue;
                         }
                         ChipAllocation? submitted = HumanJudgmentInput(i);
                         if (submitted == null) { anyPending = true; continue; }
                         _pendingAllocations[i] = submitted.Value;
+                        OnJudgmentCollected?.Invoke(i, _pendingAllocations[i], isHuman);
                         _humanSlotFilled[i] = true;
                     }
                     if (anyPending) return true;
@@ -149,6 +164,7 @@ namespace Network.Local
 
                 if (!_turnManager.Advance(_state, _pendingAllocations))
                     return false;
+                OnJudgmentCommitted?.Invoke(_pendingAllocations);
 
                 // 本轮判定完成（或全局平作废重判）：清理，下轮重新收集
                 _judgmentCollected = false;
@@ -192,6 +208,7 @@ namespace Network.Local
                     _state.CurrentTick++;
                     _state.OnTickAdvanced?.Invoke(_state.CurrentTick);
                     _state.Commands.Enqueue(cmd);
+                    OnActionCommand?.Invoke(actorPlayerId, cmd, isHuman);
                     _state.Commands.ExecuteAll(_state);
                     _state.Commands.Clear();
                 }
@@ -208,10 +225,11 @@ namespace Network.Local
         }
 
         /// <summary>填零分配（ChipAllocation 构造即全零）并标记槽位已填。</summary>
-        private void ZeroFill(int i)
+        private void ZeroFill(int i, bool isHuman)
         {
             _pendingAllocations[i] = new ChipAllocation(i);
             _humanSlotFilled[i] = true;
+            OnJudgmentCollected?.Invoke(i, _pendingAllocations[i], isHuman);
         }
 
         private int GetNextActor()

@@ -6,6 +6,8 @@ namespace Core
 {
     public delegate void EventBusHandler(ref GameplayEvent e);
 
+    public delegate void EventBusRecorderHook(int eventType, ref GameplayEvent e);
+
     public class EventBus
     {
         private struct Subscription
@@ -20,6 +22,11 @@ namespace Core
         private int _count;
         private int _nextOrder;
         private int _dispatchDepth;
+
+        /// <summary>旁路录制钩子（调试/回放用；null 零开销）。记录 handler 修改后的最终事件值。
+        /// 回调约束：禁止修改状态/抛异常——违反会破坏帧同步一致性。
+        /// 收 ref e：对 e 的改动会泄漏回调用方，录制器只读不写。</summary>
+        public EventBusRecorderHook RecorderHook;
 
         public EventBus(int initialCapacity = 64)
         {
@@ -49,6 +56,7 @@ namespace Core
             for (int i = 0; i < _count; i++)
                 if (_subscriptions[i].EventType == eventType)
                     _subscriptions[i].Handler(ref e);
+            if (RecorderHook != null) RecorderHook(eventType, ref e);
             _dispatchDepth--;
         }
 
