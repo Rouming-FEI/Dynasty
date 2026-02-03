@@ -34,5 +34,7 @@ namespace Core.GAS
         public const int TidePulse     = 64;
         /// <summary>SourceId=炮手角色Id, TargetId=目标角色Id。</summary>
         public const int TurretFired   = 65;
+        /// <summary>技能释放（校验通过即记录）。SourceId=施放者角色Id, TargetId=目标角色Id, IntArg1=技能Id。</summary>
+        public const int SkillUsed = 66;
     }
 }

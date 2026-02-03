@@ -70,6 +70,13 @@ namespace Gameplay.Characters
             if (!CanActivate(skill, c, skillIndex)) return;
             if (target == null || target.IsDead) return;
 
+            // 技能释放事件（校验通过即派发；时间线展示用，不影响确定性）
+            var skillEvt = new GameplayEvent(GameplayEventTypes.SkillUsed, c.Id, target.Id)
+            {
+                IntArg1 = skill.Id
+            };
+            state.Events.Dispatch(GameplayEventTypes.SkillUsed, ref skillEvt);
+
             // 冷却记录：施放后按 CooldownTurns 锁定（skillIndex >= 0 才记录）
             if (skillIndex >= 0 && skill.CooldownTurns > 0)
                 c.ASC.SetCooldown(skillIndex, skill.CooldownTurns);
