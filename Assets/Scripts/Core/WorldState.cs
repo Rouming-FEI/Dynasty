@@ -34,7 +34,7 @@ namespace Core
         public TurnPhase Phase;
         public int PlayerCount;
 
-        /// <summary>调试/录制用：每次 CurrentTick 递增后回调（null 零开销，录制器挂载）。
+        /// <summary>调试/录制用：每次逻辑 Tick 状态变更完成后回调（检查点语义，录制器挂载；null 零开销）。
         /// 回调不得修改状态、不得抛异常——违反会破坏帧同步一致性。</summary>
         public Action<int> OnTickAdvanced;
 

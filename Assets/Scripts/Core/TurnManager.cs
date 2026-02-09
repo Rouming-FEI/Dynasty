@@ -196,14 +196,15 @@ namespace Core
             var evt = new GameplayEvent(GameplayEventTypes.JudgmentResolved, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.JudgmentResolved, ref evt);
 
-            // 判定结算完成：推进逻辑 Tick（作废重判的提前 return 路径不计）
+            // 判定结算完成：推进逻辑 Tick（作废重判的提前 return 路径不计）；
+            // 检查点回调在 Phase 切换与 ActionPhaseStart 派发后触发（状态变更完成）
             state.CurrentTick++;
-            state.OnTickAdvanced?.Invoke(state.CurrentTick);
             state.Phase = TurnPhase.ActionPhase;
             _currentActorIndex = 0;
 
             var evt2 = new GameplayEvent(GameplayEventTypes.ActionPhaseStart, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.ActionPhaseStart, ref evt2);
+            state.OnTickAdvanced?.Invoke(state.CurrentTick);
         }
 
         private void BuildActionOrder(WorldState state, JudgmentResult result)
@@ -262,9 +263,8 @@ namespace Core
 
         private void EndTurn(WorldState state)
         {
-            // 回合末结算开始：推进逻辑 Tick
+            // 回合末结算开始：推进逻辑 Tick（检查点回调移至结算完成后）
             state.CurrentTick++;
-            state.OnTickAdvanced?.Invoke(state.CurrentTick);
             state.Phase = TurnPhase.TurnEnd;
 
             var turnEndEvt = new GameplayEvent(GameplayEventTypes.TurnEnd, -1, -1);
@@ -313,18 +313,14 @@ namespace Core
             // Check game over
             if (state.AliveCharacterCount <= 1)
             {
-                state.Phase = TurnPhase.GameOver;
-                var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
-                state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
+                EndGame(state);
                 return;
             }
 
             // Check max turns
             if (state.CurrentTurn >= GameConfig.MaxTurns)
             {
-                state.Phase = TurnPhase.GameOver;
-                var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
-                state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
+                EndGame(state);
                 return;
             }
 
@@ -344,6 +340,19 @@ namespace Core
             state.Phase = TurnPhase.JudgmentPhase;
             var evt2 = new GameplayEvent(GameplayEventTypes.TurnStart, -1, -1);
             state.Events.Dispatch(GameplayEventTypes.TurnStart, ref evt2);
+
+            // 回合末结算完成（含下一回合开场状态）：触发 Tick 检查点回调
+            state.OnTickAdvanced?.Invoke(state.CurrentTick);
+        }
+
+        /// <summary>终局收尾：GameOver 状态落定 + 事件派发 + 终局 Tick 检查点。</summary>
+        private void EndGame(WorldState state)
+        {
+            state.Phase = TurnPhase.GameOver;
+            var evt = new GameplayEvent(GameplayEventTypes.GameOver, -1, -1);
+            state.Events.Dispatch(GameplayEventTypes.GameOver, ref evt);
+            // 终局检查点：GameOver 状态计入快照
+            state.OnTickAdvanced?.Invoke(state.CurrentTick);
         }
 
         // Public accessor for action order (used by LocalLockstep)
