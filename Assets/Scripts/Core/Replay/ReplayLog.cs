@@ -51,6 +51,7 @@ namespace Core.Replay
 
     public sealed class ReplayLog
     {
+        /// <summary>回放格式版本（与 ReplaySerializer.CurrentVersion 保持一致）。</summary>
         public int Version = 1;
         public int PlayerCount;
         public int Seed;
