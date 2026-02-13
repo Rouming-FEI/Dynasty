@@ -176,9 +176,9 @@ namespace ReplayTools
                 $"Phase {_player.State.Phase}  存活 {_player.State.AliveCharacterCount}");
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("+1 Tick")) _player.StepTick();
-            if (GUILayout.Button("+1 回合")) _player.StepTurn();
-            if (GUILayout.Button("+1 指令")) _player.StepCommand();
+            if (GUILayout.Button("步进 Tick")) _player.StepTick();
+            if (GUILayout.Button("步进回合")) _player.StepTurn();
+            if (GUILayout.Button("步进指令")) _player.StepCommand();
             _autoPlay = GUILayout.Toggle(_autoPlay, "自动播放");
             EditorGUILayout.EndHorizontal();
 

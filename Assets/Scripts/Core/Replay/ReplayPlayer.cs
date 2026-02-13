@@ -17,6 +17,8 @@ namespace Core.Replay
     /// 限制：录制侧若设置 JudgmentInputProvider 全员接管判定，AI 槽不消耗随机流，
     /// 回放侧 AI 重决策会错位——此类日志不可回放（当前录制路径不设
     /// JudgmentInputProvider，仅真人局/纯 AI 局可回放）。
+    /// 同理，HumanPlayers == null 旧全手动模式（ManualInputProvider 全接管）下
+    /// 输入来源标记失真，此类日志同样不可回放。
     /// </summary>
     public sealed class ReplayPlayer
     {

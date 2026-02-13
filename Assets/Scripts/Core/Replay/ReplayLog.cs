@@ -57,6 +57,8 @@ namespace Core.Replay
         public int Seed;
         /// <summary>按玩家位序的角色 Def Id；0 = 默认轮换（StartGame 无参路径）。</summary>
         public int[] CharacterDefIds;
+        /// <summary>录制时快照；回放端沿用引擎 GameConfig.MaxTurns（静态值），
+        /// 本字段仅供展示——GameConfig 变更后旧日志回放行为可能不一致。</summary>
         public int MaxTurns;
         public int TotalTicks;
         /// <summary>按玩家位序的真人掩码（录制时快照 lockstep.HumanPlayers）。</summary>
