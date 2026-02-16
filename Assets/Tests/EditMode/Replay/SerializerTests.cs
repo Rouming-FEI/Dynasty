@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Core.Replay;
 using Gameplay.Judgment;
@@ -48,7 +49,7 @@ namespace Dynasty.Tests.Replay
         public void Serialize_RoundTripsEveryField()
         {
             var log = BuildSampleLog();
-            string path = Path.Combine(Path.GetTempPath(), $"replay-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"replay-{Guid.NewGuid().ToString("N")}.dynreplay");
             ReplaySerializer.Save(log, path);
             var loaded = ReplaySerializer.Load(path);
             File.Delete(path);
@@ -87,7 +88,7 @@ namespace Dynasty.Tests.Replay
         [Test]
         public void Load_EmptyFile_Throws()
         {
-            string path = Path.Combine(Path.GetTempPath(), $"empty-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"empty-{Guid.NewGuid().ToString("N")}.dynreplay");
             File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
             // NUnit 的 Assert.Throws<T> 是精确类型匹配；此处意图是"抛出任意异常"，
             // 派生异常（EndOfStreamException/InvalidDataException）须用 Assert.Catch 接住
@@ -98,7 +99,7 @@ namespace Dynasty.Tests.Replay
         [Test]
         public void Load_BadMagic_Throws()
         {
-            string path = Path.Combine(Path.GetTempPath(), $"badmagic-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"badmagic-{Guid.NewGuid().ToString("N")}.dynreplay");
             File.WriteAllBytes(path, new byte[] { 0x11, 0x22, 0x33, 0x44 });
             Assert.Throws<InvalidDataException>(() => ReplaySerializer.Load(path));
             File.Delete(path);
@@ -107,7 +108,7 @@ namespace Dynasty.Tests.Replay
         [Test]
         public void Load_BadVersion_Throws()
         {
-            string path = Path.Combine(Path.GetTempPath(), $"badversion-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"badversion-{Guid.NewGuid().ToString("N")}.dynreplay");
             using (var fs = new FileStream(path, FileMode.Create))
             using (var w = new BinaryWriter(fs))
             {
@@ -121,7 +122,7 @@ namespace Dynasty.Tests.Replay
         [Test]
         public void Load_TruncatedFile_Throws()
         {
-            string path = Path.Combine(Path.GetTempPath(), $"truncated-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"truncated-{Guid.NewGuid().ToString("N")}.dynreplay");
             ReplaySerializer.Save(BuildSampleLog(), path);
             byte[] full = File.ReadAllBytes(path);
             File.WriteAllBytes(path, SubArray(full, full.Length / 2));
@@ -137,7 +138,7 @@ namespace Dynasty.Tests.Replay
             log.CharacterDefIds = null;
             log.HumanPlayersMask = null;
             log.TickHashes = null;
-            string path = Path.Combine(Path.GetTempPath(), $"nulls-{TestContext.CurrentContext.Random.Next()}.dynreplay");
+            string path = Path.Combine(Path.GetTempPath(), $"nulls-{Guid.NewGuid().ToString("N")}.dynreplay");
             ReplaySerializer.Save(log, path);
             var loaded = ReplaySerializer.Load(path);
             File.Delete(path);
