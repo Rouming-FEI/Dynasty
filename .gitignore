@@ -28,3 +28,6 @@ AGENTS.md
 
 # IDE user-specific settings
 *.DotSettings.user
+
+# dotnet verify project (out-of-Unity validation; sources vendored, not tracked)
+tools/verify/
