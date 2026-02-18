@@ -68,5 +68,8 @@ namespace Core.GAS
         {
             if (tag.IsValid) _mask &= ~(1L << (tag.Id - 1));
         }
+
+        /// <summary>直接恢复掩码（快照反序列化用）。</summary>
+        public void RestoreMask(long mask) { _mask = mask; }
     }
 }

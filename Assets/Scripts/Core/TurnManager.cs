@@ -359,5 +359,11 @@ namespace Core
         public int[] ActionOrder => _actionOrder;
         public int CurrentActorIndex => _currentActorIndex;
         public void IncrementActorIndex() => _currentActorIndex++;
+
+        // ---- 快照恢复访问器（序列化/反序列化专用）----
+        public int ConsecutiveFlatCount => _consecutiveFlatCount;
+        public void RestoreConsecutiveFlatCount(int v) => _consecutiveFlatCount = v;
+        public void RestoreActionOrder(int[] order) => _actionOrder = order ?? Array.Empty<int>();
+        public void RestoreActorIndex(int idx) => _currentActorIndex = idx;
     }
 }

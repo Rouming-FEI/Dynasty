@@ -691,6 +691,32 @@ namespace Core.GAS
             return false;
         }
 
+        // ---- 快照恢复访问器（序列化/反序列化专用，非热路径）----
+
+        /// <summary>精确设置心雾层数（快照恢复用；AddMistLayer 只能递增）。</summary>
+        public void SetMistLayers(int layers) { _mistLayers = layers < 0 ? 0 : layers; }
+
+        /// <summary>覆盖周期被动计时器（快照恢复用；长度须等于已注册被动数）。</summary>
+        public void RestorePassiveTimers(int[] timers)
+        {
+            for (int i = 0; i < timers.Length && i < _passiveCount; i++)
+                _passiveTimers[i] = timers[i];
+        }
+
+        /// <summary>读取周期被动计时器（快照序列化用）。</summary>
+        public int GetPassiveTimer(int index) =>
+            index >= 0 && index < _passiveCount ? _passiveTimers[index] : -1;
+
+        /// <summary>按索引读取活跃 GE（快照序列化用；配合 ActiveEffectCount）。</summary>
+        public GameplayEffectSpec GetActiveEffect(int index) =>
+            index >= 0 && index < _activeEffects.Count ? _activeEffects[index] : null;
+
+        /// <summary>直接插入活跃 GE（快照恢复用；不经 ApplyGameplayEffect，避免叠加/事件副作用）。</summary>
+        public void RestoreActiveEffect(GameplayEffectSpec spec)
+        {
+            if (spec != null && spec.Definition != null) _activeEffects.Add(spec);
+        }
+
         // ---------------------------------------------------------------------
         // Determinism hash — 确定性自检
         // ---------------------------------------------------------------------
