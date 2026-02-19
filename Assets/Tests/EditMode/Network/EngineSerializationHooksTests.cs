@@ -3,7 +3,7 @@ using Core.GAS;
 using Gameplay.Characters;
 using NUnit.Framework;
 
-namespace Network.Tests
+namespace Dynasty.Tests.Network
 {
     public class EngineSerializationHooksTests
     {
@@ -78,6 +78,19 @@ namespace Network.Tests
                 Assert.That(def, Is.Not.Null, $"def {id}");
                 Assert.That(def.Id, Is.EqualTo(id));
             }
+        }
+
+        [Test]
+        public void Asc_RestoreActiveEffect_直接插入不触发叠加逻辑()
+        {
+            var asc = new AbilitySystemComponent(1);
+            asc.SetAttributeSet(new DefaultAttributeSet());
+            GameplayEffectSpec spec = asc.RentSpec();
+            spec.Definition = new GameplayEffect { Id = 999, DurationType = GameplayEffectDurationType.HasDuration, DurationTurns = 5 };
+            spec.RemainingTurns = 5;
+            asc.RestoreActiveEffect(spec);
+            Assert.That(asc.ActiveEffectCount, Is.EqualTo(1));
+            Assert.That(asc.GetActiveEffect(0).RemainingTurns, Is.EqualTo(5));
         }
 
         [Test]

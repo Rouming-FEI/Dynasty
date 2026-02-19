@@ -696,9 +696,10 @@ namespace Core.GAS
         /// <summary>精确设置心雾层数（快照恢复用；AddMistLayer 只能递增）。</summary>
         public void SetMistLayers(int layers) { _mistLayers = layers < 0 ? 0 : layers; }
 
-        /// <summary>覆盖周期被动计时器（快照恢复用；长度须等于已注册被动数）。</summary>
+        /// <summary>覆盖周期被动计时器（快照恢复用；timers 长度须等于已注册被动数，null 安全忽略）。</summary>
         public void RestorePassiveTimers(int[] timers)
         {
+            if (timers == null) return;
             for (int i = 0; i < timers.Length && i < _passiveCount; i++)
                 _passiveTimers[i] = timers[i];
         }
