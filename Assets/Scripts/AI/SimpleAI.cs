@@ -13,14 +13,15 @@ namespace AI
     public class SimpleAI
     {
         private readonly DeterministicRandom _random;
-        private int _playerId;
 
+        /// <summary>注入随机流（网络模式：AI 决策不得消耗世界随机流，见 P6 设计）。
+        /// 默认 seed = playerId * 1000 + 7：+7 保证非零（xorshift 约束），乘法拉开不同玩家的序列；
+        /// 固定 seed 意味着 AI 序列与对局 seed 无关、每局可复现（确定性调试特性）。</summary>
         public SimpleAI(int playerId) : this(playerId, new DeterministicRandom(playerId * 1000 + 7)) { }
 
         /// <summary>注入随机流（网络模式：AI 决策不得消耗世界随机流，见 P6 设计）。</summary>
         public SimpleAI(int playerId, DeterministicRandom aiRandom)
         {
-            _playerId = playerId;
             _random = aiRandom;
         }
 
