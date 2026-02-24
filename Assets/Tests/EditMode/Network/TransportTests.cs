@@ -9,6 +9,22 @@ namespace Dynasty.Tests.Network
     /// <summary>真实 UDP 回环测试（127.0.0.1）。端口随机（StartHost(0)）。</summary>
     public class TransportTests
     {
+        private readonly List<Hub> _hubs = new List<Hub>();
+
+        private Hub NewHub()
+        {
+            var h = new Hub();
+            _hubs.Add(h);
+            return h;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            foreach (var h in _hubs) h.T.Stop();
+            _hubs.Clear();
+        }
+
         private sealed class Hub
         {
             public readonly NetworkTransport T = new NetworkTransport();
@@ -53,8 +69,8 @@ namespace Dynasty.Tests.Network
         [Test]
         public void HostClient_连接收发_回环()
         {
-            var host = new Hub();
-            var client = new Hub();
+            var host = NewHub();
+            var client = NewHub();
             host.T.StartHost(0, 8, "k");
             Assert.That(client.T.Connect("127.0.0.1", host.T.LocalPort, "k", 2000), Is.True);
             PumpUntil(host, client);
@@ -71,16 +87,14 @@ namespace Dynasty.Tests.Network
             host.T.DisconnectPeer(0);
             PumpFixed(host, client, 300);
             Assert.That(client.Disconnected.Count, Is.EqualTo(1));
-            host.T.Stop();
-            client.T.Stop();
         }
 
         [Test]
         public void Host_组播_全部对端收到()
         {
-            var host = new Hub();
-            var c1 = new Hub();
-            var c2 = new Hub();
+            var host = NewHub();
+            var c1 = NewHub();
+            var c2 = NewHub();
             host.T.StartHost(0, 8, "k");
             c1.T.Connect("127.0.0.1", host.T.LocalPort, "k", 2000);
             c2.T.Connect("127.0.0.1", host.T.LocalPort, "k", 2000);
@@ -97,22 +111,17 @@ namespace Dynasty.Tests.Network
             Assert.That(c2.Received.Count, Is.EqualTo(1));
             Assert.That(new NetDataReader(c1.Received[0].data).GetInt(), Is.EqualTo(12345));
             Assert.That(new NetDataReader(c2.Received[0].data).GetInt(), Is.EqualTo(12345));
-            host.T.Stop();
-            c1.T.Stop();
-            c2.T.Stop();
         }
 
         [Test]
         public void 错误连接Key_被拒()
         {
-            var host = new Hub();
-            var client = new Hub();
+            var host = NewHub();
+            var client = NewHub();
             host.T.StartHost(0, 8, "right");
             Assert.That(client.T.Connect("127.0.0.1", host.T.LocalPort, "wrong", 500), Is.True);
             PumpUntil(host, client, 100);
             Assert.That(host.Connected.Count, Is.EqualTo(0), "错误 key 不应建立连接");
-            host.T.Stop();
-            client.T.Stop();
         }
     }
 }

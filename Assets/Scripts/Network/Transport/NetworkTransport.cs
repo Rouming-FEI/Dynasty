@@ -9,7 +9,10 @@ namespace Network.Transport
 {
     /// <summary>LiteNetLib 薄封装：Server/Client 统一模型，可靠有序单通道（channel 0）。
     /// peerId 直接采用 LiteNetLib 的 NetPeer.Id。纯 C#（LiteNetLib 无 UnityEngine 依赖），127.0.0.1 回环可测。
-    /// 所有回调在 PollEvents 内同步触发，回调不得阻塞/抛异常。</summary>
+    /// 所有回调在 PollEvents 内同步触发；回调异常由 SafeInvoke 捕获，避免逃逸 PollEvents、丢同批事件、污染 reader 池。
+    /// 注意：主机 LocalPeerId 固定为 0，而 LiteNetLib 首个对端 peer.Id 也是 0——
+    /// 上层不得用 peerId 直接当玩家身份（玩家身份用 NetworkSession 的 playerId）；
+    /// Broadcast/OnDataReceived 语义保证主机自己不出现在对端集合中。</summary>
     public sealed class NetworkTransport : INetEventListener
     {
         private NetManager _manager;
@@ -118,18 +121,32 @@ namespace Network.Transport
         void INetEventListener.OnPeerConnected(NetPeer peer)
         {
             _peers[peer.Id] = peer;
-            OnPeerConnected?.Invoke(peer.Id);
+            SafeInvoke(OnPeerConnected, peer.Id);
         }
 
         void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
         {
             _peers.Remove(peer.Id);
-            OnPeerDisconnected?.Invoke(peer.Id);
+            SafeInvoke(OnPeerDisconnected, peer.Id);
         }
 
         void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
         {
-            OnDataReceived?.Invoke(peer.Id, reader);
+            SafeInvoke(OnDataReceived, peer.Id, reader);
+        }
+
+        // ---- 事件安全派发：逐事件 try/catch，回调异常不逃逸 PollEvents；参数拷贝引用防订阅者取消订阅竞态 ----
+
+        private void SafeInvoke(Action<int> handler, int id)
+        {
+            try { handler?.Invoke(id); }
+            catch (Exception e) { System.Diagnostics.Debug.WriteLine($"NetworkTransport 回调异常: {e}"); }
+        }
+
+        private void SafeInvoke(Action<int, NetDataReader> handler, int id, NetDataReader r)
+        {
+            try { handler?.Invoke(id, r); }
+            catch (Exception e) { System.Diagnostics.Debug.WriteLine($"NetworkTransport 回调异常: {e}"); }
         }
 
         void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError) { }
