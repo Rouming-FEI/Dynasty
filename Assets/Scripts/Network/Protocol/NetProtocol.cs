@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Core.Replay;
 using Gameplay.Judgment;
 using LiteNetLib.Utils;
@@ -16,7 +17,7 @@ namespace Network.Protocol
     /// <summary>
     /// 消息协议编解码：格式 [Type:byte][Payload...]，可靠有序通道（LiteNetLib 保证整包，无需长度前缀）。
     /// 全部手写、零 GC（无 LINQ/反射/装箱，枚举显式 cast）；数组长度读取带防护（参考 ReplaySerializer.CheckLength）。
-    /// 说明：WriteXxx 为纯载荷方法，调用方先 WriteHeader；唯一例外 WriteChipBatch 为完整消息（内含 header）。
+    /// 说明：WriteXxx 一律为纯载荷方法，调用方先 WriteHeader（无例外）。
     /// </summary>
     public static class NetProtocol
     {
@@ -40,11 +41,11 @@ namespace Network.Protocol
             return NetMsgType.Ping;
         }
 
-        /// <summary>分配前校验从网络包读取的长度：仅允许 [0, MaxArrayLength]。</summary>
+        /// <summary>分配前校验从网络包读取的长度：仅允许 [0, MaxArrayLength]（与 ReplaySerializer.CheckLength 一致）。</summary>
         private static void CheckLength(int len, string what)
         {
             if (len < 0 || len > MaxArrayLength)
-                throw new InvalidOperationException($"{what} 长度非法: {len}");
+                throw new InvalidDataException($"{what} 长度非法: {len}");
         }
 
         // ---- Hello (C→H) ----
@@ -133,11 +134,11 @@ namespace Network.Protocol
         }
 
         // ---- ChipBatch (H→C) ----
-        // 完整消息（内含 header）：[ChipBatch][count:int][(playerId,rock,scissors,paper)...]
+        // 纯载荷：[count:int][(playerId,rock,scissors,paper)...]；count 取自数组长度，杜绝调用方传参不一致的截断/越界
 
-        public static void WriteChipBatch(NetDataWriter w, int count, params ChipAllocation[] allocs)
+        public static void WriteChipBatch(NetDataWriter w, ChipAllocation[] allocs)
         {
-            WriteHeader(w, NetMsgType.ChipBatch);
+            int count = allocs != null ? allocs.Length : 0;
             w.Put(count);
             for (int i = 0; i < count; i++)
             {
