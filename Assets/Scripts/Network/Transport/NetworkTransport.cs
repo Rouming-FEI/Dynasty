@@ -13,7 +13,7 @@ namespace Network.Transport
     /// 注意：主机 LocalPeerId 固定为 0，而 LiteNetLib 首个对端 peer.Id 也是 0——
     /// 上层不得用 peerId 直接当玩家身份（玩家身份用 NetworkSession 的 playerId）；
     /// Broadcast/OnDataReceived 语义保证主机自己不出现在对端集合中。</summary>
-    public sealed class NetworkTransport : INetEventListener
+    public sealed class NetworkTransport : INetEventListener, INetworkTransport
     {
         private NetManager _manager;
         private string _connectKey;
