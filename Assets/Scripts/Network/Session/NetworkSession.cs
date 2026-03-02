@@ -7,12 +7,14 @@ namespace Network.Session
 
     /// <summary>
     /// 会话状态机：Lobby（玩家加入/分配槽位）→ InGame → GameOver。
-    /// 主机侧持有 peerId→playerId 映射；槽位表只登记网络对端，主机本地玩家由 LocalPlayerId（=0）标识、不占槽——
-    /// 因此 HandleHello 按空槽顺序分配 0..PlayerCount-1。断线重连窗口（ReconnectGraceMs）由 Task 11
-    /// ReconnectHandler 接入；本层断线即释放槽位。纯 C# 状态机，不依赖真实 UDP。</summary>
+    /// 槽位模型（spec 3.3）：槽 0 恒为主机本地玩家（LocalPlayerId=0，不经过 HandleHello），
+    /// 对端从槽 1 起分配（playerId 1..PlayerCount-1），满员 = 对端槽全部被占。
+    /// 主机侧持有 playerId（槽号）→peerId 映射，以 playerId 为下标、槽 0 恒 -1。
+    /// 断线重连窗口（ReconnectGraceMs）由 Task 11 ReconnectHandler 接入；本层断线即释放槽位。
+    /// 纯 C# 状态机，不依赖真实 UDP。</summary>
     public sealed class NetworkSession
     {
-        private readonly int[] _slotOwnerPeer;   // 槽位→peerId（-1=AI 槽/未连接）
+        private readonly int[] _slotOwnerPeer;   // playerId（槽号）→peerId（槽 0 恒 -1=主机本地，1..N-1=对端）
         private int[] _playerDefIds;
 
         public SessionPhase Phase { get; private set; }
@@ -22,10 +24,10 @@ namespace Network.Session
         public int[] PlayerDefIds => _playerDefIds;      // 槽位角色表（长度=PlayerCount）
         public SessionConfig Config { get; }
 
-        /// <summary>槽位→peerId（-1=AI 槽/未连接），主机视角；调用方只读勿改。</summary>
+        /// <summary>playerId（槽号）→peerId（-1=AI 槽/未连接），槽 0 恒 -1；调用方只读勿改。</summary>
         public int[] PlayerPeerIds => _slotOwnerPeer;
 
-        /// <summary>已连接真人槽数（网络对端占用数）。</summary>
+        /// <summary>已连接对端数（槽 1..PlayerCount-1 的占用数，不含主机），供上层显示/逻辑用。</summary>
         public int ConnectedPlayerCount
         {
             get
@@ -43,7 +45,8 @@ namespace Network.Session
         /// <summary>主机视角：玩家断线/离座（playerId）。</summary>
         public event Action<int> OnPlayerLeft;
 
-        /// <summary>满员（主机开战信号）。</summary>
+        /// <summary>满员信号：对端槽（1..PlayerCount-1）全部被占时触发。
+        /// 触发后驱动（NetworkGameLoop）须调用 TryStartGame 完成开战。</summary>
         public event Action OnAllReady;
 
         public NetworkSession(SessionConfig config, bool isHost, int localPlayerId = -1)
@@ -70,21 +73,29 @@ namespace Network.Session
             }
         }
 
-        /// <summary>主机：处理 Hello（peerId, requestedDefId）→ 分配第一个空槽。
-        /// 返回分配的 playerId（槽索引），-1=拒绝（满员或已开战）。角色协商由上层负责，本层按主机配置表分配。</summary>
+        /// <summary>主机：处理 Hello（peerId, requestedDefId）→ 从槽 1 起分配第一个空槽。
+        /// 槽 0 恒为主机本地玩家、不参与分配；满员 = 对端槽（1..PlayerCount-1）全部被占。
+        /// 返回分配的 playerId（=槽号），-1=拒绝（满员或已开战）。角色协商由上层负责，本层按主机配置表分配。
+        /// 防御：同一 peerId 重复 Hello 返回其已持有的 playerId，不重复占槽。</summary>
         public int HandleHello(int peerId, int requestedDefId)
         {
             if (!IsHost)
                 throw new InvalidOperationException("仅主机可处理加入请求");
             if (Phase != SessionPhase.Lobby)
                 return -1;
-            for (int i = 0; i < _slotOwnerPeer.Length; i++)
+            // I2：重复 peerId 防御——已持槽则返回原 playerId（不新占槽、不重复触发加入事件）
+            for (int i = 1; i < _slotOwnerPeer.Length; i++)
+            {
+                if (_slotOwnerPeer[i] == peerId)
+                    return i;
+            }
+            for (int i = 1; i < _slotOwnerPeer.Length; i++)
             {
                 if (_slotOwnerPeer[i] == -1)
                 {
                     _slotOwnerPeer[i] = peerId;
                     OnPlayerJoined?.Invoke(i);
-                    if (ConnectedPlayerCount == Config.PlayerCount)
+                    if (ConnectedPlayerCount == Config.PlayerCount - 1)
                         OnAllReady?.Invoke();
                     return i;
                 }
@@ -115,6 +126,8 @@ namespace Network.Session
         {
             if (IsHost)
                 throw new InvalidOperationException("仅客户端可应用加入结果");
+            if (playerId < 0 || playerId >= Config.PlayerCount)
+                throw new ArgumentException($"playerId {playerId} 越界（须在 [0, {Config.PlayerCount - 1}]）", nameof(playerId));
             if (defIds == null || defIds.Length != Config.PlayerCount)
                 throw new ArgumentException($"角色表长度 {defIds?.Length ?? 0} 必须等于 PlayerCount {Config.PlayerCount}", nameof(defIds));
             LocalPlayerId = playerId;
@@ -128,12 +141,14 @@ namespace Network.Session
         /// 本层暂无周期逻辑：窗口超时在 NetworkGameLoop，断线超时/重连在 Task 11 ReconnectHandler。</summary>
         public void Poll() { }
 
-        /// <summary>主机：已连接玩家数达到 PlayerCount 且处于 Lobby 时开战（Phase→InGame），返回 true。</summary>
+        /// <summary>主机：手动开战入口——Lobby 阶段调用即切 InGame 并返回 true（无需满员，AI 槽由
+        /// NetworkGameLoop 本地填，真人 1..PlayerCount-1 人即可开战）。满员自动开战由 OnAllReady
+        /// 触发（NetworkGameLoop 接线：收到信号后调本方法完成开战）；已开战（InGame/GameOver）返回 false。</summary>
         public bool TryStartGame()
         {
             if (!IsHost)
                 throw new InvalidOperationException("仅主机可开战");
-            if (ConnectedPlayerCount == Config.PlayerCount && Phase == SessionPhase.Lobby)
+            if (Phase == SessionPhase.Lobby)
             {
                 Phase = SessionPhase.InGame;
                 return true;
