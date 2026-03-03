@@ -34,10 +34,11 @@ namespace Network.Session
         private long _windowStartMs;
         private bool _windowOpen;
 
-        // 批次队列（客户端：待执行的输入批次；行动批次 Task 8 使用）
-        private readonly Queue<ChipAllocation[]> _chipBatchQueue = new Queue<ChipAllocation[]>();
+        // 批次队列（客户端：待执行的输入批次，携带 turn 供入队/消费双校验；行动批次 Task 8 使用）
+        private readonly Queue<(int Turn, ChipAllocation[] Allocs)> _chipBatchQueue = new Queue<(int Turn, ChipAllocation[] Allocs)>();
         private readonly Queue<ReplayActionRecord> _actionBatchQueue = new Queue<ReplayActionRecord>();
         private ChipAllocation[] _clientChipBatch;   // 客户端：当前待执行判定批次（JudgmentInputProvider 读取）
+        private bool _clientFaulted;                 // 客户端协议校验失败进入错误状态：停止重放，LastError 记录原因（I3/I6）
         private ChipAllocation[] _committedBatch;    // 主机：最近判定结算的全员筹码（OnJudgmentCommitted 捕获 → 广播）
 
         public WorldState State => _state;
@@ -46,8 +47,11 @@ namespace Network.Session
         public string LastError { get; private set; }
         public event Action<string> OnError;
 
-        /// <summary>可注入时钟（返回毫秒）；测试用快进时钟控制窗口超时。</summary>
-        public Func<long> ClockProvider = () => Environment.TickCount64;
+        /// <summary>可注入时钟（返回毫秒）；测试用快进时钟控制窗口超时。
+        /// 默认 Environment.TickCount（int 隐式转 long）：.NET Framework 4.x 无 64 位毫秒
+        /// 时钟 API（Unity 编译失败，verify net48 目标兜底）；24.9 天回绕由差值比较的
+        /// int 截断处理（见 TickHostJudgment 超时判断）。</summary>
+        public Func<long> ClockProvider = () => Environment.TickCount;
 
         /// <summary>主机真人槽提交回调（内部解析 ChipSubmit 后触发；默认路由 SubmitChip，外部可接管/观察）。</summary>
         public Action<int, ChipAllocation> OnHostChipReceived;
@@ -69,7 +73,7 @@ namespace Network.Session
             _transport.OnDataReceived += HandleMessage;
         }
 
-        /// <summary>开始对局（主机开战后调用；客户端收到 GameStart 后调用）。幂等。</summary>
+        /// <summary>开始对局（主机开战后调用；客户端收到 GameStart 后调用）。幂等；校验失败可重试（_state 保持 null）。</summary>
         public void StartGame()
         {
             if (_state != null) return;
@@ -79,12 +83,9 @@ namespace Network.Session
                 ReportError("角色表缺失或长度不符，无法开局");
                 return;
             }
-            _state = new WorldState(_config.PlayerCount, _session.Seed);
-            _ais = new SimpleAI[_config.PlayerCount];
-            for (int i = 0; i < _config.PlayerCount; i++)
-                _ais[i] = new SimpleAI(i);
-            _lockstep = new LocalLockstep(_state, _ais);
-
+            // I4：全部校验（含角色表解析）通过后再赋值 _state/_lockstep——任一步失败都保持
+            // _state == null，调用方可修复后重试；避免半初始化坏状态（_state 非空但 _lockstep
+            // 未就绪时 Tick 会 NullReference，且幂等检查拒绝重试）。
             var defs = new CharacterDef[defIds.Length];
             for (int i = 0; i < defIds.Length; i++)
             {
@@ -95,6 +96,11 @@ namespace Network.Session
                     return;
                 }
             }
+            _state = new WorldState(_config.PlayerCount, _session.Seed);
+            _ais = new SimpleAI[_config.PlayerCount];
+            for (int i = 0; i < _config.PlayerCount; i++)
+                _ais[i] = new SimpleAI(i);
+            _lockstep = new LocalLockstep(_state, _ais);
             _lockstep.StartGame(defs);
 
             // Task 7：行动窗口未实现，判定结算后冻结行动阶段（Task 8 移除本行并接入行动窗口）
@@ -105,7 +111,10 @@ namespace Network.Session
                 // 主机：真人槽掩码（槽 0=主机本地 + 已连接对端槽）；未提交真人槽返回 null → LocalLockstep 暂停
                 _lockstep.HumanPlayers = BuildHumanMask();
                 _lockstep.HumanJudgmentInput = QueryHumanJudgment;
-                _lockstep.OnJudgmentCommitted = batch => _committedBatch = batch;
+                // I5：+= 追加而非直接赋值——与 ReplayRecorder.Attach 的 = 赋值可共存。
+                // 挂载顺序约定：先 ReplayRecorder.Attach（= 覆盖语义）后本处 += 追加；
+                // 若反过来，Attach 的 = 会覆盖本端处理器（ReplayPlayer 等纯回放场景不受影响）。
+                _lockstep.OnJudgmentCommitted += batch => _committedBatch = batch;
             }
             else
             {
@@ -184,12 +193,17 @@ namespace Network.Session
                 OpenWindow();
             // 驱动一次收集：AI 槽首次取值缓存（独立随机流），真人槽未提交 → RunTurn 暂停
             _lockstep.RunTurn();
-            // 关窗条件 2：超时——未提交真人槽自动 1-1-1 后强制结算
-            if (!AllHumanFilled() && ClockProvider() - _windowStartMs >= _config.JudgmentWindowMs)
+            // 关窗条件 2：超时——未提交真人槽自动 1-1-1 后强制结算。
+            // 回绕安全：ClockProvider 默认 Environment.TickCount（int 值域，24.9 天回绕），
+            // 差值统一用 (int)(now - start) 截断——真实耗时 < 2^31 ms 时结果恒等于实际毫秒数，
+            // 自动处理 int 回绕（unchecked 截断语义）。
+            if (!AllHumanFilled() && (int)(ClockProvider() - _windowStartMs) >= _config.JudgmentWindowMs)
             {
                 for (int i = 0; i < _chipFilled.Length; i++)
                 {
-                    if (!_chipFilled[i])
+                    // M7：只填真人槽——AI 槽值由 LocalLockstep 首次收集缓存（_pendingAllocations），
+                    // _pendingChips 仅为真人槽提交缓存，写 AI 槽是无效操作
+                    if (!_chipFilled[i] && IsHumanSlot(i))
                     {
                         _pendingChips[i].SetDefault();   // 1-1-1
                         _chipFilled[i] = true;
@@ -211,6 +225,10 @@ namespace Network.Session
         {
             _windowOpen = true;
             _windowStartMs = ClockProvider();
+            // I2：每轮开窗重建真人掩码——掩码在 StartGame 快照后，槽位动态变化（对端断线
+            // 释放）会让 LocalLockstep 仍按旧掩码等待已断线槽提交 → 死锁；重建后断线槽
+            // 回落 AI 路径（AllHumanFilled 本就按实时 IsHumanSlot 判断，两端口径一致）。
+            _lockstep.HumanPlayers = BuildHumanMask();
             _pendingChips = new ChipAllocation[_state.PlayerCount];
             _chipFilled = new bool[_state.PlayerCount];
             for (int i = 0; i < _state.PlayerCount; i++)
@@ -227,7 +245,8 @@ namespace Network.Session
         {
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ChipBatch);
-            NetProtocol.WriteChipBatch(w, batch);
+            // I3：载荷携带判定轮次（客户端入队/消费双校验，防过期/乱序/重放批次）
+            NetProtocol.WriteChipBatch(w, _state.CurrentTurn, batch);
             _transport.Broadcast(w);
         }
 
@@ -235,13 +254,21 @@ namespace Network.Session
 
         private void TickClient()
         {
-            if (_state == null || _state.Phase == TurnPhase.GameOver) return;
+            if (_state == null || _state.Phase == TurnPhase.GameOver || _clientFaulted) return;
             if (_state.Phase == TurnPhase.JudgmentPhase)
             {
                 // 有批次 → 弹出注入重放；无批次 → 暂停等待（不推进）
                 if (_chipBatchQueue.Count > 0)
                 {
-                    _clientChipBatch = _chipBatchQueue.Dequeue();
+                    var (turn, allocs) = _chipBatchQueue.Dequeue();
+                    // I3：消费时复校验轮次（入队已校验；队列严格 FIFO，此处防御乱序/重复消费）
+                    if (turn != _state.CurrentTurn)
+                    {
+                        _clientFaulted = true;
+                        ReportError($"消费时判定批次轮次不匹配: 载荷 {turn} != 本地 {_state.CurrentTurn}，进入错误状态");
+                        return;
+                    }
+                    _clientChipBatch = allocs;
                     _lockstep.RunTurn();
                     _clientChipBatch = null;
                 }
@@ -292,8 +319,28 @@ namespace Network.Session
                     {
                         try
                         {
-                            NetProtocol.ReadChipBatch(reader, out ChipAllocation[] allocs);
-                            _chipBatchQueue.Enqueue(allocs);
+                            NetProtocol.ReadChipBatch(reader, out int turn, out ChipAllocation[] allocs);
+                            if (_state == null)
+                            {
+                                ReportError("未开局收到判定批次，丢弃");
+                                break;
+                            }
+                            // I6：非法批次（长度≠PlayerCount）不执行，直接丢弃并进入错误状态
+                            //（否则 JudgmentInputProvider 越界槽返回空筹码 → 判定结果与主机分叉 → 永久不同步）
+                            if (allocs.Length != _state.PlayerCount)
+                            {
+                                _clientFaulted = true;
+                                ReportError($"非法判定批次长度 {allocs.Length} != {_state.PlayerCount}，进入错误状态");
+                                break;
+                            }
+                            // I3：入队前校验轮次——载荷 turn 必须等于本地 CurrentTurn
+                            if (turn != _state.CurrentTurn)
+                            {
+                                _clientFaulted = true;
+                                ReportError($"判定批次轮次不匹配: 载荷 {turn} != 本地 {_state.CurrentTurn}，进入错误状态");
+                                break;
+                            }
+                            _chipBatchQueue.Enqueue((turn, allocs));
                         }
                         catch (Exception e) { ReportError($"ChipBatch 解析失败: {e.Message}"); }
                     }

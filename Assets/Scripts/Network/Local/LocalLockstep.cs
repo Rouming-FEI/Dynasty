@@ -35,7 +35,8 @@ namespace Network.Local
         /// <summary>
         /// 真人判定筹码钩子。返回 null = 未提交，RunTurn 暂停返回（与
         /// ManualInputProvider 行动暂停语义一致）。仅对 HumanPlayers[i]=true 生效；
-        /// 若玩家在掩码中但本钩子为 null，回退 JudgmentInputProvider/AI 取值。
+        /// 首次收集时掩码玩家钩子为 null → 回退 JudgmentInputProvider/AI 取值；
+        /// 补查分支中钩子为 null 属防御路径（首次收集不会遗留该类槽），直接补零。
         /// </summary>
         public Func<int, ChipAllocation?> HumanJudgmentInput;
 

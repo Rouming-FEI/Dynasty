@@ -15,7 +15,7 @@ namespace Dynasty.Tests.Network
         {
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ChipBatch);
-            NetProtocol.WriteChipBatch(w, new[]
+            NetProtocol.WriteChipBatch(w, 3, new[]
             {
                 new ChipAllocation(0) { Rock = 3 },
                 new ChipAllocation(1) { Scissors = 2, Paper = 1 },
@@ -24,6 +24,7 @@ namespace Dynasty.Tests.Network
             });
             var r = new NetDataReader(w.Data);
             Assert.That(NetProtocol.ReadType(r), Is.EqualTo(NetMsgType.ChipBatch));
+            Assert.That(NetProtocol.ReadChipTurn(r), Is.EqualTo(3));
             Assert.That(NetProtocol.ReadChipCount(r), Is.EqualTo(4));
             var a = NetProtocol.ReadChip(r);
             Assert.That(a.PlayerId, Is.EqualTo(0));
@@ -77,15 +78,16 @@ namespace Dynasty.Tests.Network
         {
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ChipBatch);
-            NetProtocol.WriteChipBatch(w, new[]
+            NetProtocol.WriteChipBatch(w, 5, new[]
             {
                 new ChipAllocation(0) { Rock = 2, Paper = 1 },
                 new ChipAllocation(1) { Scissors = 3 }
             });
             var r = new NetDataReader(w.Data);
             Assert.That(NetProtocol.ReadType(r), Is.EqualTo(NetMsgType.ChipBatch));
-            ChipAllocation[] batch;
-            NetProtocol.ReadChipBatch(r, out batch);
+            int turn; ChipAllocation[] batch;
+            NetProtocol.ReadChipBatch(r, out turn, out batch);
+            Assert.That(turn, Is.EqualTo(5));
             Assert.That(batch.Length, Is.EqualTo(2));
             Assert.That(batch[0].Rock, Is.EqualTo(2));
             Assert.That(batch[0].Paper, Is.EqualTo(1));

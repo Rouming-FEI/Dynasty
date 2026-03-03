@@ -172,5 +172,13 @@ namespace Network.Transport
             else
                 request.Reject();
         }
+
+        // ---- 上游 2.1.4 原为接口默认实现（DIM），.NET Framework 4.x 不支持 → 显式补齐空实现（语义同 DIM 默认）----
+
+        void INetEventListener.OnMessageDelivered(NetPeer peer, object userData) { }
+
+        void INetEventListener.OnNtpResponse(NtpPacket packet) { }
+
+        void INetEventListener.OnPeerAddressChanged(NetPeer peer, IPEndPoint previousAddress) { }
     }
 }

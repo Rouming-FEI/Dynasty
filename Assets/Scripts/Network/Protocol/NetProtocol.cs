@@ -134,10 +134,12 @@ namespace Network.Protocol
         }
 
         // ---- ChipBatch (H→C) ----
-        // 纯载荷：[count:int][(playerId,rock,scissors,paper)...]；count 取自数组长度，杜绝调用方传参不一致的截断/越界
+        // 纯载荷：[turn:int][count:int][(playerId,rock,scissors,paper)...]；count 取自数组长度，杜绝调用方传参不一致的截断/越界。
+        // turn 在 count 前：客户端入队/消费前校验与本地 CurrentTurn 一致，防过期/乱序/重放批次（I3）。
 
-        public static void WriteChipBatch(NetDataWriter w, ChipAllocation[] allocs)
+        public static void WriteChipBatch(NetDataWriter w, int turn, ChipAllocation[] allocs)
         {
+            w.Put(turn);
             int count = allocs != null ? allocs.Length : 0;
             w.Put(count);
             for (int i = 0; i < count; i++)
@@ -149,6 +151,9 @@ namespace Network.Protocol
                 w.Put(a.Paper);
             }
         }
+
+        /// <summary>读批次轮次（配合 ReadChipCount/ReadChip 逐条消费）。</summary>
+        public static int ReadChipTurn(NetDataReader r) => r.GetInt();
 
         /// <summary>读批次数量（配合 ReadChip 逐条消费）。</summary>
         public static int ReadChipCount(NetDataReader r) => r.GetInt();
@@ -164,8 +169,9 @@ namespace Network.Protocol
         }
 
         /// <summary>读整个批次（不含 header；调用方先 ReadType）。</summary>
-        public static void ReadChipBatch(NetDataReader r, out ChipAllocation[] allocs)
+        public static void ReadChipBatch(NetDataReader r, out int turn, out ChipAllocation[] allocs)
         {
+            turn = r.GetInt();
             int count = r.GetInt();
             CheckLength(count, "ChipBatch");
             allocs = new ChipAllocation[count];
