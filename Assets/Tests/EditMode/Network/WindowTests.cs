@@ -27,7 +27,7 @@ namespace Dynasty.Tests.Network
 
             public event Action<int, NetDataReader> OnDataReceived;
 
-            public bool IsHost { get; set; }
+            public bool IsHost { get; }
 
             public void PollEvents() { }
 
@@ -74,7 +74,7 @@ namespace Dynasty.Tests.Network
             public NetworkGameLoop Host;
             public NetworkGameLoop Client;
 
-            public static Fixture Create(int playerCount, int connectedClients, int judgmentMs = 30000)
+            public static Fixture Create(int playerCount, int connectedClients, int judgmentMs = 30000, bool startClientDirectly = true)
             {
                 var defIds = new int[playerCount];
                 for (int i = 0; i < playerCount; i++) defIds[i] = i + 1;
@@ -104,8 +104,8 @@ namespace Dynasty.Tests.Network
                 var client = new NetworkGameLoop(ct, clientSession, config);
                 host.ClockProvider = () => clock.Now;
                 client.ClockProvider = () => clock.Now;
-                host.StartGame();
-                client.StartGame();
+                host.StartGame();   // 主机开局即广播 GameStart
+                if (startClientDirectly) client.StartGame();
 
                 return new Fixture
                 {
@@ -215,6 +215,22 @@ namespace Dynasty.Tests.Network
             Assert.That(f.Host.State.GetCharacterByPlayer(0).ActionPoints, Is.EqualTo(1), "保底每人 1 AP");
             Assert.That(f.Host.State.GetCharacterByPlayer(1).ActionPoints, Is.EqualTo(1));
             Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
+        }
+
+        [Test]
+        public void 客户端由GameStart消息触发开局_状态就绪()
+        {
+            var f = Fixture.Create(4, 1, startClientDirectly: false);
+            Assert.That(f.Client.State, Is.Null, "未收到 GameStart 前客户端不得开局");
+
+            f.Pump();   // 主机 Tick 开窗；GameStart 广播送达客户端 → 客户端开局
+
+            Assert.That(f.Client.State, Is.Not.Null, "收到 GameStart 后客户端须开局");
+            Assert.That(f.Client.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase));
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase));
+            Assert.That(f.Client.State.CurrentTurn, Is.EqualTo(f.Host.State.CurrentTurn));
+            Assert.That(f.Client.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
+                "GameStart 驱动两端同 seed/同角色表建世界，状态必须一致");
         }
     }
 }

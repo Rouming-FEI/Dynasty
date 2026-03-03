@@ -33,7 +33,6 @@ namespace Network.Session
         private bool[] _chipFilled;               // 真人槽已提交标记
         private long _windowStartMs;
         private bool _windowOpen;
-        private int _roundTurn;
 
         // 批次队列（客户端：待执行的输入批次；行动批次 Task 8 使用）
         private readonly Queue<ChipAllocation[]> _chipBatchQueue = new Queue<ChipAllocation[]>();
@@ -113,9 +112,21 @@ namespace Network.Session
                 // 客户端：纯重放——全槽位筹码来自广播批次（不跑 AI）
                 _lockstep.HumanPlayers = null;
                 _lockstep.JudgmentInputProvider = i =>
-                    _clientChipBatch != null && i < _clientChipBatch.Length
-                        ? _clientChipBatch[i]
-                        : new ChipAllocation(i);
+                {
+                    if (_clientChipBatch != null && i < _clientChipBatch.Length)
+                        return _clientChipBatch[i];
+                    ReportError("收到非法判定批次");
+                    return new ChipAllocation(i);
+                };
+            }
+
+            // 主机开局：广播 GameStart（客户端收到后以同 seed/同角色表建世界开局）
+            if (IsHost)
+            {
+                var w = new NetDataWriter();
+                NetProtocol.WriteHeader(w, NetMsgType.GameStart);
+                NetProtocol.WriteGameStart(w, _state.CurrentTurn);
+                _transport.Broadcast(w);
             }
         }
 
@@ -200,7 +211,6 @@ namespace Network.Session
         {
             _windowOpen = true;
             _windowStartMs = ClockProvider();
-            _roundTurn = _state.CurrentTurn;
             _pendingChips = new ChipAllocation[_state.PlayerCount];
             _chipFilled = new bool[_state.PlayerCount];
             for (int i = 0; i < _state.PlayerCount; i++)
@@ -250,7 +260,13 @@ namespace Network.Session
             switch (type)
             {
                 case NetMsgType.GameStart:
-                    if (!IsHost) StartGame();
+                    // 客户端：收到开局广播 → 建世界开局（幂等：已开局则忽略）
+                    if (!IsHost)
+                    {
+                        try { NetProtocol.ReadGameStart(reader); }
+                        catch (Exception e) { ReportError($"GameStart 解析失败: {e.Message}"); }
+                        StartGame();
+                    }
                     break;
                 case NetMsgType.RoundStart:
                     // 客户端纯重放不依赖 RoundStart（等 ChipBatch），仅消费载荷
