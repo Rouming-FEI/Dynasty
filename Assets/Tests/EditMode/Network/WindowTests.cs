@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Core;
+using Core.Replay;
+using Gameplay.Characters;
 using Gameplay.Judgment;
 using LiteNetLib.Utils;
 using Network.Protocol;
@@ -25,6 +27,13 @@ namespace Dynasty.Tests.Network
             public LoopbackTransport Peer;
             public readonly List<(int peer, byte[] data)> Outbound = new List<(int, byte[])>();
 
+            /// <summary>广播消息类型日志（测试观察主机广播序列）。</summary>
+            public readonly List<NetMsgType> BroadcastLog = new List<NetMsgType>();
+            /// <summary>ActionTurn 广播载荷 (playerId, windowMs)——行动窗口轮换断言。</summary>
+            public readonly List<(int Player, int WindowMs)> ActionTurnLog = new List<(int, int)>();
+            /// <summary>ActionBatch 广播载荷 (playerId, isPass)——超时跳过断言。</summary>
+            public readonly List<(int Player, int IsPass)> ActionBatchLog = new List<(int, int)>();
+
             public event Action<int, NetDataReader> OnDataReceived;
 
             public bool IsHost { get; }
@@ -44,6 +53,21 @@ namespace Dynasty.Tests.Network
                 var buf = new byte[w.Length];
                 Array.Copy(w.Data, buf, w.Length);
                 Outbound.Add((0, buf));
+                NetMsgType type = (NetMsgType)buf[0];
+                BroadcastLog.Add(type);
+                if (type == NetMsgType.ActionTurn)
+                {
+                    var r = new NetDataReader(buf);
+                    r.GetByte();   // header
+                    ActionTurnLog.Add((r.GetInt(), r.GetInt()));
+                }
+                else if (type == NetMsgType.ActionBatch)
+                {
+                    var r = new NetDataReader(buf);
+                    r.GetByte();   // header
+                    ReplayActionRecord rec = NetProtocol.ReadActionRecord(r);
+                    ActionBatchLog.Add((rec.PlayerId, r.GetByte()));
+                }
                 return true;
             }
 
@@ -231,6 +255,151 @@ namespace Dynasty.Tests.Network
             Assert.That(f.Client.State.CurrentTurn, Is.EqualTo(f.Host.State.CurrentTurn));
             Assert.That(f.Client.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
                 "GameStart 驱动两端同 seed/同角色表建世界，状态必须一致");
+        }
+
+        // ==================== 行动窗口（Task 8） ====================
+
+        /// <summary>第一个可动行动者（与 LocalLockstep.GetNextActor 同语义：ActionOrder 序 + AP>0 或守护充能≥3）。</summary>
+        private static int FirstActor(WorldState s)
+        {
+            int[] order = s.TurnManager.ActionOrder;
+            for (int i = 0; i < order.Length; i++)
+            {
+                int pid = order[i];
+                Character c = s.GetCharacterByPlayer(pid);
+                if (c != null && !c.IsDead && (c.ActionPoints > 0 || c.ASC.GetGuardianCharge() >= 3))
+                    return pid;
+            }
+            return -1;
+        }
+
+        /// <summary>推进到行动阶段并打开首行动者行动窗口（两端判定结算 + 客户端重放完成）。
+        /// 筹码 (2,1,0)/(0,2,1) 双赢 1-1 配置：全员 1 AP，行动阶段有两位行动者。</summary>
+        private static void ReachActionWindow(Fixture f)
+        {
+            f.Pump();   // 开判定窗
+            f.Host.SubmitChip(0, C(0, 2, 1, 0));
+            f.Client.SubmitChip(1, C(1, 0, 2, 1));
+            f.Pump();   // ChipSubmit(1) 送达主机
+            f.Pump();   // 判定结算 → ChipBatch 广播 → 客户端重放 → ActionPhase
+            f.Pump();   // 主机开首行动者窗口（ActionTurn 广播）；客户端行动阶段等待
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase));
+            Assert.That(f.Client.State.Phase, Is.EqualTo(TurnPhase.ActionPhase));
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
+        }
+
+        [Test]
+        public void 行动者提交Move命令_ActionBatch广播_两端执行位置一致()
+        {
+            var f = Fixture.Create(2, 1);
+            ReachActionWindow(f);
+            int actor = FirstActor(f.Host.State);
+            Assert.That(actor, Is.GreaterThanOrEqualTo(0), "判定结算后应有可动行动者");
+
+            Character ch = f.Host.State.GetCharacterByPlayer(actor);
+            int from = ch.CurrentLocationId;
+            int target = f.Host.State.Locations.GetConnectedLocations(from)[0];
+            int apBefore = ch.ActionPoints;
+            Assert.That(apBefore, Is.GreaterThan(0));
+
+            var rec = new ReplayActionRecord { PlayerId = actor, Kind = ReplayActionKind.Move, IntArg1 = target };
+            if (actor == 0) f.Host.SubmitAction(0, rec);
+            else f.Client.SubmitAction(1, rec);
+            f.Pump();   // ActionSubmit 送达主机 → 主机广播 ActionBatch → 注入执行
+            f.Pump();   // 客户端消费重放
+
+            Assert.That(f.Host.State.GetCharacterByPlayer(actor).CurrentLocationId, Is.EqualTo(target),
+                "主机端移动应生效");
+            Assert.That(f.Client.State.GetCharacterByPlayer(actor).CurrentLocationId, Is.EqualTo(target),
+                "客户端重放后位置必须与主机一致");
+            Assert.That(f.Host.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(apBefore - 1),
+                "移动消耗 1 AP");
+            Assert.That(f.Client.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(apBefore - 1));
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "同一行动批次两端执行结果必须逐位一致");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "另一行动者仍有 AP，行动阶段继续");
+        }
+
+        [Test]
+        public void 行动者超时_isPass_WasteAP注入_AP清零轮换下一行动者()
+        {
+            var f = Fixture.Create(2, 1);
+            ReachActionWindow(f);
+            int actor = FirstActor(f.Host.State);
+            int other = 1 - actor;
+            int apBefore = f.Host.State.GetCharacterByPlayer(actor).ActionPoints;
+            Assert.That(apBefore, Is.GreaterThan(0));
+
+            f.Clock.Now += f.Config.ActionWindowMs + 1;   // 快进越过行动窗口
+            for (int i = 0; i < apBefore; i++) f.Pump();  // 每个 AP 点一个 WasteAP 批次（isPass=1）
+            f.Clock.Now = 0;                              // 复位时钟：轮换窗口不应立即再超时
+            f.Pump();                                     // 主机开下一行动者窗口（ActionTurn）
+
+            Assert.That(f.Host.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(0),
+                "超时 WasteAP 应清零该行动者 AP");
+            Assert.That(f.Client.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(0),
+                "客户端重放同样清零");
+            Assert.That(f.HostTransport.ActionBatchLog.Exists(e => e.Player == actor && e.IsPass == 1), Is.True,
+                "超时跳过应广播 isPass=1 的 ActionBatch");
+            Assert.That(f.HostTransport.ActionTurnLog.Exists(e => e.Player == other), Is.True,
+                "该行动者 AP 清零后窗口应轮换到下一行动者");
+            Assert.That(f.Host.State.GetCharacterByPlayer(other).ActionPoints, Is.EqualTo(1),
+                "轮换后下一行动者 AP 未消耗");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "另一行动者仍有 AP，行动阶段继续");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
+        }
+
+        [Test]
+        public void 全部AP耗尽_TurnEndBatch广播_回合末结算_下一轮判定_两端哈希一致()
+        {
+            var f = Fixture.Create(2, 1);
+            ReachActionWindow(f);
+            int totalAp = f.Host.State.GetCharacterByPlayer(0).ActionPoints
+                        + f.Host.State.GetCharacterByPlayer(1).ActionPoints;
+            Assert.That(totalAp, Is.GreaterThan(0));
+
+            f.Clock.Now += f.Config.ActionWindowMs + 1;
+            // 全员超时 WasteAP 清空：每个行动者窗口需各自快进时钟（开窗 Tick 内超时判定
+            // 以开窗时刻为基准，不会当 Tick 立即超时），直至回合末结算进入下一轮判定
+            int guard = 0;
+            while (f.Host.State.Phase == TurnPhase.ActionPhase && guard++ < 20)
+            {
+                f.Clock.Now += f.Config.ActionWindowMs + 1;
+                f.Pump();
+            }
+
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "回合末结算后进入下一轮判定");
+            Assert.That(f.Client.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "客户端重放同样进入下一轮判定");
+            Assert.That(f.Host.State.CurrentTurn, Is.EqualTo(2));
+            Assert.That(f.Client.State.CurrentTurn, Is.EqualTo(2));
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "完整一回合（判定→行动→回合末→下一轮判定）两端哈希必须一致");
+            Assert.That(f.HostTransport.BroadcastLog.Contains(NetMsgType.TurnEndBatch), Is.True,
+                "全部 AP 耗尽应广播 TurnEndBatch");
+        }
+
+        [Test]
+        public void 行动阶段真人提交非法命令_PlayerId不匹配_主机拒绝不广播()
+        {
+            var f = Fixture.Create(2, 1);
+            ReachActionWindow(f);
+            int actor = FirstActor(f.Host.State);
+            int other = 1 - actor;
+            int apBefore = f.Host.State.GetCharacterByPlayer(actor).ActionPoints;
+
+            // 提交者用自己槽位提交，但记录 PlayerId 指向另一槽 → 主机拒绝（不广播）
+            var rec = new ReplayActionRecord { PlayerId = other, Kind = ReplayActionKind.Move, IntArg1 = 4 };
+            if (actor == 0) f.Host.SubmitAction(0, rec);
+            else f.Client.SubmitAction(1, rec);
+            f.Pump();   // 提交送达主机 → 拒绝
+            f.Pump();
+
+            Assert.That(f.HostTransport.ActionBatchLog.Count, Is.EqualTo(0), "非法提交不得广播 ActionBatch");
+            Assert.That(f.Host.LastError, Is.Not.Null, "主机应记录拒绝原因");
+            Assert.That(f.Host.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(apBefore),
+                "拒绝后 AP 不变");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "拒绝后窗口保持打开（行动阶段继续）");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
         }
     }
 }

@@ -59,7 +59,8 @@ namespace Network.Local
         private bool _judgmentCollected;
 
         /// <summary>
-        /// 行动阶段全暂停（网络模式 Task 7 使用：判定结算后冻结行动阶段，等 Task 8 行动窗口）。
+        /// 行动阶段全暂停（网络模式使用：判定轮结算后停在行动边界，行动窗口由
+        /// NetworkGameLoop.TickHostAction 单独驱动；判定轮置 true、行动轮置 false）。
         /// 暂停时 RunTurn 返回 true，不执行任何行动命令、不消耗 AP、不推进 CurrentTick。
         /// 默认 false = 既有行为（行动阶段即时推进）。</summary>
         public bool PauseActions;
