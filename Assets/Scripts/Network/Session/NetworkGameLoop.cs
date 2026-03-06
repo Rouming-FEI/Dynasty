@@ -245,6 +245,12 @@ namespace Network.Session
         private void TickHost()
         {
             if (_state == null || _state.Phase == TurnPhase.GameOver) return;
+            // I2：真人掩码每 Tick 统一重建（判定/行动分支共用）——掩码是 StartGame/开窗时的
+            // 快照，对端断线释放槽位后 LocalLockstep 仍按旧掩码把断线槽当真人 → 判定
+            // HumanJudgmentInput / 行动 ManualInputProvider 返回 null → 永久暂停死锁；
+            // 重建后断线槽回落 AI 路径，与 TickHostJudgment/AllHumanFilled/TickHostAction
+            // 的实时 IsHumanSlot 分流口径一致。判定与行动轮共用此唯一重建点。
+            _lockstep.HumanPlayers = BuildHumanMask();
             if (_state.Phase == TurnPhase.JudgmentPhase)
             {
                 // 判定轮：结算后停在行动边界（行动窗口由 TickHostAction 驱动，避免判定轮
@@ -254,10 +260,6 @@ namespace Network.Session
                 return;
             }
             _lockstep.PauseActions = false;   // 行动轮：由行动窗口驱动执行
-            // I2b：行动轮掩码实时重建——判定窗缓存的掩码在对端断线后过期（断线槽仍按真人
-            // 走 ManualInputProvider null → 暂停死锁）；重建后断线槽回落 AI 路径，与
-            // TickHostAction 的实时 IsHumanSlot 分流口径一致
-            _lockstep.HumanPlayers = BuildHumanMask();
             TickHostAction();
         }
 
@@ -416,10 +418,8 @@ namespace Network.Session
         {
             _windowOpen = true;
             _windowStartMs = ClockProvider();
-            // I2：每轮开窗重建真人掩码——掩码在 StartGame 快照后，槽位动态变化（对端断线
-            // 释放）会让 LocalLockstep 仍按旧掩码等待已断线槽提交 → 死锁；重建后断线槽
-            // 回落 AI 路径（AllHumanFilled 本就按实时 IsHumanSlot 判断，两端口径一致）。
-            _lockstep.HumanPlayers = BuildHumanMask();
+            // 真人掩码由 TickHost 开头统一重建（I2），开窗不再单独快照——保证判定轮
+            // 与行动轮共用同一重建点，断线槽始终按实时 IsHumanSlot 回落 AI 路径。
             _pendingChips = new ChipAllocation[_state.PlayerCount];
             _chipFilled = new bool[_state.PlayerCount];
             for (int i = 0; i < _state.PlayerCount; i++)
@@ -522,6 +522,9 @@ namespace Network.Session
 
         private void HandleMessage(int peerId, NetDataReader reader)
         {
+            // M5：客户端已进入错误状态（faulted）→ 丢弃后续所有消息，不再入队/重放——
+            // 协议校验失败的批次是损坏输入，继续入队只会用错误数据推进状态机。
+            if (_clientFaulted) return;
             NetMsgType type;
             try { type = NetProtocol.ReadType(reader); }
             catch (Exception e) { ReportError($"消息解析失败: {e.Message}"); return; }
@@ -547,6 +550,16 @@ namespace Network.Session
                         try
                         {
                             NetProtocol.ReadChipSubmit(reader, out int pid, out int rock, out int scissors, out int paper);
+                            // I1：槽位持有者校验——发送方 peerId 必须持有该槽位（PlayerPeerIds
+                            // 槽→peerId 语义：槽 0 恒 -1=主机本地，1..N-1=对端）。伪造他人槽提交
+                            // （冒名）→ ReportError + 忽略（不填充 _pendingChips，不触发回调）；
+                            // 槽 0 恒 -1 天然拒绝网络提交（主机本地提交不经 HandleMessage）。
+                            int[] peerIds = _session.PlayerPeerIds;
+                            if (pid < 0 || pid >= peerIds.Length || peerIds[pid] != peerId)
+                            {
+                                ReportError($"判定提交槽位持有者校验失败: playerId={pid} 非 peer {peerId} 持有，忽略");
+                                break;
+                            }
                             var alloc = new ChipAllocation(pid);
                             alloc.Set(rock, scissors, paper);
                             if (OnHostChipReceived != null) OnHostChipReceived(pid, alloc);
@@ -600,6 +613,15 @@ namespace Network.Session
                         try
                         {
                             ReplayActionRecord rec = NetProtocol.ReadActionSubmit(reader);
+                            // I1：槽位持有者校验——发送方 peerId 必须持有 rec.PlayerId 槽位
+                            // （冒名他人槽提交行动）→ ReportError + 忽略（不广播 ActionBatch，
+                            // 不触发回调）；槽 0 恒 -1 天然拒绝网络提交。
+                            int[] peerIds = _session.PlayerPeerIds;
+                            if (rec.PlayerId < 0 || rec.PlayerId >= peerIds.Length || peerIds[rec.PlayerId] != peerId)
+                            {
+                                ReportError($"行动提交槽位持有者校验失败: playerId={rec.PlayerId} 非 peer {peerId} 持有，忽略");
+                                break;
+                            }
                             if (OnHostActionReceived != null) OnHostActionReceived(rec.PlayerId, rec);
                             else SubmitAction(rec.PlayerId, rec);
                         }

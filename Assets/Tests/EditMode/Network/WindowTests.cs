@@ -21,20 +21,30 @@ namespace Dynasty.Tests.Network
     public class WindowTests
     {
         /// <summary>内存传输替身：SendReliable/Broadcast 写入 Outbound，DeliverAll 转发到对端 OnDataReceived。
-        /// 点对点（host↔client），点对点转发不需要真实 UDP。</summary>
+        /// 点对点（host↔client），点对点转发不需要真实 UDP。
+        /// peerId 语义与真实传输一致：DeliverAll 以本端 SelfPeerId 作为发送方标识（主机恒 0，
+        /// 客户端 = 其 playerId），主机据此做槽位持有者校验（I1）；InjectFrom 可伪造任意
+        /// peerId 注入消息（冒名攻击测试用）。</summary>
         private sealed class LoopbackTransport : INetworkTransport
         {
             public LoopbackTransport Peer;
+            /// <summary>本端在会话中的 peerId（主机恒 0；客户端 = playerId，Fixture 中为 1）。</summary>
+            public readonly int SelfPeerId;
             public readonly List<(int peer, byte[] data)> Outbound = new List<(int, byte[])>();
 
             /// <summary>广播消息类型日志（测试观察主机广播序列）。</summary>
             public readonly List<NetMsgType> BroadcastLog = new List<NetMsgType>();
             /// <summary>ActionTurn 广播载荷 (playerId, windowMs)——行动窗口轮换断言。</summary>
             public readonly List<(int Player, int WindowMs)> ActionTurnLog = new List<(int, int)>();
-            /// <summary>ActionBatch 广播载荷 (playerId, isPass)——超时跳过断言。</summary>
-            public readonly List<(int Player, int IsPass)> ActionBatchLog = new List<(int, int)>();
+            /// <summary>ActionBatch 广播载荷 (playerId, isPass, kind)——超时跳过/AI 行动断言。</summary>
+            public readonly List<(int Player, int IsPass, ReplayActionKind Kind)> ActionBatchLog = new List<(int, int, ReplayActionKind)>();
 
             public event Action<int, NetDataReader> OnDataReceived;
+
+            public LoopbackTransport(int selfPeerId)
+            {
+                SelfPeerId = selfPeerId;
+            }
 
             public bool IsHost { get; }
 
@@ -66,18 +76,26 @@ namespace Dynasty.Tests.Network
                     var r = new NetDataReader(buf);
                     r.GetByte();   // header
                     ReplayActionRecord rec = NetProtocol.ReadActionRecord(r);
-                    ActionBatchLog.Add((rec.PlayerId, r.GetByte()));
+                    ActionBatchLog.Add((rec.PlayerId, r.GetByte(), rec.Kind));
                 }
                 return true;
             }
 
-            /// <summary>把本端 Outbound 全部转发到对端并清空。</summary>
+            /// <summary>把本端 Outbound 全部转发到对端并清空（以本端 SelfPeerId 作为发送方）。</summary>
             public void DeliverAll()
             {
                 var batch = Outbound.ToArray();
                 Outbound.Clear();
                 foreach (var (peer, data) in batch)
-                    Peer.OnDataReceived?.Invoke(peer, new NetDataReader(data));
+                    Peer.OnDataReceived?.Invoke(SelfPeerId, new NetDataReader(data));
+            }
+
+            /// <summary>测试注入：以指定 peerId 伪造对端消息直达本端 HandleMessage（冒名攻击测试用）。</summary>
+            public void InjectFrom(int peerId, NetDataWriter w)
+            {
+                var buf = new byte[w.Length];
+                Array.Copy(w.Data, buf, w.Length);
+                OnDataReceived?.Invoke(peerId, new NetDataReader(buf));
             }
         }
 
@@ -118,8 +136,8 @@ namespace Dynasty.Tests.Network
                 var clientSession = new NetworkSession(config, false);
                 clientSession.ApplyJoinAccept(1, 42, defIds);
 
-                var ht = new LoopbackTransport();
-                var ct = new LoopbackTransport();
+                var ht = new LoopbackTransport(0);   // 主机 peerId 恒 0
+                var ct = new LoopbackTransport(1);   // 客户端 peerId = playerId 1（会话槽 1 由 peer 1 持有）
                 ht.Peer = ct;
                 ct.Peer = ht;
 
@@ -400,6 +418,145 @@ namespace Dynasty.Tests.Network
                 "拒绝后 AP 不变");
             Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "拒绝后窗口保持打开（行动阶段继续）");
             Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
+        }
+
+        // ==================== 身份校验（Task 8 审查 I1） ====================
+
+        /// <summary>构造一条指定槽位的 ChipSubmit 消息（载荷不含 peerId，发送方由传输层标识）。</summary>
+        private static NetDataWriter MakeChipSubmit(int playerId, int rock, int scissors, int paper)
+        {
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ChipSubmit);
+            NetProtocol.WriteChipSubmit(w, playerId, rock, scissors, paper);
+            return w;
+        }
+
+        /// <summary>构造一条指定槽位的 ActionSubmit 消息。</summary>
+        private static NetDataWriter MakeActionSubmit(ReplayActionRecord rec)
+        {
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ActionSubmit);
+            NetProtocol.WriteActionSubmit(w, rec);
+            return w;
+        }
+
+        [Test]
+        public void 判定窗口冒名提交_持有者不符_主机拒绝不填充()
+        {
+            var f = Fixture.Create(4, 1);   // 槽 0/1 真人（peer 0/1 持有），槽 2/3 AI
+            f.Pump();                       // 开判定窗
+
+            // 冒名 1：伪造 peerId=9（不持有任何槽）提交槽 1 筹码
+            f.HostTransport.InjectFrom(9, MakeChipSubmit(1, 0, 0, 3));
+            // 冒名 2：真客户端 peer（peerId=1）冒充主机本地槽 0 提交（槽 0 恒 -1，网络提交天然拒绝）
+            f.HostTransport.InjectFrom(1, MakeChipSubmit(0, 3, 0, 0));
+            f.Pump();
+
+            Assert.That(f.Host.LastError, Does.Contain("持有者"), "冒名提交应被记录槽位持有者不符的拒绝原因");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "拒绝后判定窗口保持打开");
+
+            // 冒名不影响正常提交路径：槽 0/1 正常提交 → 结算 → 行动阶段（两端哈希一致，
+            // 若冒名未被拦截会以错误筹码结算导致客户端重放分叉，此处可捕捉回归）
+            f.Host.SubmitChip(0, C(0, 2, 1, 0));
+            f.Client.SubmitChip(1, C(1, 0, 2, 1));
+            f.Pump();
+            f.Pump();
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "正常提交结算不受冒名干扰");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "冒名被忽略后两端判定结果必须一致");
+        }
+
+        [Test]
+        public void 行动窗口冒名提交_持有者不符_主机拒绝不广播()
+        {
+            var f = Fixture.Create(2, 1);   // 槽 0/1 全真人（无 AI 广播干扰）
+            ReachActionWindow(f);
+            int actor = FirstActor(f.Host.State);
+            int other = 1 - actor;
+            int apBefore = f.Host.State.GetCharacterByPlayer(actor).ActionPoints;
+
+            // 冒名：伪造 peerId=9 提交当前行动者的 Move（持有者不符）→ 主机拒绝，不广播
+            f.HostTransport.InjectFrom(9, MakeActionSubmit(
+                new ReplayActionRecord { PlayerId = actor, Kind = ReplayActionKind.Move, IntArg1 = 4 }));
+            f.Pump();
+
+            Assert.That(f.Host.LastError, Does.Contain("持有者"), "冒名行动提交应被记录槽位持有者不符的拒绝原因");
+            Assert.That(f.HostTransport.ActionBatchLog.Count, Is.EqualTo(0), "冒名提交不得广播 ActionBatch");
+            Assert.That(f.Host.State.GetCharacterByPlayer(actor).ActionPoints, Is.EqualTo(apBefore), "拒绝后 AP 不变");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "拒绝后行动窗口保持打开");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()));
+
+            // 冒名不阻塞正常提交：真实持有者提交 → 广播并执行
+            Character ch = f.Host.State.GetCharacterByPlayer(actor);
+            int target = f.Host.State.Locations.GetConnectedLocations(ch.CurrentLocationId)[0];
+            var rec = new ReplayActionRecord { PlayerId = actor, Kind = ReplayActionKind.Move, IntArg1 = target };
+            if (actor == 0) f.Host.SubmitAction(0, rec);
+            else f.Client.SubmitAction(1, rec);
+            f.Pump();
+            f.Pump();
+            Assert.That(f.HostTransport.ActionBatchLog.Count, Is.EqualTo(1), "正常提交应广播 ActionBatch");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "冒名被忽略后正常行动路径两端仍同步");
+        }
+
+        // ==================== AI 槽行动路径（Task 8 审查 I3） ====================
+
+        [Test]
+        public void 四人混合局AI槽行动_经OnActionCaptured广播ActionBatch_客户端重放两端一致()
+        {
+            // 4 人局：槽 0（主机真人）+ 槽 1（对端真人）+ 槽 2/3（AI）。
+            // AI 决策用独立随机流（seed = playerId*1000+7，固定可复现）；两端经
+            // 「主机 AI 决策 → 广播 ActionBatch → 客户端重放」同一批次序列推进。
+            var f = Fixture.Create(4, 1);
+            Assert.That(f.HostTransport.ActionBatchLog.Count, Is.EqualTo(0), "开局不得有行动广播");
+
+            // 多回合推进直到捕获 AI 槽行动批次：判定轮真人超时 1-1-1（AI 槽由
+            // LocalLockstep 独立随机流收集），行动轮真人超时跳过 / AI 槽主机驱动。
+            // 兜底多回合：某回合 AI 槽判定 0 AP 时行动阶段无 AI 行动者，循环进下一回合。
+            int guard = 0;
+            bool captured = false;
+            (int Player, int IsPass, ReplayActionKind Kind) aiBatch = default;
+            while (guard++ < 20 && !captured)
+            {
+                int jg = 0;
+                while (f.Host.State.Phase == TurnPhase.JudgmentPhase && jg++ < 12)
+                {
+                    f.Clock.Now += f.Config.JudgmentWindowMs + 1;
+                    f.Pump();
+                }
+                if (f.Host.State.Phase == TurnPhase.GameOver) break;
+
+                int ag = 0;
+                while (f.Host.State.Phase == TurnPhase.ActionPhase && ag++ < 24)
+                {
+                    f.Clock.Now += f.Config.ActionWindowMs + 1;
+                    int before = f.HostTransport.ActionBatchLog.Count;
+                    f.Pump();
+                    for (int i = before; i < f.HostTransport.ActionBatchLog.Count; i++)
+                    {
+                        var e = f.HostTransport.ActionBatchLog[i];
+                        if (e.Player >= 2 && e.IsPass == 0)   // AI 槽决策行动（非超时）
+                        {
+                            aiBatch = e;
+                            captured = true;
+                        }
+                    }
+                    if (captured) break;
+                }
+                if (f.Host.State.Phase == TurnPhase.GameOver) break;
+            }
+
+            Assert.That(captured, Is.True, "应在若干回合内捕获 AI 槽的 ActionBatch 广播");
+            Assert.That(aiBatch.Player, Is.InRange(2, 3), "AI 行动批次 PlayerId 应为 AI 槽 2 或 3");
+            Assert.That(aiBatch.IsPass, Is.EqualTo(0), "AI 决策行动 isPass 必须为 0");
+            Assert.That(ReplayActionFactory.Create(
+                new ReplayActionRecord { PlayerId = aiBatch.Player, Kind = aiBatch.Kind }, 0), Is.Not.Null,
+                "AI 行动命令 Kind 必须可解析（Move/UseSkill 等，保底 WasteAP）");
+
+            f.Pump();   // 客户端消费 AI 批次重放（捕获的同一 Pump 已 deliver，此处兜底同步一拍）
+            Assert.That(f.Client.LastError, Is.Null, "客户端重放 AI 批次不得进入错误状态");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "AI 行动批次客户端重放后两端状态必须逐位一致");
         }
     }
 }
