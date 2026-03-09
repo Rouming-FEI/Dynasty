@@ -48,6 +48,14 @@ namespace Core.GAS
         public void SetAttributeBaseValue(int attributeId, float value) =>
             _attributeSet?.SetBaseValue(attributeId, value);
 
+        /// <summary>精确设置属性 current 值（快照恢复用；保留引擎钳制语义）。</summary>
+        public void SetAttributeCurrentValue(int attributeId, float value) =>
+            _attributeSet?.SetCurrentValue(attributeId, value);
+
+        /// <summary>读取属性 base 值（快照序列化用；GetAttributeValue 返回 current）。</summary>
+        public float GetAttributeBaseValue(int attributeId) =>
+            _attributeSet?.GetBaseValue(attributeId) ?? 0f;
+
         /// <summary>Delta-modify current value (positive = increase, negative = decrease).</summary>
         public void ModifyAttributeCurrentValue(int attributeId, float delta)
         {
@@ -717,6 +725,15 @@ namespace Core.GAS
         {
             if (spec != null && spec.Definition != null) _activeEffects.Add(spec);
         }
+
+        /// <summary>周期被动数量（快照序列化用；配合 GetPassiveTimer）。</summary>
+        public int PassiveCount => _passiveCount;
+
+        /// <summary>技能冷却槽数量（快照序列化用；配合 GetCooldown）。</summary>
+        public int CooldownSlotCount => _skillCooldownCount;
+
+        /// <summary>最近造成伤害的回合（快照序列化用；-999 = 从未造成伤害）。</summary>
+        public int GetLastDamageTurn() => _lastDamageTurn;
 
         // ---------------------------------------------------------------------
         // Determinism hash — 确定性自检

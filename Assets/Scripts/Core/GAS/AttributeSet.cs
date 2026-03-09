@@ -43,6 +43,15 @@ namespace Core.GAS
             _currentValues[index] = value;
         }
 
+        /// <summary>读取属性 base 值（快照序列化用；GetValue 返回 current）。</summary>
+        public float GetBaseValue(int attributeId)
+        {
+            int index = attributeId - 1;
+            if (index < 0 || index >= _attributeCount)
+                return 0f;
+            return _baseValues[index];
+        }
+
         /// <summary>
         /// Sets only the current value, clamped to >= 0. Sanity is additionally
         /// clamped to MaxSanity so healing cannot overfill (skipped while
