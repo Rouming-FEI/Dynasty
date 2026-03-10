@@ -22,13 +22,15 @@ namespace Core.Sync
         private const int Magic = 0x57534E50; // 'WSNP'
         /// <summary>当前序列化格式版本。</summary>
         private const int CurrentVersion = 1;
-        /// <summary>从快照读取的任何长度上限（约 100 万；一局快照远小于此，防损坏数据携带巨大正数导致分配 OOM）。</summary>
+        /// <summary>从快照读取的任何长度兜底上限（约 100 万；一局快照远小于此，防损坏数据携带巨大正数导致分配 OOM）。</summary>
         private const int MaxArrayLength = 1 << 20;
 
-        /// <summary>分配前校验从快照读取的长度：仅允许 [0, MaxArrayLength]。</summary>
-        private static void CheckLength(int len, string what)
+        /// <summary>分配前校验从快照读取的长度：仅允许 [0, cap]。
+        /// cap 为字段语义上限（玩家数/GE 数等），默认兜底 1M；对象密集型数组（每元素 300B+ 堆分配）
+        /// 即使 1M 条也会直接 OOM，故关键字段必须按语义收紧。</summary>
+        private static void CheckLength(int len, string what, int cap = MaxArrayLength)
         {
-            if (len < 0 || len > MaxArrayLength)
+            if (len < 0 || len > cap)
                 throw new InvalidDataException($"{what} 长度非法: {len}");
         }
 
@@ -91,7 +93,7 @@ namespace Core.Sync
             w.Write(state.CurrentTick);
             w.Write(state.CurrentTurn);
             w.Write((byte)state.Phase);
-            w.Write(state.Random.Seed);
+            w.Write((int)state.Random.Seed);   // seed 实际来源为 int（WorldState 构造参数），写侧截断对齐读侧 (int)
             w.Write(state.Random.State);
             WriteIntArray(w, state.LocationTrapCounts);
             w.Write(state.ThornPotionTurnsRemaining);
@@ -319,28 +321,28 @@ namespace Core.Sync
         private static WorldState ReadGlobal(BinaryReader r)
         {
             int playerCount = r.ReadInt32();
-            CheckLength(playerCount, "PlayerCount");
+            CheckLength(playerCount, "PlayerCount", GameConfig.MaxPlayers);
             int currentTick = r.ReadInt32();
             int currentTurn = r.ReadInt32();
             TurnPhase phase = (TurnPhase)r.ReadByte();
-            long seed = r.ReadInt64();
+            int seed = r.ReadInt32();
             ulong randomState = r.ReadUInt64();
 
-            var state = new WorldState(playerCount, (int)seed);
+            var state = new WorldState(playerCount, seed);
             state.CurrentTick = currentTick;
             state.CurrentTurn = currentTurn;
             state.Phase = phase;
             state.Random.RestoreState(randomState);
 
             int trapLen = r.ReadInt32();
-            CheckLength(trapLen, "LocationTrapCounts");
+            CheckLength(trapLen, "LocationTrapCounts", GameConfig.MaxLocations);
             var traps = new int[trapLen];
             for (int i = 0; i < trapLen; i++) traps[i] = r.ReadInt32();
             state.LocationTrapCounts = traps;
 
             state.ThornPotionTurnsRemaining = r.ReadInt32();
             int movedLen = r.ReadInt32();
-            CheckLength(movedLen, "MovedThisTurn");
+            CheckLength(movedLen, "MovedThisTurn", GameConfig.MaxPlayers);
             var moved = new bool[movedLen];
             for (int i = 0; i < movedLen; i++) moved[i] = r.ReadBoolean();
             state.MovedThisTurn = moved;
@@ -350,7 +352,7 @@ namespace Core.Sync
             state.PaladinAegisUsed = r.ReadBoolean();
 
             int allocLen = r.ReadInt32();
-            CheckLength(allocLen, "LastAllocations");
+            CheckLength(allocLen, "LastAllocations", GameConfig.MaxPlayers);
             var allocs = new ChipAllocation[allocLen];
             for (int i = 0; i < allocLen; i++) allocs[i] = ReadChip(r);
             state.LastAllocations = allocs;
@@ -365,7 +367,7 @@ namespace Core.Sync
                 int winnerCount = r.ReadInt32();
                 int loserCount = r.ReadInt32();
                 int roleLen = r.ReadInt32();
-                CheckLength(roleLen, "Roles");
+                CheckLength(roleLen, "Roles", GameConfig.MaxPlayers);
                 var roles = new JudgmentRole[roleLen];
                 for (int i = 0; i < roleLen; i++) roles[i] = (JudgmentRole)r.ReadByte();
                 state.LastJudgment = new JudgmentResult
@@ -377,14 +379,14 @@ namespace Core.Sync
                     WinnerCount = winnerCount,
                     LoserCount = loserCount,
                     Roles = roles,
-                    EffectiveChips = ReadIntArray(r, "EffectiveChips"),
-                    APGained = ReadIntArray(r, "APGained")
+                    EffectiveChips = ReadIntArray(r, "EffectiveChips", GameConfig.MaxPlayers),
+                    APGained = ReadIntArray(r, "APGained", GameConfig.MaxPlayers)
                 };
             }
 
             var tm = new TurnManager();
             tm.RestoreConsecutiveFlatCount(r.ReadInt32());
-            tm.RestoreActionOrder(ReadIntArray(r, "ActionOrder"));
+            tm.RestoreActionOrder(ReadIntArray(r, "ActionOrder", GameConfig.MaxPlayers));
             tm.RestoreActorIndex(r.ReadInt32());
             state.TurnManager = tm;
 
@@ -394,7 +396,7 @@ namespace Core.Sync
             for (int i = 0; i < locationCount; i++)
             {
                 int itemCount = r.ReadInt32();
-                CheckLength(itemCount, "LocatedItems");
+                CheckLength(itemCount, "LocatedItems", 64);   // 单地点道具组数上限（对象数组，防 OOM）
                 var items = new LocatedItem[itemCount];
                 for (int j = 0; j < itemCount; j++)
                     items[j] = new LocatedItem { ItemId = r.ReadInt32(), Count = r.ReadInt32() };
@@ -406,22 +408,31 @@ namespace Core.Sync
             CheckLength(ruleCount, "Rules");
             var rules = new LocationRule[ruleCount];
             for (int i = 0; i < ruleCount; i++)
-                rules[i] = ReadRule(r);
+                rules[i] = ReadRule(r, i);
             state.Locations.Rules = rules;
 
             return state;
         }
 
-        private static LocationRule ReadRule(BinaryReader r)
+        private static LocationRule ReadRule(BinaryReader r, int index)
         {
             byte type = r.ReadByte();
             int locationId = r.ReadInt32();
             switch (type)
             {
-                case 0: return null;
-                case 1: return new HideoutRule();
+                case 0:
+                    // 写侧 type=0 时写下标占位，校验其等于数组下标（LocationManager 按 LocationId 注册）
+                    if (locationId != index)
+                        throw new InvalidDataException($"空地点规则 LocationId 与下标不一致（读取 {locationId}，期望 {index}）");
+                    return null;
+                case 1:
+                    if (locationId != HideoutRule.HideoutLocationId)
+                        throw new InvalidDataException($"HideoutRule LocationId 非法: {locationId}");
+                    return new HideoutRule();
                 case 2:
                 {
+                    if (locationId != LabRule.LabLocationId)
+                        throw new InvalidDataException($"LabRule LocationId 非法: {locationId}");
                     var lab = new LabRule();
                     lab.DoorOpen = r.ReadBoolean();
                     lab.SwitchOn = r.ReadBoolean();
@@ -429,7 +440,10 @@ namespace Core.Sync
                     lab.TideTurnsElapsed = r.ReadInt32();
                     return lab;
                 }
-                case 3: return new OutpostRule();
+                case 3:
+                    if (locationId != OutpostRule.OutpostLocationId)
+                        throw new InvalidDataException($"OutpostRule LocationId 非法: {locationId}");
+                    return new OutpostRule();
                 default:
                     throw new InvalidDataException($"未知地点规则类型 {type}（LocationId={locationId}）");
             }
@@ -464,7 +478,7 @@ namespace Core.Sync
             int weaponId = r.ReadInt32();
             int ammo = r.ReadInt32();
             int consCount = r.ReadInt32();
-            CheckLength(consCount, "Consumables");
+            CheckLength(consCount, "Consumables", 16);   // MaxConsumables=4，留余量
             c.Inventory.EquippedWeapon = weaponId > 0 ? ItemRegistry.Get(weaponId) : null;
             c.Inventory.EquippedWeaponAmmo = ammo;
             c.Inventory.Consumables.Clear();
@@ -474,18 +488,24 @@ namespace Core.Sync
                 if (item != null) c.Inventory.Consumables.Add(item);
             }
 
-            // 属性：base 恢复后 current 覆盖（SetCurrentValue 保留引擎钳制语义）
+            // 属性：两趟恢复 —— 先全部 SetBase（MaxSanity 等依赖项就位），再全部 SetCurrent
+            // （Sanity 钳制读到已恢复的 MaxSanity；逐属性交替恢复会读到旧 MaxSanity）。
+            // 读侧流只能顺序消费一次，先整体读入 base/current 再分两趟恢复。
+            float[] baseValues = new float[AttributeConstants.Count];
+            float[] currentValues = new float[AttributeConstants.Count];
             for (int a = 1; a <= AttributeConstants.Count; a++)
             {
-                float baseVal = r.ReadSingle();
-                float curVal = r.ReadSingle();
-                c.ASC.SetAttributeBaseValue(a, baseVal);
-                c.ASC.SetAttributeCurrentValue(a, curVal);
+                baseValues[a - 1] = r.ReadSingle();
+                currentValues[a - 1] = r.ReadSingle();
             }
+            for (int a = 1; a <= AttributeConstants.Count; a++)
+                c.ASC.SetAttributeBaseValue(a, baseValues[a - 1]);
+            for (int a = 1; a <= AttributeConstants.Count; a++)
+                c.ASC.SetAttributeCurrentValue(a, currentValues[a - 1]);
             c.ASC.Tags.RestoreMask(r.ReadInt64());
 
             int effectCount = r.ReadInt32();
-            CheckLength(effectCount, "ActiveEffects");
+            CheckLength(effectCount, "ActiveEffects", 64);   // 对象数组（GE spec 池化），防 OOM
             for (int e = 0; e < effectCount; e++)
                 c.ASC.RestoreActiveEffect(ReadEffectSpec(r, c.ASC));
 
@@ -496,12 +516,12 @@ namespace Core.Sync
             c.ASC.MarkDamageDealt(r.ReadInt32());
 
             int cdCount = r.ReadInt32();
-            CheckLength(cdCount, "Cooldowns");
+            CheckLength(cdCount, "Cooldowns", 16);
             for (int cd = 0; cd < cdCount; cd++)
                 c.ASC.SetCooldown(cd, r.ReadInt32());
 
             int passiveCount = r.ReadInt32();
-            CheckLength(passiveCount, "PassiveTimers");
+            CheckLength(passiveCount, "PassiveTimers", 8);
             var timers = new int[passiveCount];
             for (int p = 0; p < passiveCount; p++) timers[p] = r.ReadInt32();
             c.ASC.RestorePassiveTimers(timers);
@@ -515,10 +535,10 @@ namespace Core.Sync
             var durationType = (GameplayEffectDurationType)r.ReadByte();
             int durationTurns = r.ReadInt32();
             AttributeModifier[] modifiers = ReadModifiers(r);
-            GameplayTag[] grantTags = ReadTagArray(r);
-            GameplayTag[] removeTags = ReadTagArray(r);
-            GameplayTag[] appReqTags = ReadTagArray(r);
-            GameplayTag[] appBlockedTags = ReadTagArray(r);
+            GameplayTag[] grantTags = ReadTagArray(r, "GrantTags");
+            GameplayTag[] removeTags = ReadTagArray(r, "RemoveTags");
+            GameplayTag[] appReqTags = ReadTagArray(r, "ApplicationRequiredTags");
+            GameplayTag[] appBlockedTags = ReadTagArray(r, "ApplicationBlockedTags");
             bool hasPeriod = r.ReadByte() != 0;
             GameplayEffectPeriod? period = hasPeriod
                 ? new GameplayEffectPeriod(r.ReadInt32(), r.ReadInt32())
@@ -526,7 +546,7 @@ namespace Core.Sync
             var stacking = (GameplayEffectStacking)r.ReadByte();
             int cooldownTurns = r.ReadInt32();
             var expiryPolicy = (GameplayEffectExpiryPolicy)r.ReadByte();
-            GameplayTag[] conditionTags = ReadTagArray(r);
+            GameplayTag[] conditionTags = ReadTagArray(r, "ConditionTags");
 
             var ge = new GameplayEffect
             {
@@ -574,7 +594,7 @@ namespace Core.Sync
         private static AttributeModifier[] ReadModifiers(BinaryReader r)
         {
             int count = r.ReadInt32();
-            CheckLength(count, "Modifiers");
+            CheckLength(count, "Modifiers", 256);
             var mods = new AttributeModifier[count];
             for (int i = 0; i < count; i++)
             {
@@ -588,10 +608,10 @@ namespace Core.Sync
             return mods;
         }
 
-        private static GameplayTag[] ReadTagArray(BinaryReader r)
+        private static GameplayTag[] ReadTagArray(BinaryReader r, string what, int cap = 256)
         {
             int count = r.ReadInt32();
-            CheckLength(count, "Tags");
+            CheckLength(count, what, cap);
             var tags = new GameplayTag[count];
             for (int i = 0; i < count; i++) tags[i] = new GameplayTag(r.ReadInt32());
             return tags;
@@ -607,11 +627,11 @@ namespace Core.Sync
             return System.Text.Encoding.UTF8.GetString(bytes);
         }
 
-        private static int[] ReadIntArray(BinaryReader r, string what)
+        private static int[] ReadIntArray(BinaryReader r, string what, int cap = MaxArrayLength)
         {
             int len = r.ReadInt32();
             if (len == -1) return null;   // null 哨兵（TurnManager 为 null 时的 ActionOrder）
-            CheckLength(len, what);
+            CheckLength(len, what, cap);
             var arr = new int[len];
             for (int i = 0; i < len; i++) arr[i] = r.ReadInt32();
             return arr;

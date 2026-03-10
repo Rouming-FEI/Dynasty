@@ -277,6 +277,7 @@ namespace Dynasty.Tests.Network
             Assert.That(b.CurrentTick, Is.EqualTo(a.CurrentTick));
             Assert.That(b.CurrentTurn, Is.EqualTo(a.CurrentTurn));
             Assert.That(b.Phase, Is.EqualTo(a.Phase));
+            Assert.That(b.Random.Seed, Is.EqualTo(a.Random.Seed), "Random.Seed");
             Assert.That(b.Random.State, Is.EqualTo(a.Random.State), "Random.State");
             Assert.That(b.ThornPotionTurnsRemaining, Is.EqualTo(a.ThornPotionTurnsRemaining));
             Assert.That(b.WoodSeedPlayer, Is.EqualTo(a.WoodSeedPlayer));
