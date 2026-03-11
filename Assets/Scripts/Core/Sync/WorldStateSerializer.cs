@@ -87,7 +87,7 @@ namespace Core.Sync
         // 全局段
         // ------------------------------------------------------------------
 
-        private static void WriteGlobal(WorldState state, BinaryWriter w)
+        internal static void WriteGlobal(WorldState state, BinaryWriter w)
         {
             w.Write(state.PlayerCount);
             w.Write(state.CurrentTick);
@@ -185,7 +185,7 @@ namespace Core.Sync
         // 每角色段
         // ------------------------------------------------------------------
 
-        private static void WriteCharacter(Character c, BinaryWriter w)
+        internal static void WriteCharacter(Character c, BinaryWriter w)
         {
             if (c == null) { w.Write(false); return; }
             w.Write(true);
@@ -318,7 +318,7 @@ namespace Core.Sync
         // 全局段重建
         // ------------------------------------------------------------------
 
-        private static WorldState ReadGlobal(BinaryReader r)
+        internal static WorldState ReadGlobal(BinaryReader r)
         {
             int playerCount = r.ReadInt32();
             CheckLength(playerCount, "PlayerCount", GameConfig.MaxPlayers);
@@ -453,7 +453,7 @@ namespace Core.Sync
         // 每角色段重建
         // ------------------------------------------------------------------
 
-        private static Character ReadCharacter(BinaryReader r)
+        internal static Character ReadCharacter(BinaryReader r)
         {
             bool has = r.ReadBoolean();
             if (!has) return null;
