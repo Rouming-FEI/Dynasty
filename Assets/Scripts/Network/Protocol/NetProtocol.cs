@@ -280,18 +280,20 @@ namespace Network.Protocol
                 r.GetBytes(bytes, len);
         }
 
-        // ---- ResyncRequest (C→H) ----
+        // ---- ResyncRequest (C→H)：lastTick/lastTurn = 客户端断线时的状态锚点；playerId = 重连者原槽位（主机 RejoinSlot） ----
 
-        public static void WriteResyncRequest(NetDataWriter w, int lastTick, int lastTurn)
+        public static void WriteResyncRequest(NetDataWriter w, int lastTick, int lastTurn, int playerId)
         {
             w.Put(lastTick);
             w.Put(lastTurn);
+            w.Put(playerId);
         }
 
-        public static void ReadResyncRequest(NetDataReader r, out int lastTick, out int lastTurn)
+        public static void ReadResyncRequest(NetDataReader r, out int lastTick, out int lastTurn, out int playerId)
         {
             lastTick = r.GetInt();
             lastTurn = r.GetInt();
+            playerId = r.GetInt();
         }
 
         // ---- ResyncReply (H→C)：快照与日志字节均透传 ----

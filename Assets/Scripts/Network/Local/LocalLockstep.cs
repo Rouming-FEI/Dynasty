@@ -72,8 +72,18 @@ namespace Network.Local
         {
             _state = state;
             _ais = ais;
-            _turnManager = new TurnManager();
-            state.TurnManager = _turnManager;
+            // 快照恢复态复用既有 TurnManager（WorldStateSerializer.Deserialize 已重建
+            // ActionOrder/CurrentActorIndex/ConsecutiveFlatCount，重连重建锁步不得重置）；
+            // 全新状态（TurnManager == null）才新建——既有调用方行为不变。
+            if (state.TurnManager != null)
+            {
+                _turnManager = state.TurnManager;
+            }
+            else
+            {
+                _turnManager = new TurnManager();
+                state.TurnManager = _turnManager;
+            }
         }
 
         public void StartGame()

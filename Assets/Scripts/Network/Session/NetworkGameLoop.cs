@@ -9,6 +9,7 @@ using Gameplay.Judgment;
 using LiteNetLib.Utils;
 using Network.Local;
 using Network.Protocol;
+using Network.Sync;
 using Network.Transport;
 
 namespace Network.Session
@@ -54,6 +55,13 @@ namespace Network.Session
         private ChipAllocation[] _committedBatch;    // 主机：最近判定结算的全员筹码（OnJudgmentCommitted 捕获 → 广播）
         private ReplayActionRecord? _clientManualAction;  // 客户端：当前待注入行动记录（ManualInputProvider 读取，单次）
 
+        // 断线重连（Task 11）：主机会话日志 + 快照 + 客户端重放；断线槽冻结（宽限期不超时填充）
+        private readonly ReconnectHandler _reconnect;
+        private bool[] _frozenSlots;                 // 主机：断线冻结槽标记（等待重连，不回落 AI）
+        private long[] _frozenAtMs;                  // 主机：冻结时刻（宽限期起点）
+        private int _disconnectTick;                 // 客户端：断线时引擎 tick（重连 ResyncRequest 载荷）
+        private int _disconnectTurn;                 // 客户端：断线时回合
+
         public WorldState State => _state;
         public bool IsHost => _session.IsHost;
         public bool GameOver => _state == null || _state.Phase == TurnPhase.GameOver;
@@ -83,7 +91,48 @@ namespace Network.Session
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _config = config ?? throw new ArgumentNullException(nameof(config));
+            _reconnect = new ReconnectHandler(this);
+            _frozenSlots = new bool[_config.PlayerCount];
+            _frozenAtMs = new long[_config.PlayerCount];
             _transport.OnDataReceived += HandleMessage;
+            // Task 11：断线槽冻结/解冻（主机）——OnPlayerLeft 冻结（宽限期不超时填充），
+            // OnPlayerJoined（含 RejoinSlot 重连）解冻
+            _session.OnPlayerLeft += playerId =>
+            {
+                if (!IsHost || playerId <= 0 || playerId >= _frozenSlots.Length) return;
+                FreezeSlot(playerId);
+            };
+            _session.OnPlayerJoined += playerId =>
+            {
+                if (IsHost && IsSlotFrozen(playerId)) UnfreezeSlot(playerId);
+            };
+        }
+
+        /// <summary>重连服务（快照/会话日志/重放追平）；驱动层经其接入重连流程。</summary>
+        public ReconnectHandler Reconnect => _reconnect;
+
+        /// <summary>主机：断线槽是否冻结中（宽限期等待重连）。</summary>
+        public bool IsSlotFrozen(int playerId)
+        {
+            return _frozenSlots != null && playerId >= 0 && playerId < _frozenSlots.Length && _frozenSlots[playerId];
+        }
+
+        /// <summary>客户端：传输层断线回调（驱动接线）——记录断线时 tick/turn 供重连 ResyncRequest。</summary>
+        public void NotifyDisconnected()
+        {
+            if (IsHost) return;
+            _disconnectTick = _state != null ? _state.CurrentTick : 0;
+            _disconnectTurn = _state != null ? _state.CurrentTurn : 0;
+        }
+
+        /// <summary>客户端：重连 Connect 成功后发送 ResyncRequest(lastTick, lastTurn, playerId)（驱动接线）。</summary>
+        public void SendResyncRequest()
+        {
+            if (IsHost) return;
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ResyncRequest);
+            NetProtocol.WriteResyncRequest(w, _disconnectTick, _disconnectTurn, _session.LocalPlayerId);
+            _transport.SendReliable(0, w);
         }
 
         /// <summary>开始对局（主机开战后调用；客户端收到 GameStart 后调用）。幂等；校验失败可重试（_state 保持 null）。</summary>
@@ -139,41 +188,53 @@ namespace Network.Session
                 // I5：+= 追加而非直接赋值——与 ReplayRecorder.Attach 的 = 赋值可共存。
                 // 挂载顺序约定：先 ReplayRecorder.Attach（= 覆盖语义）后本处 += 追加；
                 // 若反过来，Attach 的 = 会覆盖本端处理器（ReplayPlayer 等纯回放场景不受影响）。
-                _lockstep.OnJudgmentCommitted += batch => _committedBatch = batch;
+                // Task 11：OnJudgmentCommitted 同时记录会话日志（重连数据源；tick=广播时引擎 tick）
+                _lockstep.OnJudgmentCommitted += batch =>
+                {
+                    _committedBatch = batch;
+                    _reconnect.LogChipBatch(_state.CurrentTick, batch);
+                };
             }
             else
             {
-                // 客户端：纯重放——全槽位筹码来自广播批次（不跑 AI）
-                _lockstep.HumanPlayers = null;
-                _lockstep.JudgmentInputProvider = i =>
-                {
-                    if (_clientChipBatch != null && i < _clientChipBatch.Length)
-                        return _clientChipBatch[i];
-                    ReportError("收到非法判定批次");
-                    return new ChipAllocation(i);
-                };
-                // 客户端行动注入：HumanPlayers=null 下全槽位走 ManualInputProvider（批次驱动）。
-                // _clientManualAction 由 TickClientAction 弹出批次后置入，RunTurn 首次查询注入并解除。
-                _lockstep.ManualInputProvider = actor =>
-                {
-                    if (_clientManualAction != null && _clientManualAction.Value.PlayerId == actor)
-                    {
-                        ReplayActionRecord rec = _clientManualAction.Value;
-                        _clientManualAction = null;
-                        return ReplayActionFactory.Create(rec, rec.Tick);
-                    }
-                    return null;
-                };
+                SetupClientLockstep();
             }
 
-            // 主机开局：广播 GameStart（客户端收到后以同 seed/同角色表建世界开局）
+            // 主机开局：广播 GameStart（客户端收到后以同 seed/同角色表建世界开局）+ 开局快照锚点
             if (IsHost)
             {
                 var w = new NetDataWriter();
                 NetProtocol.WriteHeader(w, NetMsgType.GameStart);
                 NetProtocol.WriteGameStart(w, _state.CurrentTurn);
                 _transport.Broadcast(w);
+                _reconnect.CaptureSnapshot();   // 开局锚点（tick=0）：HandleResyncRequest(0,0) 全量重放兜底
             }
+        }
+
+        /// <summary>客户端纯重放模式锁步装配（StartGame 与重连重建共用）：HumanPlayers=null，
+        /// 全槽位筹码来自广播批次队列、行动来自行动批次队列（不跑 AI）。</summary>
+        private void SetupClientLockstep()
+        {
+            _lockstep.HumanPlayers = null;
+            _lockstep.JudgmentInputProvider = i =>
+            {
+                if (_clientChipBatch != null && i < _clientChipBatch.Length)
+                    return _clientChipBatch[i];
+                ReportError("收到非法判定批次");
+                return new ChipAllocation(i);
+            };
+            // 客户端行动注入：HumanPlayers=null 下全槽位走 ManualInputProvider（批次驱动）。
+            // _clientManualAction 由 TickClientAction 弹出批次后置入，RunTurn 首次查询注入并解除。
+            _lockstep.ManualInputProvider = actor =>
+            {
+                if (_clientManualAction != null && _clientManualAction.Value.PlayerId == actor)
+                {
+                    ReplayActionRecord rec = _clientManualAction.Value;
+                    _clientManualAction = null;
+                    return ReplayActionFactory.Create(rec, rec.Tick);
+                }
+                return null;
+            };
         }
 
         /// <summary>主机：真人玩家提交判定筹码（窗口内接收；窗口外/重复提交忽略）。
@@ -245,6 +306,9 @@ namespace Network.Session
         private void TickHost()
         {
             if (_state == null || _state.Phase == TurnPhase.GameOver) return;
+            // Task 11：断线槽宽限期到 → 解冻回落 AI（槽位已被 HandleDisconnect 释放，
+            // 掩码重建后 AI 决策接管；若未到宽限期，冻结槽保持真人语义 → 窗口挂起等待重连）
+            HandleFrozenSlotTimeouts();
             // I2：真人掩码每 Tick 统一重建（判定/行动分支共用）——掩码是 StartGame/开窗时的
             // 快照，对端断线释放槽位后 LocalLockstep 仍按旧掩码把断线槽当真人 → 判定
             // HumanJudgmentInput / 行动 ManualInputProvider 返回 null → 永久暂停死锁；
@@ -279,7 +343,8 @@ namespace Network.Session
                 {
                     // M7：只填真人槽——AI 槽值由 LocalLockstep 首次收集缓存（_pendingAllocations），
                     // _pendingChips 仅为真人槽提交缓存，写 AI 槽是无效操作
-                    if (!_chipFilled[i] && IsHumanSlot(i))
+                    // Task 11：断线冻结槽跳过超时填充（等待重连，不清零）
+                    if (!_chipFilled[i] && IsHumanSlot(i) && !IsSlotFrozen(i))
                     {
                         _pendingChips[i].SetDefault();   // 1-1-1
                         _chipFilled[i] = true;
@@ -315,6 +380,7 @@ namespace Network.Session
                 // 回合末结算推进 CurrentTurn/CurrentTick，两端各自执行同一批次序列后状态一致。
                 BroadcastTurnEndBatch();
                 _lockstep.RunTurn();
+                _reconnect.CaptureSnapshot();   // Task 11：回合末快照（重连锚点）
                 return;
             }
             int turnBefore = _state.CurrentTurn;
@@ -325,6 +391,12 @@ namespace Network.Session
             {
                 if (!_injectArmed)
                 {
+                    // Task 11：断线冻结槽——不超时、不自动 WasteAP，等待重连（RunTurn 暂停）
+                    if (IsSlotFrozen(actorId))
+                    {
+                        _lockstep.RunTurn();
+                        return;
+                    }
                     // 未提交：超时 → WasteAP 跳过；否则 RunTurn 暂停等待真人提交
                     if ((int)(ClockProvider() - _actionWindowStartMs) >= _config.ActionWindowMs)
                     {
@@ -343,7 +415,11 @@ namespace Network.Session
                 _actionWindowOpen = false;
                 _lockstep.RunTurn();
                 _injectArmed = false;   // 防御：正常首次查询已解除
-                if (_state.CurrentTurn != turnBefore) BroadcastTurnEndBatch();
+                if (_state.CurrentTurn != turnBefore)
+                {
+                    BroadcastTurnEndBatch();
+                    _reconnect.CaptureSnapshot();
+                }
                 return;
             }
 
@@ -351,7 +427,11 @@ namespace Network.Session
             // OnActionCaptured 钩子捕获命令并广播 ActionBatch；窗口即时关闭
             _lockstep.RunTurn();
             _actionWindowOpen = false;
-            if (_state.CurrentTurn != turnBefore) BroadcastTurnEndBatch();
+            if (_state.CurrentTurn != turnBefore)
+            {
+                BroadcastTurnEndBatch();
+                _reconnect.CaptureSnapshot();
+            }
         }
 
         private void OpenActionWindow(int actorId)
@@ -370,6 +450,9 @@ namespace Network.Session
 
         private void BroadcastActionBatch(ReplayActionRecord rec, byte isPass)
         {
+            // Task 11：同步记录会话日志（重连数据源；isPass=1 → 日志内超时标记 Source=255）
+            if (IsHost)
+                _reconnect.LogActionBatch(rec, isPass == 1);
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ActionBatch);
             NetProtocol.WriteActionBatch(w, rec, isPass);
@@ -445,6 +528,10 @@ namespace Network.Session
 
         private void TickClient()
         {
+            // Task 11：重连追平——先喂入一条日志条目到批次队列，随后按正常消费路径执行（同帧消费）。
+            // 日志耗尽后 Poll 置 IsResyncing=false，恢复订阅实时广播。
+            if (_reconnect != null && _reconnect.IsResyncing)
+                _reconnect.Poll();
             if (_state == null || _state.Phase == TurnPhase.GameOver || _clientFaulted) return;
             if (_state.Phase == TurnPhase.JudgmentPhase)
             {
@@ -525,6 +612,9 @@ namespace Network.Session
             // M5：客户端已进入错误状态（faulted）→ 丢弃后续所有消息，不再入队/重放——
             // 协议校验失败的批次是损坏输入，继续入队只会用错误数据推进状态机。
             if (_clientFaulted) return;
+            // Task 11：客户端重连追平期间忽略实时广播——快照+日志重放会覆盖这些输入，
+            // 混入实时批次会误判轮次/行动者（重连槽已冻结，主机在客户端追平前不会推进关键轮次）。
+            if (!IsHost && _reconnect != null && _reconnect.IsResyncing) return;
             NetMsgType type;
             try { type = NetProtocol.ReadType(reader); }
             catch (Exception e) { ReportError($"消息解析失败: {e.Message}"); return; }
@@ -676,6 +766,52 @@ namespace Network.Session
                         catch (Exception e) { ReportError($"GameOver 解析失败: {e.Message}"); }
                     }
                     break;
+                case NetMsgType.ResyncRequest:
+                    // 主机：重连者 ResyncRequest(lastTick, lastTurn, playerId) → RejoinSlot 拿回原槽位
+                    // （解冻）→ ReconnectHandler 组 ResyncReply 载荷 → 回复该 peer
+                    if (IsHost)
+                    {
+                        try
+                        {
+                            NetProtocol.ReadResyncRequest(reader, out int lastTick, out int lastTurn, out int rejoinPlayerId);
+                            if (rejoinPlayerId > 0 && rejoinPlayerId < _config.PlayerCount
+                                && _session.RejoinSlot(peerId, rejoinPlayerId))
+                            {
+                                UnfreezeSlot(rejoinPlayerId);   // OnPlayerJoined 已解冻，此处幂等兜底
+                            }
+                            byte[] payload;
+                            if (OnHostResyncReply != null) payload = OnHostResyncReply(lastTick, lastTurn);
+                            else payload = _reconnect.HandleResyncRequest(lastTick, lastTurn);
+                            if (payload != null)
+                            {
+                                OnHostResyncRequest?.Invoke(payload);
+                                var w = new NetDataWriter();
+                                NetProtocol.WriteHeader(w, NetMsgType.ResyncReply);
+                                w.Put(payload, 0, payload.Length);
+                                _transport.SendReliable(peerId, w);
+                            }
+                        }
+                        catch (Exception e) { ReportError($"ResyncRequest 解析失败: {e.Message}"); }
+                    }
+                    break;
+                case NetMsgType.ResyncReply:
+                    // 客户端：重连快照+日志 → ReconnectHandler 重建世界并进入追平
+                    if (!IsHost)
+                    {
+                        try
+                        {
+                            NetProtocol.ReadResyncReply(reader, out int snapTick, out byte[] snapBytes, out int logLen, out byte[] logBytes);
+                            // 重组载荷字节（Handler 以整包载荷为入参，协议细节内聚于 Handler）
+                            var pw = new NetDataWriter();
+                            NetProtocol.WriteResyncReply(pw, snapTick, snapBytes, snapBytes.Length, logBytes, logBytes.Length);
+                            var payload = new byte[pw.Length];
+                            Array.Copy(pw.Data, payload, pw.Length);
+                            if (!_reconnect.HandleResyncReply(payload))
+                                ReportError("重连快照重建失败，进入错误状态");
+                        }
+                        catch (Exception e) { ReportError($"ResyncReply 解析失败: {e.Message}"); }
+                    }
+                    break;
                 default:
                     break;
             }
@@ -695,6 +831,7 @@ namespace Network.Session
         private bool IsHumanSlot(int i)
         {
             if (i == 0) return true;   // 主机本地玩家恒真人（判定筹码由驱动层 SubmitChip 提交）
+            if (IsSlotFrozen(i)) return true;   // Task 11：断线冻结槽保持真人语义（窗口挂起等待重连，不回落 AI）
             int[] peerIds = _session.PlayerPeerIds;
             return peerIds != null && i < peerIds.Length && peerIds[i] != -1;
         }
@@ -718,6 +855,93 @@ namespace Network.Session
         {
             LastError = msg;
             OnError?.Invoke(msg);
+        }
+
+        // ---- 断线重连：槽位冻结 / 客户端重建 / 重放注入（Task 11） ----
+
+        /// <summary>主机：冻结断线槽（宽限期不超时填充；IsHumanSlot 保持真语义 → 窗口挂起等待重连）。</summary>
+        private void FreezeSlot(int playerId)
+        {
+            if (_frozenSlots == null || playerId < 0 || playerId >= _frozenSlots.Length) return;
+            _frozenSlots[playerId] = true;
+            _frozenAtMs[playerId] = ClockProvider();
+        }
+
+        /// <summary>主机：解冻槽位（重连 RejoinSlot / 宽限期到回落 AI）。</summary>
+        private void UnfreezeSlot(int playerId)
+        {
+            if (_frozenSlots == null || playerId < 0 || playerId >= _frozenSlots.Length) return;
+            _frozenSlots[playerId] = false;
+        }
+
+        /// <summary>主机：断线槽宽限期检查——ReconnectGraceMs 到仍不归 → 解冻回落 AI（槽位已被
+        /// HandleDisconnect 释放，掩码重建后 AI 决策接管）。回绕安全同窗口超时（int 截断差值）。</summary>
+        private void HandleFrozenSlotTimeouts()
+        {
+            if (_frozenSlots == null) return;
+            long now = ClockProvider();
+            for (int i = 1; i < _frozenSlots.Length; i++)
+                if (_frozenSlots[i] && (int)(now - _frozenAtMs[i]) >= _config.ReconnectGraceMs)
+                    UnfreezeSlot(i);
+        }
+
+        /// <summary>客户端（ReconnectHandler 调用）：用反序列化快照重建世界与锁步（纯重放模式）。
+        /// 复用快照恢复的 TurnManager（LocalLockstep 构造器保持对象同一性），不调用 StartGame（不重置对局）。</summary>
+        internal bool RebuildClientState(WorldState restored)
+        {
+            try
+            {
+                _state = restored;
+                _ais = new SimpleAI[_state.PlayerCount];
+                for (int i = 0; i < _ais.Length; i++)
+                    _ais[i] = new SimpleAI(i);
+                _lockstep = new LocalLockstep(_state, _ais);
+                SetupClientLockstep();
+                _clientFaulted = false;
+                _clientChipBatch = null;
+                _clientManualAction = null;
+                _chipBatchQueue.Clear();
+                _actionBatchQueue.Clear();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>客户端（ReconnectHandler 调用）：重放判定批次入队（轮次以重放端自身为准）。</summary>
+        internal void EnqueueReplayChipBatch(int turn, ChipAllocation[] allocs)
+        {
+            if (_state == null || allocs == null || allocs.Length != _state.PlayerCount)
+            {
+                ReportReplayError("重放判定批次长度非法");
+                return;
+            }
+            _chipBatchQueue.Enqueue((turn, allocs));
+        }
+
+        /// <summary>客户端（ReconnectHandler 调用）：重放行动批次入队（结构校验同实时入队）。</summary>
+        internal void EnqueueReplayAction(ReplayActionRecord rec)
+        {
+            if (_state == null || rec.PlayerId < 0 || rec.PlayerId >= _state.PlayerCount)
+            {
+                ReportReplayError("重放行动批次 PlayerId 越界");
+                return;
+            }
+            if (ReplayActionFactory.Create(rec, 0) == null)
+            {
+                ReportReplayError("重放行动批次未知命令类型");
+                return;
+            }
+            _actionBatchQueue.Enqueue(rec);
+        }
+
+        /// <summary>客户端：重放数据与本地状态不一致 → 错误状态（停止重放，与协议校验失败同语义）。</summary>
+        internal void ReportReplayError(string msg)
+        {
+            _clientFaulted = true;
+            ReportError(msg);
         }
     }
 }

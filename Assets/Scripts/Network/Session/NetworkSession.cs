@@ -137,6 +137,24 @@ namespace Network.Session
             Phase = SessionPhase.InGame;
         }
 
+        /// <summary>主机：重连者拿回原槽位（peerId 重新持有 playerId 槽，经 OnPlayerJoined 解冻信号）。
+        /// 校验：InGame 阶段；playerId ∈ [1, PlayerCount-1]（槽 0 恒主机本地）；槽位空闲或已属于该 peer。
+        /// 返回 true = 重连成功（槽位已重新分配）。</summary>
+        public bool RejoinSlot(int peerId, int playerId)
+        {
+            if (!IsHost)
+                throw new InvalidOperationException("仅主机可处理重连");
+            if (Phase != SessionPhase.InGame)
+                return false;
+            if (playerId <= 0 || playerId >= _slotOwnerPeer.Length)
+                return false;
+            if (_slotOwnerPeer[playerId] != -1 && _slotOwnerPeer[playerId] != peerId)
+                return false;   // 槽位被其他对端持有
+            _slotOwnerPeer[playerId] = peerId;
+            OnPlayerJoined?.Invoke(playerId);
+            return true;
+        }
+
         /// <summary>推进状态机（轮询断线超时等）；由驱动层每帧调用。
         /// 本层暂无周期逻辑：窗口超时在 NetworkGameLoop，断线超时/重连在 Task 11 ReconnectHandler。</summary>
         public void Poll() { }
