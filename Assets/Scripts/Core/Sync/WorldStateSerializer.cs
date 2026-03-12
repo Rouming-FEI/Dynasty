@@ -391,7 +391,7 @@ namespace Core.Sync
             state.TurnManager = tm;
 
             int locationCount = r.ReadInt32();
-            CheckLength(locationCount, "Locations");
+            CheckLength(locationCount, "Locations", GameConfig.MaxLocations);
             var allItems = new LocatedItem[locationCount][];
             for (int i = 0; i < locationCount; i++)
             {
@@ -405,7 +405,7 @@ namespace Core.Sync
             state.Locations.RestoreRuntimeItems(allItems);
 
             int ruleCount = r.ReadInt32();
-            CheckLength(ruleCount, "Rules");
+            CheckLength(ruleCount, "Rules", GameConfig.MaxLocations);
             var rules = new LocationRule[ruleCount];
             for (int i = 0; i < ruleCount; i++)
                 rules[i] = ReadRule(r, i);

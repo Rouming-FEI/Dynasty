@@ -7,7 +7,6 @@ using Gameplay.Combat;
 using Gameplay.Items;
 using Gameplay.Judgment;
 using Gameplay.Locations;
-using Gameplay.Movement;
 using Network.Local;
 using NUnit.Framework;
 
@@ -63,7 +62,7 @@ namespace Dynasty.Tests.Network
 
             Assert.That(restored.ComputeStateHash(), Is.EqualTo(state.ComputeStateHash()),
                 "反序列化后哈希必须与序列化前一致（快照自校验）");
-            AssertStateEqual(state, restored);
+            StateAssert.AssertEqual(state, restored);
 
             // 随机流续流一致
             Assert.That(restored.Random.NextLong(), Is.EqualTo(state.Random.NextLong()), "随机续流一致");
@@ -139,7 +138,7 @@ namespace Dynasty.Tests.Network
             WorldState restored = WorldStateSerializer.Deserialize(bytes);
 
             Assert.That(restored.ComputeStateHash(), Is.EqualTo(state.ComputeStateHash()));
-            AssertStateEqual(state, restored);
+            StateAssert.AssertEqual(state, restored);
             Assert.That(restored.GetCharacterByPlayer(2).IsDead, Is.True, "死角色重建后仍为死亡");
         }
 
@@ -264,187 +263,7 @@ namespace Dynasty.Tests.Network
             WorldState restored = WorldStateSerializer.Deserialize(bytes);
 
             Assert.That(restored.ComputeStateHash(), Is.EqualTo(state.ComputeStateHash()));
-            AssertStateEqual(state, restored);
-        }
-
-        // ------------------------------------------------------------------
-        // 逐字段断言（哈希只覆盖核心字段，此处补齐全部序列化字段）
-        // ------------------------------------------------------------------
-
-        private static void AssertStateEqual(WorldState a, WorldState b)
-        {
-            Assert.That(b.PlayerCount, Is.EqualTo(a.PlayerCount));
-            Assert.That(b.CurrentTick, Is.EqualTo(a.CurrentTick));
-            Assert.That(b.CurrentTurn, Is.EqualTo(a.CurrentTurn));
-            Assert.That(b.Phase, Is.EqualTo(a.Phase));
-            Assert.That(b.Random.Seed, Is.EqualTo(a.Random.Seed), "Random.Seed");
-            Assert.That(b.Random.State, Is.EqualTo(a.Random.State), "Random.State");
-            Assert.That(b.ThornPotionTurnsRemaining, Is.EqualTo(a.ThornPotionTurnsRemaining));
-            Assert.That(b.WoodSeedPlayer, Is.EqualTo(a.WoodSeedPlayer));
-            Assert.That(b.WoodSeedLocation, Is.EqualTo(a.WoodSeedLocation));
-            Assert.That(b.PaladinAegisUsed, Is.EqualTo(a.PaladinAegisUsed));
-            Assert.That(b.LocationTrapCounts, Is.EqualTo(a.LocationTrapCounts));
-            Assert.That(b.MovedThisTurn, Is.EqualTo(a.MovedThisTurn));
-
-            for (int i = 0; i < a.LastAllocations.Length; i++)
-            {
-                Assert.That(b.LastAllocations[i].PlayerId, Is.EqualTo(a.LastAllocations[i].PlayerId), $"alloc[{i}].pid");
-                Assert.That(b.LastAllocations[i].Rock, Is.EqualTo(a.LastAllocations[i].Rock), $"alloc[{i}].rock");
-                Assert.That(b.LastAllocations[i].Scissors, Is.EqualTo(a.LastAllocations[i].Scissors), $"alloc[{i}].scissors");
-                Assert.That(b.LastAllocations[i].Paper, Is.EqualTo(a.LastAllocations[i].Paper), $"alloc[{i}].paper");
-            }
-
-            Assert.That(b.HasJudgmentResult, Is.EqualTo(a.HasJudgmentResult));
-            if (a.HasJudgmentResult)
-            {
-                Assert.That(b.LastJudgment.WinnerHand, Is.EqualTo(a.LastJudgment.WinnerHand));
-                Assert.That(b.LastJudgment.LoserHand, Is.EqualTo(a.LastJudgment.LoserHand));
-                Assert.That(b.LastJudgment.NeutralHand, Is.EqualTo(a.LastJudgment.NeutralHand));
-                Assert.That(b.LastJudgment.IsGlobalFlat, Is.EqualTo(a.LastJudgment.IsGlobalFlat));
-                Assert.That(b.LastJudgment.WinnerCount, Is.EqualTo(a.LastJudgment.WinnerCount));
-                Assert.That(b.LastJudgment.LoserCount, Is.EqualTo(a.LastJudgment.LoserCount));
-                Assert.That(b.LastJudgment.Roles, Is.EqualTo(a.LastJudgment.Roles));
-                Assert.That(b.LastJudgment.EffectiveChips, Is.EqualTo(a.LastJudgment.EffectiveChips));
-                Assert.That(b.LastJudgment.APGained, Is.EqualTo(a.LastJudgment.APGained));
-            }
-
-            Assert.That(b.TurnManager, Is.Not.Null);
-            Assert.That(b.TurnManager.ConsecutiveFlatCount, Is.EqualTo(a.TurnManager.ConsecutiveFlatCount));
-            Assert.That(b.TurnManager.ActionOrder, Is.EqualTo(a.TurnManager.ActionOrder));
-            Assert.That(b.TurnManager.CurrentActorIndex, Is.EqualTo(a.TurnManager.CurrentActorIndex));
-
-            // 地点道具（分组）
-            for (int i = 0; i < a.Locations.LocationCount; i++)
-            {
-                LocatedItem[] itemsA = a.Locations.GetLocatedItems(i);
-                LocatedItem[] itemsB = b.Locations.GetLocatedItems(i);
-                Assert.That(itemsB.Length, Is.EqualTo(itemsA.Length), $"loc {i} 道具组数");
-                for (int j = 0; j < itemsA.Length; j++)
-                {
-                    Assert.That(itemsB[j].ItemId, Is.EqualTo(itemsA[j].ItemId), $"loc {i} item {j}");
-                    Assert.That(itemsB[j].Count, Is.EqualTo(itemsA[j].Count), $"loc {i} count {j}");
-                }
-            }
-
-            // 地点规则
-            Assert.That(b.Locations.Rules.Length, Is.EqualTo(a.Locations.Rules.Length));
-            for (int i = 0; i < a.Locations.Rules.Length; i++)
-            {
-                LocationRule ra = a.Locations.Rules[i];
-                LocationRule rb = b.Locations.Rules[i];
-                Assert.That(rb == null, Is.EqualTo(ra == null), $"rule {i} null 一致");
-                if (ra == null) continue;
-                Assert.That(rb.GetType(), Is.EqualTo(ra.GetType()), $"rule {i} 类型");
-                Assert.That(rb.LocationId, Is.EqualTo(ra.LocationId), $"rule {i} LocationId");
-                if (ra is LabRule la)
-                {
-                    var lb = (LabRule)rb;
-                    Assert.That(lb.DoorOpen, Is.EqualTo(la.DoorOpen));
-                    Assert.That(lb.SwitchOn, Is.EqualTo(la.SwitchOn));
-                    Assert.That(lb.ThresholdRemoved, Is.EqualTo(la.ThresholdRemoved));
-                    Assert.That(lb.TideTurnsElapsed, Is.EqualTo(la.TideTurnsElapsed));
-                }
-            }
-
-            // 每角色
-            for (int i = 0; i < a.Characters.Length; i++)
-            {
-                Character ca = a.Characters[i];
-                Character cb = b.Characters[i];
-                Assert.That(cb == null, Is.EqualTo(ca == null), $"char {i} null 一致");
-                if (ca == null) continue;
-                Assert.That(cb.Id, Is.EqualTo(ca.Id), $"char {i} Id");
-                Assert.That(cb.PlayerId, Is.EqualTo(ca.PlayerId), $"char {i} PlayerId");
-                Assert.That(cb.Name, Is.EqualTo(ca.Name), $"char {i} Name");
-                Assert.That(cb.CurrentLocationId, Is.EqualTo(ca.CurrentLocationId), $"char {i} Location");
-                Assert.That(cb.Definition.Id, Is.EqualTo(ca.Definition.Id), $"char {i} DefId");
-                Assert.That(cb.IsDead, Is.EqualTo(ca.IsDead), $"char {i} IsDead");
-                Assert.That(cb.ASC.Tags.Mask, Is.EqualTo(ca.ASC.Tags.Mask), $"char {i} TagMask");
-                Assert.That(cb.ASC.GetGuardianCharge(), Is.EqualTo(ca.ASC.GetGuardianCharge()), $"char {i} 充能");
-                Assert.That(cb.ASC.GetMistLayers(), Is.EqualTo(ca.ASC.GetMistLayers()), $"char {i} 心雾");
-                Assert.That(cb.ASC.GetBloodSeals(), Is.EqualTo(ca.ASC.GetBloodSeals()), $"char {i} 血印");
-                Assert.That(cb.ASC.GetInstinct(), Is.EqualTo(ca.ASC.GetInstinct()), $"char {i} 本能");
-                Assert.That(cb.ASC.GetLastDamageTurn(), Is.EqualTo(ca.ASC.GetLastDamageTurn()), $"char {i} 最近伤害回合");
-
-                for (int aIdx = 1; aIdx <= AttributeConstants.Count; aIdx++)
-                {
-                    Assert.That(cb.ASC.GetAttributeValue(aIdx), Is.EqualTo(ca.ASC.GetAttributeValue(aIdx)),
-                        $"char {i} attr {aIdx} current");
-                    Assert.That(cb.ASC.GetAttributeBaseValue(aIdx), Is.EqualTo(ca.ASC.GetAttributeBaseValue(aIdx)),
-                        $"char {i} attr {aIdx} base");
-                }
-
-                Assert.That(cb.ASC.ActiveEffectCount, Is.EqualTo(ca.ASC.ActiveEffectCount), $"char {i} GE 数");
-                for (int e = 0; e < ca.ASC.ActiveEffectCount; e++)
-                    AssertGE(ca.ASC.GetActiveEffect(e), cb.ASC.GetActiveEffect(e), $"char {i} GE {e}");
-
-                Assert.That(cb.ASC.CooldownSlotCount, Is.EqualTo(ca.ASC.CooldownSlotCount), $"char {i} 冷却槽");
-                for (int cd = 0; cd < ca.ASC.CooldownSlotCount; cd++)
-                    Assert.That(cb.ASC.GetCooldown(cd), Is.EqualTo(ca.ASC.GetCooldown(cd)), $"char {i} 冷却 {cd}");
-
-                Assert.That(cb.ASC.PassiveCount, Is.EqualTo(ca.ASC.PassiveCount), $"char {i} 被动数");
-                for (int p = 0; p < ca.ASC.PassiveCount; p++)
-                    Assert.That(cb.ASC.GetPassiveTimer(p), Is.EqualTo(ca.ASC.GetPassiveTimer(p)), $"char {i} 被动计时 {p}");
-
-                Assert.That(cb.Inventory.EquippedWeapon?.Id ?? 0, Is.EqualTo(ca.Inventory.EquippedWeapon?.Id ?? 0), $"char {i} 武器");
-                Assert.That(cb.Inventory.EquippedWeaponAmmo, Is.EqualTo(ca.Inventory.EquippedWeaponAmmo), $"char {i} 弹药");
-                Assert.That(cb.Inventory.Consumables.Count, Is.EqualTo(ca.Inventory.Consumables.Count), $"char {i} 消耗品数");
-                for (int ci = 0; ci < ca.Inventory.Consumables.Count; ci++)
-                    Assert.That(cb.Inventory.Consumables[ci].Id, Is.EqualTo(ca.Inventory.Consumables[ci].Id), $"char {i} 消耗品 {ci}");
-            }
-        }
-
-        private static void AssertGE(GameplayEffectSpec a, GameplayEffectSpec b, string what)
-        {
-            Assert.That(b.Definition.Id, Is.EqualTo(a.Definition.Id), $"{what} Def.Id");
-            Assert.That(b.Definition.DurationType, Is.EqualTo(a.Definition.DurationType), $"{what} DurationType");
-            Assert.That(b.Definition.DurationTurns, Is.EqualTo(a.Definition.DurationTurns), $"{what} DurationTurns");
-            AssertModifiers(a.Definition.Modifiers, b.Definition.Modifiers, what);
-            AssertTags(a.Definition.GrantTags, b.Definition.GrantTags, what + " GrantTags");
-            AssertTags(a.Definition.RemoveTags, b.Definition.RemoveTags, what + " RemoveTags");
-            AssertTags(a.Definition.ApplicationRequiredTags, b.Definition.ApplicationRequiredTags, what + " AppReq");
-            AssertTags(a.Definition.ApplicationBlockedTags, b.Definition.ApplicationBlockedTags, what + " AppBlocked");
-            Assert.That(b.Definition.Period.HasValue, Is.EqualTo(a.Definition.Period.HasValue), $"{what} Period.Has");
-            if (a.Definition.Period.HasValue)
-            {
-                Assert.That(b.Definition.Period.Value.Interval, Is.EqualTo(a.Definition.Period.Value.Interval), $"{what} Period.Interval");
-                Assert.That(b.Definition.Period.Value.ExecuteCount, Is.EqualTo(a.Definition.Period.Value.ExecuteCount), $"{what} Period.ExecuteCount");
-            }
-            Assert.That(b.Definition.Stacking, Is.EqualTo(a.Definition.Stacking), $"{what} Stacking");
-            Assert.That(b.Definition.CooldownTurns, Is.EqualTo(a.Definition.CooldownTurns), $"{what} CooldownTurns");
-            Assert.That(b.Definition.ExpiryPolicy, Is.EqualTo(a.Definition.ExpiryPolicy), $"{what} ExpiryPolicy");
-            AssertTags(a.Definition.ConditionTags, b.Definition.ConditionTags, what + " ConditionTags");
-            // spec 运行时
-            Assert.That(b.RemainingTurns, Is.EqualTo(a.RemainingTurns), $"{what} RemainingTurns");
-            Assert.That(b.MagnitudeMultiplier, Is.EqualTo(a.MagnitudeMultiplier), $"{what} MagnitudeMultiplier");
-            Assert.That(b.SourceId, Is.EqualTo(a.SourceId), $"{what} SourceId");
-            Assert.That(b.TargetId, Is.EqualTo(a.TargetId), $"{what} TargetId");
-            Assert.That(b.PeriodTick, Is.EqualTo(a.PeriodTick), $"{what} PeriodTick");
-            Assert.That(b.PeriodRunCount, Is.EqualTo(a.PeriodRunCount), $"{what} PeriodRunCount");
-            Assert.That(b.StackCount, Is.EqualTo(a.StackCount), $"{what} StackCount");
-            Assert.That(b.CooldownRemaining, Is.EqualTo(a.CooldownRemaining), $"{what} CooldownRemaining");
-        }
-
-        private static void AssertModifiers(AttributeModifier[] a, AttributeModifier[] b, string what)
-        {
-            Assert.That(b.Length, Is.EqualTo(a.Length), $"{what} 修饰器数");
-            for (int i = 0; i < a.Length; i++)
-            {
-                Assert.That(b[i].AttributeId, Is.EqualTo(a[i].AttributeId), $"{what} mod {i} attr");
-                Assert.That(b[i].Op, Is.EqualTo(a[i].Op), $"{what} mod {i} op");
-                Assert.That(b[i].Magnitude, Is.EqualTo(a[i].Magnitude), $"{what} mod {i} mag");
-                Assert.That(b[i].Channel, Is.EqualTo(a[i].Channel), $"{what} mod {i} channel");
-                Assert.That(b[i].DependsOn, Is.EqualTo(a[i].DependsOn), $"{what} mod {i} dependsOn");
-            }
-        }
-
-        private static void AssertTags(GameplayTag[] a, GameplayTag[] b, string what)
-        {
-            int aLen = a == null ? 0 : a.Length;
-            int bLen = b == null ? 0 : b.Length;
-            Assert.That(bLen, Is.EqualTo(aLen), $"{what} 标签数");
-            for (int i = 0; i < aLen; i++)
-                Assert.That(b[i].Id, Is.EqualTo(a[i].Id), $"{what} tag {i}");
+            StateAssert.AssertEqual(state, restored);
         }
     }
 }
