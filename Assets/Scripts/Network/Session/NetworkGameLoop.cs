@@ -68,6 +68,9 @@ namespace Network.Session
         public string LastError { get; private set; }
         public event Action<string> OnError;
 
+        /// <summary>客户端协议校验失败错误状态（重放端读取：faulted 后停止喂队列，M6）。</summary>
+        internal bool IsClientFaulted => _clientFaulted;
+
         /// <summary>可注入时钟（返回毫秒）；测试用快进时钟控制窗口超时。
         /// 默认 Environment.TickCount（int 隐式转 long）：.NET Framework 4.x 无 64 位毫秒
         /// 时钟 API（Unity 编译失败，verify net48 目标兜底）；24.9 天回绕由差值比较的
@@ -125,13 +128,22 @@ namespace Network.Session
             _disconnectTurn = _state != null ? _state.CurrentTurn : 0;
         }
 
-        /// <summary>客户端：重连 Connect 成功后发送 ResyncRequest(lastTick, lastTurn, playerId)（驱动接线）。</summary>
+        /// <summary>客户端：重连 Connect 成功后发送 ResyncRequest(lastTick, lastTurn, playerId)（驱动接线）。
+        /// 初始重连用断线锚点（_disconnectTick/_disconnectTurn）；追赶循环（ReconnectHandler.Poll 驱动）期间
+        /// 用当前世界位置发起下一轮——快照+日志以最新推进为锚，覆盖重放期间主机新广播的批次（C1）。</summary>
         public void SendResyncRequest()
         {
             if (IsHost) return;
+            int lastTick = _disconnectTick;
+            int lastTurn = _disconnectTurn;
+            if (_reconnect.IsResyncing && _state != null)
+            {
+                lastTick = _state.CurrentTick;
+                lastTurn = _state.CurrentTurn;
+            }
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ResyncRequest);
-            NetProtocol.WriteResyncRequest(w, _disconnectTick, _disconnectTurn, _session.LocalPlayerId);
+            NetProtocol.WriteResyncRequest(w, lastTick, lastTurn, _session.LocalPlayerId);
             _transport.SendReliable(0, w);
         }
 
@@ -612,12 +624,13 @@ namespace Network.Session
             // M5：客户端已进入错误状态（faulted）→ 丢弃后续所有消息，不再入队/重放——
             // 协议校验失败的批次是损坏输入，继续入队只会用错误数据推进状态机。
             if (_clientFaulted) return;
-            // Task 11：客户端重连追平期间忽略实时广播——快照+日志重放会覆盖这些输入，
-            // 混入实时批次会误判轮次/行动者（重连槽已冻结，主机在客户端追平前不会推进关键轮次）。
-            if (!IsHost && _reconnect != null && _reconnect.IsResyncing) return;
             NetMsgType type;
             try { type = NetProtocol.ReadType(reader); }
             catch (Exception e) { ReportError($"消息解析失败: {e.Message}"); return; }
+            // Task 11：客户端重连追平期间忽略实时广播——快照+日志重放会覆盖这些输入，
+            // 混入实时批次会误判轮次/行动者（重连槽已冻结，主机在客户端追平前不会推进关键轮次）；
+            // 但 ResyncReply 必须放行——追赶循环（C1）后续轮次的回复在此接收，否则循环卡死。
+            if (!IsHost && _reconnect != null && _reconnect.IsResyncing && type != NetMsgType.ResyncReply) return;
             switch (type)
             {
                 case NetMsgType.GameStart:
@@ -774,11 +787,16 @@ namespace Network.Session
                         try
                         {
                             NetProtocol.ReadResyncRequest(reader, out int lastTick, out int lastTurn, out int rejoinPlayerId);
-                            if (rejoinPlayerId > 0 && rejoinPlayerId < _config.PlayerCount
-                                && _session.RejoinSlot(peerId, rejoinPlayerId))
+                            // I1（Task 11 复审）：RejoinSlot 失败（playerId 非法/槽被占/非 InGame）→ 拒绝回复——
+                            // 重连者不在会话槽位中，回复快照只会让它以幽灵身份重放并脱节于会话，重连语义错误；
+                            // 协议无重连专用拒绝消息（JoinReject 属大厅阶段），静默忽略 + ReportError 即可。
+                            if (rejoinPlayerId <= 0 || rejoinPlayerId >= _config.PlayerCount
+                                || !_session.RejoinSlot(peerId, rejoinPlayerId))
                             {
-                                UnfreezeSlot(rejoinPlayerId);   // OnPlayerJoined 已解冻，此处幂等兜底
+                                ReportError($"重连 RejoinSlot 失败: playerId={rejoinPlayerId} peer={peerId}，拒绝 ResyncReply");
+                                break;
                             }
+                            UnfreezeSlot(rejoinPlayerId);   // OnPlayerJoined 已解冻，此处幂等兜底
                             byte[] payload;
                             if (OnHostResyncReply != null) payload = OnHostResyncReply(lastTick, lastTurn);
                             else payload = _reconnect.HandleResyncRequest(lastTick, lastTurn);
@@ -806,10 +824,19 @@ namespace Network.Session
                             NetProtocol.WriteResyncReply(pw, snapTick, snapBytes, snapBytes.Length, logBytes, logBytes.Length);
                             var payload = new byte[pw.Length];
                             Array.Copy(pw.Data, payload, pw.Length);
+                            // I2（Task 11 复审）：重建失败（快照哈希损坏/状态重建异常）→ 置 faulted，
+                            // 与协议校验失败同语义（停止重放，不再用坏数据推进状态机）
                             if (!_reconnect.HandleResyncReply(payload))
+                            {
+                                _clientFaulted = true;
                                 ReportError("重连快照重建失败，进入错误状态");
+                            }
                         }
-                        catch (Exception e) { ReportError($"ResyncReply 解析失败: {e.Message}"); }
+                        catch (Exception e)
+                        {
+                            _clientFaulted = true;
+                            ReportError($"ResyncReply 解析失败: {e.Message}，进入错误状态");
+                        }
                     }
                     break;
                 default:

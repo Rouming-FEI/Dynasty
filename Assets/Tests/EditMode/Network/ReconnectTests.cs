@@ -151,6 +151,36 @@ namespace Dynasty.Tests.Network
             }
         }
 
+        // ==================== 重连端（客户端2）消息路由 ====================
+
+        /// <summary>把 source 的 Outbound 逐条以 sourcePeerId 为发送方注入 dest（重连端传输与主机非同一 Pair，
+        /// 复用 InjectFrom 手工路由；dest 的 OnDataReceived 同步触发，等效真实投递）。</summary>
+        private static void RouteOutbound(LoopbackTransport source, LoopbackTransport dest, int sourcePeerId)
+        {
+            var batch = source.Outbound.ToArray();
+            source.Outbound.Clear();
+            foreach (var (_, data) in batch)
+            {
+                var w = new NetDataWriter();
+                w.Put(data, 0, data.Length);
+                dest.InjectFrom(sourcePeerId, w);
+            }
+        }
+
+        /// <summary>重连端交替泵送：主机 Tick → 主机消息路由到客户端2 → 客户端2 Tick → 客户端2消息路由到主机
+        /// （重连客户端2 与主机无 Peer 回链，不能用 Fixture.Pump 的 DeliverAll；追赶循环的
+        /// 自动 ResyncRequest/ResyncReply 走此路径往返）。</summary>
+        private static void PumpReconnect(Fixture f, NetworkGameLoop client2, LoopbackTransport transport2, int rounds = 1)
+        {
+            for (int r = 0; r < rounds; r++)
+            {
+                f.Host.Tick();
+                RouteOutbound(f.HostTransport, transport2, 0);   // 主机 peer 0 → 客户端2
+                client2.Tick();
+                RouteOutbound(transport2, f.HostTransport, 7);   // 客户端2 peer 7 → 主机（重连新 peerId）
+            }
+        }
+
         private static ChipAllocation C(int playerId, int rock, int scissors, int paper)
         {
             var a = new ChipAllocation(playerId);
@@ -328,8 +358,10 @@ namespace Dynasty.Tests.Network
             Assert.That(client2.Reconnect.ResyncTargetTick, Is.GreaterThanOrEqualTo(snapTick), "重放目标 tick 不早于快照 tick");
 
             int guard = 0;
+            // Task 11 复审 C1 改造后：重放耗尽自动发起下一轮 Resync（用当前世界位置）——经传输往返
+            // 主机回复；本场景主机无干扰（停在回合 3 判定窗），首轮重放完、次轮日志为空即收敛
             while (client2.Reconnect.IsResyncing && guard++ < 500)
-                client2.Tick();
+                PumpReconnect(f, client2, transport2);
             Assert.That(client2.Reconnect.IsResyncing, Is.False, "重放应在有限步内追平");
             Assert.That(client2.LastError, Is.Null, "重放期间不得进入错误状态");
             Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
@@ -389,6 +421,184 @@ namespace Dynasty.Tests.Network
             Assert.That(f.HostTransport.Outbound.Exists(m => m.peer == 7 && (NetMsgType)m.data[0] == NetMsgType.ResyncReply),
                 Is.True, "主机应向重连 peer 回复 ResyncReply");
             f.Pump();   // 泵送（消息随后投递给客户端，Outbound 清空）
+        }
+
+        // ==================== Task 11 复审 C1：追赶循环竞态 ====================
+
+        /// <summary>创建全新重连客户端2（无状态会话，经 ApplyJoinAccept 入座）。</summary>
+        private static NetworkGameLoop CreateReconnectClient(Fixture f, out LoopbackTransport transport2)
+        {
+            var defIds = new int[f.Config.PlayerCount];
+            for (int i = 0; i < defIds.Length; i++) defIds[i] = i + 1;
+            var session2 = new NetworkSession(f.Config, false);
+            session2.ApplyJoinAccept(1, 42, defIds);
+            transport2 = new LoopbackTransport(1);
+            var client2 = new NetworkGameLoop(transport2, session2, f.Config);
+            client2.ClockProvider = () => f.Clock.Now;
+            return client2;
+        }
+
+        /// <summary>
+        /// 场景 A（行动阶段竞态，C1）：断线槽冻结期间主机推进其他行动者产生广播（槽 0 行动窗
+        /// 超时 → WasteAP 批次在首轮 reply 之后广播）→ 客户端重放完日志后自动发起第二轮 Resync
+        /// → 收到含新批次的日志 → 追平 → 哈希与主机一致。
+        /// 时序：回合 2 判定结算后（槽 0 唯一胜者先行动）客户端断线于行动阶段；重连以全新会话
+        /// 锚点全量重放；重放期间槽 0 超时 WasteAP 广播被客户端丢弃（追平中）——追赶循环第二轮
+        /// 的 reply 日志覆盖该批次，追平后哈希一致（否则判定/行动校验 fault 或永久等待）。
+        /// </summary>
+        [Test]
+        public void 场景A_行动阶段竞态_重放期间新广播被追赶循环覆盖()
+        {
+            var f = Fixture.Create(4, 1);   // 槽 0 主机真人 + 槽 1 对端真人 + 槽 2/3 AI
+            AdvanceTurns(f, 2);             // 主机停在回合 2 判定（tick 3）
+            f.Pump();                       // 开回合 2 判定窗
+            f.Client.SubmitChip(1, C(1, 0, 3, 0));   // 客户端提交（剪刀 3）
+            f.Host.SubmitChip(0, C(0, 3, 0, 0));     // 主机提交（石头 3 → 唯一胜者，先行动）
+            int guard = 0;
+            while (f.Host.State.Phase == TurnPhase.JudgmentPhase && guard++ < 10)
+                f.Pump();
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "构造前提：判定应结算进入行动阶段");
+            Assert.That(f.Host.State.TurnManager.ActionOrder[0], Is.EqualTo(0),
+                "构造前提：槽 0 先行动（其行动窗等待输入，超时产生竞态广播）");
+            int hostTickAtDisconnect = f.Host.State.CurrentTick;
+            Assert.That(hostTickAtDisconnect, Is.EqualTo(4), "构造前提：断线于行动阶段非快照边界 tick（首轮日志非空）");
+
+            // —— 断线：客户端冻结；主机冻结槽 1（行动窗继续等待槽 0 输入）
+            f.Client.NotifyDisconnected();
+            f.HostSession.HandleDisconnect(1);
+            Assert.That(f.Host.IsSlotFrozen(1), Is.True);
+
+            // —— 重连（全新会话 → 锚点全量重放）：初始请求经消息路径 → 主机回复（anchor + 日志）
+            NetworkGameLoop client2 = CreateReconnectClient(f, out LoopbackTransport transport2);
+            client2.NotifyDisconnected();   // 无状态 → 断线锚点 0（全量重放兜底）
+            client2.SendResyncRequest();
+            RouteOutbound(transport2, f.HostTransport, 7);   // 初始请求 → 主机（RejoinSlot + 回复）
+            RouteOutbound(f.HostTransport, transport2, 0);   // 回复 → 客户端2（重建进入追平）
+            Assert.That(client2.Reconnect.IsResyncing, Is.True, "初始回复后应进入追平");
+            Assert.That(client2.Reconnect.ResyncTargetTick, Is.GreaterThanOrEqualTo(hostTickAtDisconnect));
+
+            // —— 竞态：重放期间主机槽 0 行动窗超时 → WasteAP 广播（首轮 reply 日志之外的新批次）
+            f.Clock.Now += f.Config.ActionWindowMs + 1;
+            guard = 0;
+            while (client2.Reconnect.IsResyncing && guard++ < 500)
+                PumpReconnect(f, client2, transport2);
+
+            Assert.That(client2.Reconnect.IsResyncing, Is.False, "追赶循环应在有限步内追平");
+            Assert.That(client2.LastError, Is.Null, "重放期间不得进入错误状态");
+            Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
+                "追赶循环追平后哈希必须与主机一致（重放期间广播被第二轮日志覆盖）");
+        }
+
+        /// <summary>
+        /// 场景 B（判定阶段竞态，C1）：冻结槽断线前已提交筹码，其他真人槽（槽 0）补齐导致判定收口
+        /// → ChipBatch 在重放期间广播（首轮 reply 日志之外）→ 客户端追赶循环第二轮日志覆盖 → 追平哈希一致。
+        /// 时序：回合 2 判定窗内客户端提交后断线（槽 1 冻结但已提交，不阻塞判定收口）；重连以全新
+        /// 会话锚点全量重放；重放期间槽 0 补齐 → 判定结算 → ChipBatch 广播被客户端丢弃（追平中）——
+        /// 追赶循环第二轮 reply 日志含该 ChipBatch，重放追平（否则判定阶段空队列永久等待）。
+        /// </summary>
+        [Test]
+        public void 场景B_判定阶段竞态_重放期间ChipBatch被追赶循环覆盖()
+        {
+            var f = Fixture.Create(4, 1);
+            AdvanceTurns(f, 2);   // 主机停在回合 2 判定（tick 3）
+            f.Pump();             // 开回合 2 判定窗
+            // 客户端断线前已提交筹码（冻结槽不阻塞判定收口）
+            f.Client.SubmitChip(1, C(1, 0, 3, 0));
+            f.Pump();
+            Assert.That(f.Client.State.CurrentTick, Is.EqualTo(3), "构造前提：断线于回合 2 判定（边界）");
+            f.Client.NotifyDisconnected();
+            f.HostSession.HandleDisconnect(1);
+            Assert.That(f.Host.IsSlotFrozen(1), Is.True, "槽 1 应冻结");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "判定尚未收口（槽 0 未补齐）");
+
+            // —— 重连（全新会话 → 锚点全量重放）：初始请求 → 主机回复（anchor + 日志，不含回合 2 的 ChipBatch）
+            NetworkGameLoop client2 = CreateReconnectClient(f, out LoopbackTransport transport2);
+            client2.NotifyDisconnected();
+            client2.SendResyncRequest();
+            RouteOutbound(transport2, f.HostTransport, 7);
+            RouteOutbound(f.HostTransport, transport2, 0);
+            Assert.That(client2.Reconnect.IsResyncing, Is.True, "初始回复后应进入追平");
+
+            // —— 竞态：重放期间其他真人槽（槽 0）补齐 → 判定收口 → ChipBatch 广播（首轮日志之外）
+            f.Host.SubmitChip(0, C(0, 3, 0, 0));
+            int guard = 0;
+            while (client2.Reconnect.IsResyncing && guard++ < 500)
+                PumpReconnect(f, client2, transport2);
+
+            Assert.That(client2.Reconnect.IsResyncing, Is.False, "追赶循环应在有限步内追平");
+            Assert.That(client2.LastError, Is.Null, "重放期间不得进入错误状态");
+            Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
+                "重放期间判定收口的 ChipBatch 必须被追赶循环第二轮日志覆盖，追平哈希一致");
+        }
+
+        // ==================== Task 11 复审 I1：RejoinSlot 失败拒绝回复 ====================
+
+        /// <summary>非法 playerId / 槽被其他对端持有的 ResyncRequest → 主机不回复 ResyncReply
+        /// （拒绝重连），槽位保持冻结/原持有者不变。</summary>
+        [Test]
+        public void 主机收到非法重连请求_拒绝回复ResyncReply()
+        {
+            var f = Fixture.Create(2, 1);
+            AdvanceTurns(f, 2);
+            f.HostSession.HandleDisconnect(1);   // 槽 1 释放并冻结
+            Assert.That(f.Host.IsSlotFrozen(1), Is.True);
+
+            // —— 非法 playerId（越界）→ 拒绝，不回复
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ResyncRequest);
+            NetProtocol.WriteResyncRequest(w, 0, 1, 99);
+            f.HostTransport.InjectFrom(7, w);
+            Assert.That(f.HostTransport.Outbound, Is.Empty, "RejoinSlot 失败的重连请求不得回复 ResyncReply");
+            Assert.That(f.Host.LastError, Is.Not.Null.And.Contain("RejoinSlot"), "主机应报告重连拒绝");
+            Assert.That(f.HostSession.PlayerPeerIds[1], Is.EqualTo(-1), "非法重连不得占用槽位");
+            Assert.That(f.Host.IsSlotFrozen(1), Is.True, "拒绝重连后槽位保持冻结");
+
+            // —— 合法重连（peer 7 拿回槽 1）→ 回复
+            var w2 = new NetDataWriter();
+            NetProtocol.WriteHeader(w2, NetMsgType.ResyncRequest);
+            NetProtocol.WriteResyncRequest(w2, 0, 1, 1);
+            f.HostTransport.InjectFrom(7, w2);
+            Assert.That(f.Host.IsSlotFrozen(1), Is.False, "合法重连应解冻槽位");
+            Assert.That(f.HostSession.PlayerPeerIds[1], Is.EqualTo(7), "槽 1 应由重连 peer 持有");
+            Assert.That(f.HostTransport.Outbound.Count, Is.EqualTo(1), "合法重连应回复一次 ResyncReply");
+
+            // —— 槽被其他对端持有（peer 8 冒名重连槽 1）→ 拒绝，不回复
+            var w3 = new NetDataWriter();
+            NetProtocol.WriteHeader(w3, NetMsgType.ResyncRequest);
+            NetProtocol.WriteResyncRequest(w3, 0, 1, 1);
+            f.HostTransport.InjectFrom(8, w3);
+            Assert.That(f.HostTransport.Outbound.Count, Is.EqualTo(1), "槽被占时不得再回复（Outbound 未增加）");
+            Assert.That(f.HostSession.PlayerPeerIds[1], Is.EqualTo(7), "槽 1 仍由原持有 peer 7 持有");
+            f.Pump();   // 泵送清空 Outbound
+        }
+
+        // ==================== Task 11 复审 I2：重建失败置 _clientFaulted ====================
+
+        /// <summary>坏快照（篡改头部哈希 → 自校验失败）的 ResyncReply → 重建失败 → 客户端立即
+        /// _clientFaulted（与协议校验失败同语义，停止重放，不再用坏数据推进状态机）。</summary>
+        [Test]
+        public void 重连快照哈希损坏_客户端进入错误状态()
+        {
+            var f = Fixture.Create(4, 1);
+            AdvanceTurns(f, 2);
+
+            // 组装含坏快照的 ResyncReply 载荷（篡改快照头部哈希字段 → Deserialize 自校验抛异常）
+            byte[] payload = f.Host.Reconnect.HandleResyncRequest(0, 0);
+            ParseReply(payload, out int snapTick, out byte[] snapBytes, out byte[] logBytes);
+            var badSnap = new byte[snapBytes.Length];
+            Array.Copy(snapBytes, badSnap, snapBytes.Length);
+            badSnap[10] ^= 0xFF;   // 字节 8..15 为 ComputeStateHash 字段（Magic 4 + Version 4 之后）
+
+            NetworkGameLoop client2 = CreateReconnectClient(f, out LoopbackTransport transport2);
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ResyncReply);
+            NetProtocol.WriteResyncReply(w, snapTick, badSnap, badSnap.Length, logBytes, logBytes.Length);
+            transport2.InjectFrom(0, w);   // 伪造主机回复（HandleMessage 同步路由）
+
+            Assert.That(client2.IsClientFaulted, Is.True, "坏快照重建失败应置 _clientFaulted");
+            Assert.That(client2.LastError, Is.Not.Null, "应报告重建失败");
+            Assert.That(client2.Reconnect.IsResyncing, Is.False, "失败后不得停留在追平状态");
+            Assert.That(client2.State, Is.Null, "重建失败不得留下半初始化状态");
         }
     }
 }

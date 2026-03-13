@@ -75,6 +75,11 @@ namespace Network.Local
             // 快照恢复态复用既有 TurnManager（WorldStateSerializer.Deserialize 已重建
             // ActionOrder/CurrentActorIndex/ConsecutiveFlatCount，重连重建锁步不得重置）；
             // 全新状态（TurnManager == null）才新建——既有调用方行为不变。
+            // M7（Task 11 复审）：对跑过一局的状态二次建锁步会继承旧 _consecutiveFlatCount/
+            // _currentActorIndex（连续全平计数与行动者游标均保留在 TurnManager 内）——当前唯一
+            // 命中复用分支的调用方是断线重连的 RebuildClientState（状态来自快照反序列化，TurnManager
+            // 字段已整体恢复，继承即正确）；若未来出现「同一内存状态二次开局」场景，须在 StartGame
+            // 重置这两项，勿在构造器改动既有语义。
             if (state.TurnManager != null)
             {
                 _turnManager = state.TurnManager;
