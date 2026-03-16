@@ -37,6 +37,8 @@ namespace Dynasty.Tests.Network
 
             public bool IsHost { get; }
 
+            public int LocalPeerId => SelfPeerId;
+
             public void PollEvents() { }
 
             public bool SendReliable(int peerId, NetDataWriter w)

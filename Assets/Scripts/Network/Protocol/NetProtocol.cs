@@ -116,17 +116,21 @@ namespace Network.Protocol
         }
 
         // ---- ChipSubmit (C→H) ----
+        // 载荷：[turn:int][playerId:int][rock:][scissors:][paper:]——turn 为提交方视角的判定轮次，
+        // 主机侧校验与本地窗口轮次一致（防客户端落后一整个回合时的过期筹码提交被误收进下一轮窗口，I3 复审）。
 
-        public static void WriteChipSubmit(NetDataWriter w, int playerId, int rock, int scissors, int paper)
+        public static void WriteChipSubmit(NetDataWriter w, int turn, int playerId, int rock, int scissors, int paper)
         {
+            w.Put(turn);
             w.Put(playerId);
             w.Put(rock);
             w.Put(scissors);
             w.Put(paper);
         }
 
-        public static void ReadChipSubmit(NetDataReader r, out int playerId, out int rock, out int scissors, out int paper)
+        public static void ReadChipSubmit(NetDataReader r, out int turn, out int playerId, out int rock, out int scissors, out int paper)
         {
+            turn = r.GetInt();
             playerId = r.GetInt();
             rock = r.GetInt();
             scissors = r.GetInt();

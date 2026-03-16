@@ -13,6 +13,12 @@ namespace Network.Transport
         /// <summary>true = 主机（StartHost），false = 客户端（Connect）。</summary>
         bool IsHost { get; }
 
+        /// <summary>
+        /// 本地 peerId；未连接 = -1。主机恒 0；客户端 = 其与主机连接分配的 NetPeer.Id
+        /// （LiteNetLib 按空闲槽分配，重连/多客户端下可能非 0——客户端发往主机必须用它，不能写死 0）。
+        /// </summary>
+        int LocalPeerId { get; }
+
         /// <summary>每帧调用：收包/断线/连接回调。</summary>
         void PollEvents();
 

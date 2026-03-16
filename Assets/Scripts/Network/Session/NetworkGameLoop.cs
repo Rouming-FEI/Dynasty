@@ -144,7 +144,7 @@ namespace Network.Session
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ResyncRequest);
             NetProtocol.WriteResyncRequest(w, lastTick, lastTurn, _session.LocalPlayerId);
-            _transport.SendReliable(0, w);
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
         }
 
         /// <summary>开始对局（主机开战后调用；客户端收到 GameStart 后调用）。幂等；校验失败可重试（_state 保持 null）。</summary>
@@ -266,8 +266,9 @@ namespace Network.Session
             }
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ChipSubmit);
-            NetProtocol.WriteChipSubmit(w, playerId, alloc.Rock, alloc.Scissors, alloc.Paper);
-            _transport.SendReliable(0, w);
+            // 载荷携带提交方判定轮次：主机校验防「客户端落后整回合时的过期筹码被误收进下一轮窗口」
+            NetProtocol.WriteChipSubmit(w, _state != null ? _state.CurrentTurn : -1, playerId, alloc.Rock, alloc.Scissors, alloc.Paper);
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
         }
 
         /// <summary>主机：真人玩家提交行动命令（行动窗口内接收；非法提交拒绝不广播）。
@@ -302,7 +303,7 @@ namespace Network.Session
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ActionSubmit);
             NetProtocol.WriteActionSubmit(w, record);
-            _transport.SendReliable(0, w);
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
         }
 
         /// <summary>每帧调用：PollEvents + 推进窗口状态机 + 驱动 LocalLockstep。</summary>
@@ -652,7 +653,7 @@ namespace Network.Session
                     {
                         try
                         {
-                            NetProtocol.ReadChipSubmit(reader, out int pid, out int rock, out int scissors, out int paper);
+                            NetProtocol.ReadChipSubmit(reader, out int submitTurn, out int pid, out int rock, out int scissors, out int paper);
                             // I1：槽位持有者校验——发送方 peerId 必须持有该槽位（PlayerPeerIds
                             // 槽→peerId 语义：槽 0 恒 -1=主机本地，1..N-1=对端）。伪造他人槽提交
                             // （冒名）→ ReportError + 忽略（不填充 _pendingChips，不触发回调）；
@@ -661,6 +662,14 @@ namespace Network.Session
                             if (pid < 0 || pid >= peerIds.Length || peerIds[pid] != peerId)
                             {
                                 ReportError($"判定提交槽位持有者校验失败: playerId={pid} 非 peer {peerId} 持有，忽略");
+                                break;
+                            }
+                            // I3（Task 12 复审）：提交轮次校验——载荷 turn 必须等于主机当前判定轮次。
+                            // 客户端落后一整个回合时仍在按旧轮次重复提交筹码（真人槽判定每轮必收口），
+                            // 若无此校验，过期筹码会被误收进下一轮窗口 → 判定结果与对照局分叉（真实 UDP 时序偶发）。
+                            if (submitTurn != _state.CurrentTurn)
+                            {
+                                ReportError($"判定提交轮次不匹配: 载荷 {submitTurn} != 本地 {_state.CurrentTurn}，忽略过期提交");
                                 break;
                             }
                             var alloc = new ChipAllocation(pid);
@@ -690,11 +699,14 @@ namespace Network.Session
                                 ReportError($"非法判定批次长度 {allocs.Length} != {_state.PlayerCount}，进入错误状态");
                                 break;
                             }
-                            // I3：入队前校验轮次——载荷 turn 必须等于本地 CurrentTurn
-                            if (turn != _state.CurrentTurn)
+                            // I3：入队前校验轮次——载荷 turn 必须 ≥ 本地 CurrentTurn。真实 UDP 异步投递下
+                            // 主机广播节奏可快于客户端消费（如 AI 行动连发批次 + 客户端每 Tick 消费一条），
+                            // turn > CurrentTurn 的批次属正常提前到达（队列 FIFO，消费时按轮次复校验对齐）；
+                            // 只有 turn < CurrentTurn（过期/重放/伪造陈旧输入）才判定为错误状态。
+                            if (turn < _state.CurrentTurn)
                             {
                                 _clientFaulted = true;
-                                ReportError($"判定批次轮次不匹配: 载荷 {turn} != 本地 {_state.CurrentTurn}，进入错误状态");
+                                ReportError($"判定批次轮次过期: 载荷 {turn} < 本地 {_state.CurrentTurn}，进入错误状态");
                                 break;
                             }
                             _chipBatchQueue.Enqueue((turn, allocs));

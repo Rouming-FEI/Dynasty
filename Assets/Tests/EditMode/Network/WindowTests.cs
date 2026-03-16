@@ -48,6 +48,8 @@ namespace Dynasty.Tests.Network
 
             public bool IsHost { get; }
 
+            public int LocalPeerId => SelfPeerId;
+
             public void PollEvents() { }
 
             public bool SendReliable(int peerId, NetDataWriter w)
@@ -422,12 +424,12 @@ namespace Dynasty.Tests.Network
 
         // ==================== 身份校验（Task 8 审查 I1） ====================
 
-        /// <summary>构造一条指定槽位的 ChipSubmit 消息（载荷不含 peerId，发送方由传输层标识）。</summary>
-        private static NetDataWriter MakeChipSubmit(int playerId, int rock, int scissors, int paper)
+        /// <summary>构造一条指定槽位的 ChipSubmit 消息（turn = 提交方判定轮次；载荷不含 peerId，发送方由传输层标识）。</summary>
+        private static NetDataWriter MakeChipSubmit(int turn, int playerId, int rock, int scissors, int paper)
         {
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ChipSubmit);
-            NetProtocol.WriteChipSubmit(w, playerId, rock, scissors, paper);
+            NetProtocol.WriteChipSubmit(w, turn, playerId, rock, scissors, paper);
             return w;
         }
 
@@ -447,9 +449,9 @@ namespace Dynasty.Tests.Network
             f.Pump();                       // 开判定窗
 
             // 冒名 1：伪造 peerId=9（不持有任何槽）提交槽 1 筹码
-            f.HostTransport.InjectFrom(9, MakeChipSubmit(1, 0, 0, 3));
+            f.HostTransport.InjectFrom(9, MakeChipSubmit(f.Host.State.CurrentTurn, 1, 0, 0, 3));
             // 冒名 2：真客户端 peer（peerId=1）冒充主机本地槽 0 提交（槽 0 恒 -1，网络提交天然拒绝）
-            f.HostTransport.InjectFrom(1, MakeChipSubmit(0, 3, 0, 0));
+            f.HostTransport.InjectFrom(1, MakeChipSubmit(f.Host.State.CurrentTurn, 0, 3, 0, 0));
             f.Pump();
 
             Assert.That(f.Host.LastError, Does.Contain("持有者"), "冒名提交应被记录槽位持有者不符的拒绝原因");
