@@ -501,6 +501,67 @@ namespace Dynasty.Tests.Network
                 "冒名被忽略后正常行动路径两端仍同步");
         }
 
+        // ==================== 过期提交防御（Task 12 复审 I3） ====================
+
+        /// <summary>构造一条指定轮次的 ChipBatch 消息（turn = 主机判定结算轮次；载荷数组长度必须 = 槽位数）。</summary>
+        private static NetDataWriter MakeChipBatch(int turn, ChipAllocation[] allocs)
+        {
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.ChipBatch);
+            NetProtocol.WriteChipBatch(w, turn, allocs);
+            return w;
+        }
+
+        [Test]
+        public void 过期ChipSubmit_判定轮次不匹配_主机拒绝且窗口保持_正常提交仍结算()
+        {
+            var f = Fixture.Create(4, 1);
+            f.Pump();   // 开判定窗（等待槽 0/1 提交）
+
+            // 过期提交：turn = 主机当前判定轮次 - 1（模拟客户端落后整回合重发旧筹码），
+            // 由槽 1 真实持有者 peer 1 提交 → 槽位持有者校验通过、轮次校验拒绝
+            // （内存传输下提交方 turn 恒等于主机轮次，此防御路径不会自然触发，须显式构造）
+            f.HostTransport.InjectFrom(1, MakeChipSubmit(f.Host.State.CurrentTurn - 1, 1, 0, 0, 3));
+            f.Pump();
+
+            Assert.That(f.Host.LastError, Does.Contain("判定提交轮次不匹配"), "过期提交应被记录轮次不匹配的拒绝原因");
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "拒绝后判定窗口保持打开（未结算）");
+            Assert.That(f.HostTransport.BroadcastLog.Contains(NetMsgType.ChipBatch), Is.False, "过期提交不得触发结算广播");
+
+            // 拒绝不破坏窗口：槽 0/1 正常提交 → 结算 → 行动阶段（两端哈希一致）
+            f.Host.SubmitChip(0, C(0, 3, 0, 0));
+            f.Client.SubmitChip(1, C(1, 0, 0, 3));
+            f.Pump();
+            f.Pump();
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "正常提交结算不受过期提交干扰");
+            Assert.That(f.Host.State.ComputeStateHash(), Is.EqualTo(f.Client.State.ComputeStateHash()),
+                "过期提交被忽略后两端判定结果必须一致");
+        }
+
+        [Test]
+        public void 过期ChipBatch_判定轮次过期_客户端进入错误状态停止重放()
+        {
+            var f = Fixture.Create(4, 1);
+            f.Pump();   // 开窗：客户端保持当前判定轮次等待批次
+
+            // 伪造主机（peerId=0）注入 turn = 客户端 CurrentTurn - 1 的过期批次
+            // （真实 UDP 下过期批次由入队轮次校验拦截；内存传输下 turn 恒相等不会触发，此处显式构造）
+            var allocs = new ChipAllocation[f.Client.State.PlayerCount];
+            for (int i = 0; i < allocs.Length; i++)
+                allocs[i] = new ChipAllocation(i);
+            f.ClientTransport.InjectFrom(0, MakeChipBatch(f.Client.State.CurrentTurn - 1, allocs));
+            f.Pump();
+
+            Assert.That(f.Client.IsClientFaulted, Is.True, "过期批次应使客户端进入错误状态");
+            Assert.That(f.Client.LastError, Does.Contain("轮次过期"), "应记录批次轮次过期的错误原因");
+
+            // faulted 后停止重放：注入正确轮次的批次也不得消费推进（HandleMessage/TickClient 均已短路）
+            int tickBefore = f.Client.State.CurrentTick;
+            f.ClientTransport.InjectFrom(0, MakeChipBatch(f.Client.State.CurrentTurn, allocs));
+            f.Pump();
+            Assert.That(f.Client.State.CurrentTick, Is.EqualTo(tickBefore), "faulted 后停止重放，后续批次不得推进客户端");
+        }
+
         // ==================== AI 槽行动路径（Task 8 审查 I3） ====================
 
         [Test]

@@ -144,7 +144,7 @@ namespace Network.Session
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ResyncRequest);
             NetProtocol.WriteResyncRequest(w, lastTick, lastTurn, _session.LocalPlayerId);
-            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接表键（当前 build 恒 0）
         }
 
         /// <summary>开始对局（主机开战后调用；客户端收到 GameStart 后调用）。幂等；校验失败可重试（_state 保持 null）。</summary>
@@ -268,7 +268,7 @@ namespace Network.Session
             NetProtocol.WriteHeader(w, NetMsgType.ChipSubmit);
             // 载荷携带提交方判定轮次：主机校验防「客户端落后整回合时的过期筹码被误收进下一轮窗口」
             NetProtocol.WriteChipSubmit(w, _state != null ? _state.CurrentTurn : -1, playerId, alloc.Rock, alloc.Scissors, alloc.Paper);
-            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接表键（当前 build 恒 0）
         }
 
         /// <summary>主机：真人玩家提交行动命令（行动窗口内接收；非法提交拒绝不广播）。
@@ -303,7 +303,7 @@ namespace Network.Session
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.ActionSubmit);
             NetProtocol.WriteActionSubmit(w, record);
-            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接 peerId（重连后未必为 0）
+            _transport.SendReliable(_transport.LocalPeerId, w);   // 客户端发往主机 = 本端连接表键（当前 build 恒 0）
         }
 
         /// <summary>每帧调用：PollEvents + 推进窗口状态机 + 驱动 LocalLockstep。</summary>

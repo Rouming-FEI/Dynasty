@@ -19,7 +19,8 @@ namespace Network.Transport
         private string _connectKey;
         private readonly Dictionary<int, NetPeer> _peers = new Dictionary<int, NetPeer>();
 
-        /// <summary>本地 peerId；未连接 = -1。主机固定 0，客户端为本地分配的 NetPeer.Id。</summary>
+        /// <summary>本地 peerId；未连接 = -1。主机恒 0；客户端 = 本端连接表键（当前 build 恒 0，
+        /// 重连新建 NetManager 后本端 id 仍从 0 计，勿假设非 0）。</summary>
         public int LocalPeerId { get; private set; } = -1;
 
         /// <summary>实际监听端口（StartHost(0) 后为系统分配端口）。</summary>

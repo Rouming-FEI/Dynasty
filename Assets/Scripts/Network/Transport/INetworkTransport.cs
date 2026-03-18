@@ -14,8 +14,10 @@ namespace Network.Transport
         bool IsHost { get; }
 
         /// <summary>
-        /// 本地 peerId；未连接 = -1。主机恒 0；客户端 = 其与主机连接分配的 NetPeer.Id
-        /// （LiteNetLib 按空闲槽分配，重连/多客户端下可能非 0——客户端发往主机必须用它，不能写死 0）。
+        /// 本地 peerId；未连接 = -1。主机恒 0；客户端 = 本端连接表键（当前 build 恒 0，
+        /// 勿假设非 0——重连新建 NetManager 后本端 id 仍从 0 计）。可能非 0 的是主机侧为
+        /// 对端分配的 id（0/1/2…，空闲槽复用）；发往特定对端须用消息送达的 peerId
+        /// （主机视角由服务端分配、可复用非 0）。
         /// </summary>
         int LocalPeerId { get; }
 
