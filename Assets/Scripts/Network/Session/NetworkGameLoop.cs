@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using AI;
 using Core;
@@ -68,8 +68,10 @@ namespace Network.Session
         public string LastError { get; private set; }
         public event Action<string> OnError;
 
-        /// <summary>客户端协议校验失败错误状态（重放端读取：faulted 后停止喂队列，M6）。</summary>
-        internal bool IsClientFaulted => _clientFaulted;
+        /// <summary>客户端协议校验失败错误状态（重放端读取：faulted 后停止喂队列，M6）。
+        /// public：测试程序集（Dynasty.Tests.EditMode）是独立 asmdef，internal 跨程序集不可见
+        /// ——verify 单工程编译曾掩盖此边界（Unity CS1061 教训），现 verify 已拆双工程模拟 asmdef。</summary>
+        public bool IsClientFaulted => _clientFaulted;
 
         /// <summary>可注入时钟（返回毫秒）；测试用快进时钟控制窗口超时。
         /// 默认 Environment.TickCount（int 隐式转 long）：.NET Framework 4.x 无 64 位毫秒
