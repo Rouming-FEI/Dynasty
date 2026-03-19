@@ -153,6 +153,8 @@ namespace Core.Sync
             dst.WoodSeedPlayer = src.WoodSeedPlayer;
             dst.WoodSeedLocation = src.WoodSeedLocation;
             dst.PaladinAegisUsed = src.PaladinAegisUsed;
+            dst.GhostCloneActive = src.GhostCloneActive;
+            dst.GhostCloneSanity = src.GhostCloneSanity;
             dst.LastAllocations = src.LastAllocations;
             dst.HasJudgmentResult = src.HasJudgmentResult;
             dst.LastJudgment = src.LastJudgment;

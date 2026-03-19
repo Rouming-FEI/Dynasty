@@ -14,6 +14,21 @@ namespace Gameplay.Characters
     {
         /// <summary>守护技能 Id（GuardianDef 中定义，全技能表内唯一）。</summary>
         public const int GuardianSkillId = 2;
+        /// <summary>P7-A 角色 Id（新角色全局常量，禁止裸数字）。</summary>
+        public const int ChaosMageCharacterId = 14;
+        public const int TwinCharacterId = 15;
+        public const int DataGhostCharacterId = 16;
+        /// <summary>P7-A 技能 Id（混沌法师 120-122 / 双子 123-124 / 数据幽灵 125-129）。</summary>
+        public const int ChaosSkillId = 120;
+        public const int ChaosBackfireSkillId = 121;  // 被动占位（逻辑在 ChaosSimulateCommand 内联）
+        public const int HellChildSkillId = 122;      // 被动占位（逻辑在 ItemCommands 拦截）
+        public const int TwinVampiricSkillId = 123;
+        public const int TwinAgileSkillId = 124;
+        public const int HandsonicSkillId = 125;
+        public const int HarmonicsSkillId = 126;
+        public const int DisciplineSkillId = 127;     // Reactive OnPreDamage
+        public const int AbyssSkillId = 128;          // Reactive OnKill
+        public const int CloneDrainSkillId = 129;     // 周期被动 Interval=1（分身回合末扣 1）
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不检查冷却（既有调用点兼容）。</param>
         public static bool CanActivate(SkillDef skill, Character c, int skillIndex = -1)
