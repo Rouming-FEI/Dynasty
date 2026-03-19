@@ -35,7 +35,8 @@ namespace Network.Local
         /// <summary>
         /// 真人判定筹码钩子。返回 null = 未提交，RunTurn 暂停返回（与
         /// ManualInputProvider 行动暂停语义一致）。仅对 HumanPlayers[i]=true 生效；
-        /// 若玩家在掩码中但本钩子为 null，回退 JudgmentInputProvider/AI 取值。
+        /// 首次收集时掩码玩家钩子为 null → 回退 JudgmentInputProvider/AI 取值；
+        /// 补查分支中钩子为 null 属防御路径（首次收集不会遗留该类槽），直接补零。
         /// </summary>
         public Func<int, ChipAllocation?> HumanJudgmentInput;
 
@@ -57,6 +58,13 @@ namespace Network.Local
         private bool[] _humanSlotFilled;
         private bool _judgmentCollected;
 
+        /// <summary>
+        /// 行动阶段全暂停（网络模式使用：判定轮结算后停在行动边界，行动窗口由
+        /// NetworkGameLoop.TickHostAction 单独驱动；判定轮置 true、行动轮置 false）。
+        /// 暂停时 RunTurn 返回 true，不执行任何行动命令、不消耗 AP、不推进 CurrentTick。
+        /// 默认 false = 既有行为（行动阶段即时推进）。</summary>
+        public bool PauseActions;
+
         /// <summary>Player id of the next actor eligible to act in the action phase, or -1 if none.</summary>
         public int CurrentActorPlayerId => GetNextActor();
 
@@ -64,8 +72,23 @@ namespace Network.Local
         {
             _state = state;
             _ais = ais;
-            _turnManager = new TurnManager();
-            state.TurnManager = _turnManager;
+            // 快照恢复态复用既有 TurnManager（WorldStateSerializer.Deserialize 已重建
+            // ActionOrder/CurrentActorIndex/ConsecutiveFlatCount，重连重建锁步不得重置）；
+            // 全新状态（TurnManager == null）才新建——既有调用方行为不变。
+            // M7（Task 11 复审）：对跑过一局的状态二次建锁步会继承旧 _consecutiveFlatCount/
+            // _currentActorIndex（连续全平计数与行动者游标均保留在 TurnManager 内）——当前唯一
+            // 命中复用分支的调用方是断线重连的 RebuildClientState（状态来自快照反序列化，TurnManager
+            // 字段已整体恢复，继承即正确）；若未来出现「同一内存状态二次开局」场景，须在 StartGame
+            // 重置这两项，勿在构造器改动既有语义。
+            if (state.TurnManager != null)
+            {
+                _turnManager = state.TurnManager;
+            }
+            else
+            {
+                _turnManager = new TurnManager();
+                state.TurnManager = _turnManager;
+            }
         }
 
         public void StartGame()
@@ -179,6 +202,9 @@ namespace Network.Local
             // Action phase: each actor takes their turn
             while (_state.Phase == TurnPhase.ActionPhase)
             {
+                // 行动阶段全暂停（网络模式 Task 7：判定结算后停在行动阶段开头）
+                if (PauseActions) return true;
+
                 // Find next actor with AP > 0
                 int actorPlayerId = GetNextActor();
                 if (actorPlayerId < 0) break; // no one can act

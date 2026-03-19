@@ -359,5 +359,15 @@ namespace Core
         public int[] ActionOrder => _actionOrder;
         public int CurrentActorIndex => _currentActorIndex;
         public void IncrementActorIndex() => _currentActorIndex++;
+
+        // ---- 快照恢复访问器（序列化/反序列化专用）----
+        /// <summary>连续全平判定计数（快照序列化用）。</summary>
+        public int ConsecutiveFlatCount => _consecutiveFlatCount;
+        /// <summary>恢复连续全平计数（快照恢复用）。</summary>
+        public void RestoreConsecutiveFlatCount(int v) => _consecutiveFlatCount = v;
+        /// <summary>恢复行动顺序数组（快照恢复用；调用方保证数组所有权转移，不再复用）。</summary>
+        public void RestoreActionOrder(int[] order) => _actionOrder = order ?? Array.Empty<int>();
+        /// <summary>恢复行动者游标（快照恢复用）。</summary>
+        public void RestoreActorIndex(int idx) => _currentActorIndex = idx;
     }
 }

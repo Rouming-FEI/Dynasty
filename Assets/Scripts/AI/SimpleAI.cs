@@ -12,17 +12,23 @@ namespace AI
 {
     public class SimpleAI
     {
-        private int _playerId;
+        private readonly DeterministicRandom _random;
 
-        public SimpleAI(int playerId)
+        /// <summary>注入随机流（网络模式：AI 决策不得消耗世界随机流，见 P6 设计）。
+        /// 默认 seed = playerId * 1000 + 7：+7 保证非零（xorshift 约束），乘法拉开不同玩家的序列；
+        /// 固定 seed 意味着 AI 序列与对局 seed 无关、每局可复现（确定性调试特性）。</summary>
+        public SimpleAI(int playerId) : this(playerId, new DeterministicRandom(playerId * 1000 + 7)) { }
+
+        /// <summary>注入随机流（网络模式：AI 决策不得消耗世界随机流，见 P6 设计）。</summary>
+        public SimpleAI(int playerId, DeterministicRandom aiRandom)
         {
-            _playerId = playerId;
+            _random = aiRandom;
         }
 
         public ChipAllocation GetJudgmentInput(WorldState state, int playerId)
         {
             ChipAllocation allocation = new ChipAllocation(playerId);
-            allocation.SetRandom(state.Random);
+            allocation.SetRandom(_random);
             return allocation;
         }
 
@@ -37,7 +43,7 @@ namespace AI
             ICommand emergency = TryUseEmergencyDevice(state, c, playerId);
             if (emergency != null) return emergency;
 
-            int roll = state.Random.Next(100);
+            int roll = _random.Next(100);
 
             // Find enemy at same location (for combat) and any alive enemy (for movement)
             int sameLocEnemy = -1;
@@ -94,7 +100,7 @@ namespace AI
             return cmd ?? TryMove(state, c, playerId) ?? new WasteAPCommand(state.CurrentTick, playerId);
         }
 
-        private static ICommand TryUseSkill(WorldState state, Character c, int playerId, int targetId)
+        private ICommand TryUseSkill(WorldState state, Character c, int playerId, int targetId)
         {
             if (c.Definition?.Skills == null || c.Definition.Skills.Length == 0) return null;
 
@@ -106,7 +112,7 @@ namespace AI
                     validSkills[vc++] = i;
             if (vc == 0) return null;
 
-            int skillIdx = validSkills[state.Random.Next(vc)];
+            int skillIdx = validSkills[_random.Next(vc)];
 
             // 自 Buff（Self）/ 任意目标（Any）技能：AI 对自己施放
             // 守护充能攒在自己身上，满 3 充能自动兑换护盾给目标（target 即自己）
@@ -118,7 +124,7 @@ namespace AI
         }
 
         /// <summary>独处时的自 Buff/任意目标技能：挑 Target == Self 或 Any 的可激活技能，对自己施放。</summary>
-        private static ICommand TryUseSelfSkill(WorldState state, Character c, int playerId)
+        private ICommand TryUseSelfSkill(WorldState state, Character c, int playerId)
         {
             if (c.Definition?.Skills == null || c.Definition.Skills.Length == 0) return null;
 
@@ -133,7 +139,7 @@ namespace AI
             }
             if (vc == 0) return null;
 
-            int skillIdx = validSkills[state.Random.Next(vc)];
+            int skillIdx = validSkills[_random.Next(vc)];
             return new UseSkillCommand(state.CurrentTick, playerId, skillIdx, playerId);
         }
 
@@ -242,13 +248,13 @@ namespace AI
             return null;
         }
 
-        private static ICommand TryMove(WorldState state, Character c, int playerId)
+        private ICommand TryMove(WorldState state, Character c, int playerId)
         {
             // Simple movement: step to a random connected location (map hub topology
             // makes this converge toward enemies over a few turns)
             int[] connections = state.Locations.GetConnectedLocations(c.CurrentLocationId);
             if (connections == null || connections.Length == 0) return null;
-            int target = connections[state.Random.Next(connections.Length)];
+            int target = connections[_random.Next(connections.Length)];
             return new MoveCommand(state.CurrentTick, playerId, target);
         }
     }

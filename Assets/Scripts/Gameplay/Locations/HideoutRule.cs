@@ -10,7 +10,8 @@ namespace Gameplay.Locations
     /// </summary>
     public class HideoutRule : LocationRule
     {
-        public HideoutRule() { LocationId = 6; }
+        public const int HideoutLocationId = 6;
+        public HideoutRule() { LocationId = HideoutLocationId; }
 
         public override void OnEnter(WorldState state, Character c)
         {

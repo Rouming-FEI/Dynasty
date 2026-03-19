@@ -187,5 +187,27 @@ namespace Gameplay.Movement
             }
             return h;
         }
+
+        /// <summary>
+        /// 快照恢复：整表覆盖运行时物品列表（locatedItems 长度须等于地点数；null 安全）。
+        /// 每地点按 (ItemId, Count) 分组展开为扁平 ItemId 列表，与 GetLocatedItems 的表示互逆。
+        /// 不经 DropItem（无副作用、无重复追加），供 WorldStateSerializer 反序列化重建使用。
+        /// </summary>
+        public void RestoreRuntimeItems(LocatedItem[][] locatedItems)
+        {
+            if (locatedItems == null) return;
+            for (int i = 0; i < locatedItems.Length && i < _runtimeItems.Length; i++)
+            {
+                LocatedItem[] items = locatedItems[i];
+                _runtimeItems[i].Clear();
+                if (items == null) continue;
+                for (int j = 0; j < items.Length; j++)
+                {
+                    int itemId = items[j].ItemId;
+                    for (int k = 0; k < items[j].Count; k++)
+                        _runtimeItems[i].Add(itemId);
+                }
+            }
+        }
     }
 }

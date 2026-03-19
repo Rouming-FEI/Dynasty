@@ -179,8 +179,13 @@ namespace Dynasty.Tests
             Assert.AreEqual(TurnPhase.JudgmentPhase, state.Phase);
 
             // 无钩子全 AI：完整跑通一回合；若未重置暂停缓存，AI 筹码会复用第 1 次
-            // 取样（与参照局相同）而非重新收集
+            // 取样（与参照局相同）而非重新收集。
+            // 注：SimpleAI 改独立随机流后，重启首轮判定可能命中「全局平」作废重判
+            // （合法引擎路径，回合停在 JudgmentPhase），故循环 RunTurn 直至回合推进
             bool running = ls.RunTurn();
+            for (int guard = 0; running && state.CurrentTurn < 2
+                 && state.Phase != TurnPhase.GameOver && guard < 10; guard++)
+                running = ls.RunTurn();
 
             Assert.IsTrue(running);
             Assert.IsTrue(state.HasJudgmentResult);

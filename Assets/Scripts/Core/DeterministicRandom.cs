@@ -68,5 +68,12 @@ namespace Core
             // Use the high 24 bits (40–63) for good mantissa distribution.
             return ((ulong)NextLong() >> 40) / 16777216.0f;
         }
+
+        /// <summary>恢复随机流内部状态（快照反序列化用；state 必须来自同 seed 的实例）。</summary>
+        public void RestoreState(ulong state)
+        {
+            if (state == 0) state = 1;   // xorshift 不允许零状态
+            _state = state;
+        }
     }
 }

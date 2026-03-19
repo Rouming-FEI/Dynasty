@@ -5,6 +5,7 @@
         "Dynasty.Simulation",
         "Dynasty.SkillAcceptance",
         "Dynasty.UI",
+        "LiteNetLib",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

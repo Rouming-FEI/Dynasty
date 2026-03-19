@@ -48,6 +48,14 @@ namespace Core.GAS
         public void SetAttributeBaseValue(int attributeId, float value) =>
             _attributeSet?.SetBaseValue(attributeId, value);
 
+        /// <summary>精确设置属性 current 值（快照恢复用；保留引擎钳制语义）。</summary>
+        public void SetAttributeCurrentValue(int attributeId, float value) =>
+            _attributeSet?.SetCurrentValue(attributeId, value);
+
+        /// <summary>读取属性 base 值（快照序列化用；GetAttributeValue 返回 current）。</summary>
+        public float GetAttributeBaseValue(int attributeId) =>
+            _attributeSet?.GetBaseValue(attributeId) ?? 0f;
+
         /// <summary>Delta-modify current value (positive = increase, negative = decrease).</summary>
         public void ModifyAttributeCurrentValue(int attributeId, float delta)
         {
@@ -690,6 +698,42 @@ namespace Core.GAS
                     return true;
             return false;
         }
+
+        // ---- 快照恢复访问器（序列化/反序列化专用，非热路径）----
+
+        /// <summary>精确设置心雾层数（快照恢复用；AddMistLayer 只能递增）。</summary>
+        public void SetMistLayers(int layers) { _mistLayers = layers < 0 ? 0 : layers; }
+
+        /// <summary>覆盖周期被动计时器（快照恢复用；timers 长度须等于已注册被动数，null 安全忽略）。</summary>
+        public void RestorePassiveTimers(int[] timers)
+        {
+            if (timers == null) return;
+            for (int i = 0; i < timers.Length && i < _passiveCount; i++)
+                _passiveTimers[i] = timers[i];
+        }
+
+        /// <summary>读取周期被动计时器（快照序列化用）。</summary>
+        public int GetPassiveTimer(int index) =>
+            index >= 0 && index < _passiveCount ? _passiveTimers[index] : -1;
+
+        /// <summary>按索引读取活跃 GE（快照序列化用；配合 ActiveEffectCount）。</summary>
+        public GameplayEffectSpec GetActiveEffect(int index) =>
+            index >= 0 && index < _activeEffects.Count ? _activeEffects[index] : null;
+
+        /// <summary>直接插入活跃 GE（快照恢复用；不经 ApplyGameplayEffect，避免叠加/事件副作用）。</summary>
+        public void RestoreActiveEffect(GameplayEffectSpec spec)
+        {
+            if (spec != null && spec.Definition != null) _activeEffects.Add(spec);
+        }
+
+        /// <summary>周期被动数量（快照序列化用；配合 GetPassiveTimer）。</summary>
+        public int PassiveCount => _passiveCount;
+
+        /// <summary>技能冷却槽数量（快照序列化用；配合 GetCooldown）。</summary>
+        public int CooldownSlotCount => _skillCooldownCount;
+
+        /// <summary>最近造成伤害的回合（快照序列化用；-999 = 从未造成伤害）。</summary>
+        public int GetLastDamageTurn() => _lastDamageTurn;
 
         // ---------------------------------------------------------------------
         // Determinism hash — 确定性自检
