@@ -66,6 +66,8 @@ namespace Core.Replay
                     r.Kind = ReplayActionKind.FireTurret; r.IntArg1 = c.TargetPlayerId; break;
                 case DismountTurretCommand c:
                     r.Kind = ReplayActionKind.DismountTurret; break;
+                case ChaosSimulateCommand c:
+                    r.Kind = ReplayActionKind.ChaosSimulate; r.IntArg1 = c.ItemId; r.IntArg2 = c.TargetPlayerId; break;
                 case DamageCommand c:
                     r.Kind = ReplayActionKind.Attack; r.IntArg1 = c.TargetPlayerId; r.FloatArg = c.Amount;
                     r.IntArg3 = (int)c.Type; break;
@@ -103,6 +105,7 @@ namespace Core.Replay
                 case ReplayActionKind.AimTurret: return new AimTurretCommand(tick, pid);
                 case ReplayActionKind.FireTurret: return new FireTurretCommand(tick, pid, r.IntArg1);
                 case ReplayActionKind.DismountTurret: return new DismountTurretCommand(tick, pid);
+                case ReplayActionKind.ChaosSimulate: return new ChaosSimulateCommand(tick, pid, r.IntArg1, r.IntArg2);
                 case ReplayActionKind.Attack: return new DamageCommand(tick, pid, r.IntArg1, r.FloatArg,
                     (DamageType)r.IntArg3);
                 default: return null;

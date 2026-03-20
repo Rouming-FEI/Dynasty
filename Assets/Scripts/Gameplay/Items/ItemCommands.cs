@@ -33,6 +33,9 @@ namespace Gameplay.Items
                 if (item.Type == ItemType.Weapon && item.Id != 3) return;
             }
 
+            // 混沌法师地狱的子民（Id=122）：禁拾取武器类/消耗品（应急装置 Id=8 豁免，规格 3.3）
+            if (c.Definition?.Id == SkillSystem.ChaosMageCharacterId && item.Id != 8) return;
+
             // 鬼化：禁拾取武器
             if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm) && item.Type == ItemType.Weapon) return;
 
@@ -85,6 +88,9 @@ namespace Gameplay.Items
                 if (item.Id == 8) return;
                 if (item.Type == ItemType.Weapon) return;
             }
+
+            // 混沌法师地狱的子民（Id=122）：无法使用任何道具/武器（应急装置 Id=8 豁免）
+            if (c.Definition?.Id == SkillSystem.ChaosMageCharacterId && item.Id != 8) return;
 
             // 静止时空：期间禁治疗道具（血包 Id=2 / 应急装置 Id=8）
             if (c.ASC.Tags.HasTag(GameplayTagConstants.TimeStop) && IsHealingItem(item))

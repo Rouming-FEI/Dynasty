@@ -22,6 +22,7 @@ namespace Gameplay.Characters
                 case 11: return FormationMasterDef.Create();
                 case 12: return PaladinDef.Create();
                 case 13: return AgentDef.Create();
+                case 14: return ChaosMageDef.Create();
                 default: return null;
             }
         }
