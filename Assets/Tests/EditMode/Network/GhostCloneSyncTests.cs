@@ -27,13 +27,21 @@ namespace Dynasty.Tests.Network
         }
 
         [Test]
-        public void 哈希_分身字段参与计算()
+        public void 哈希_分身Active字段参与计算()
         {
             var a = NewState();
             var b = NewState();
             a.GhostCloneActive = true;
+            Assert.AreNotEqual(a.ComputeStateHash(), b.ComputeStateHash(), "分身 Active 字段必须进哈希");
+        }
+
+        [Test]
+        public void 哈希_分身Sanity字段参与计算()
+        {
+            var a = NewState();
+            var b = NewState();
             a.GhostCloneSanity = 2.5f;
-            Assert.AreNotEqual(a.ComputeStateHash(), b.ComputeStateHash(), "分身字段必须进哈希");
+            Assert.AreNotEqual(a.ComputeStateHash(), b.ComputeStateHash(), "分身 Sanity 字段必须进哈希");
         }
 
         [Test]
