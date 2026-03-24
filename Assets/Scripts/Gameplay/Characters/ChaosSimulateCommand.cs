@@ -1,6 +1,7 @@
 using Core;
 using Core.Command;
 using Core.GAS;
+using Gameplay.Combat;
 using Gameplay.Items;
 using Gameplay.Judgment;
 
@@ -11,7 +12,8 @@ namespace Gameplay.Characters
     /// 载荷：ItemId = 模拟池道具 Id（刀1/血包2/枪3/锤4/荆棘素6/炸弹7/净化9），
     /// TargetPlayerId = 效果目标（自身类道具传自己）。
     /// 执行顺序（S1/S2）：池/目标校验 → 扣 1 AP → 反噬判定（对手 = 敌人目标；
-    /// 无敌人目标 = 数组序第一存活他人；无他人则视为胜）→ 败：自扣 1 理智、效果不结算。
+    /// 无敌人目标 = 数组序第一存活他人；无他人则视为胜）→ 败：自扣 1 理智、效果不结算
+    /// （理智归零时入队死亡结算，不做直扣存活）。
     /// 豁免：地理/持有限制（S1）；荆棘素从自身位置放；枪免弹药；地狱的子民不拦截（法术模拟）。
     /// </summary>
     public class ChaosSimulateCommand : ICommand
@@ -65,6 +67,13 @@ namespace Gameplay.Characters
             if (!win)
             {
                 c.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, -1f); // 反噬自损
+                if (c.Sanity <= 0f)
+                {
+                    // 自损致死须走统一死亡结算（引擎非伤害直扣先例均钳 0.5 防致死，
+                    // 反噬直扣可能到 0）：对照 DamagePipeline 死亡出口入队 DeathCommand，
+                    // LocalLockstep 在本趟 ExecuteAll 内完成死亡结算。
+                    state.Commands.Enqueue(new DeathCommand(state.CurrentTick, c.PlayerId, -1));
+                }
                 return;
             }
 
@@ -96,15 +105,18 @@ namespace Gameplay.Characters
         {
             switch (itemId)
             {
-                case 1: // 刀：近战 1.5 物理（豁免地理，直接入管线）
-                case 4: // 施工锤：近战 1.5 物理（不做投掷/拆除）
-                case 3: // 枪：远程 2 物理（免弹药、免地理、免藏匿特判——模拟攻击直入管线）
+                case 1: // 刀：近战物理（豁免地理，直接入管线）
+                case 4: // 施工锤：近战物理（不做投掷/拆除）
+                case 3: // 枪：远程物理（免弹药、免地理、免藏匿特判——模拟攻击直入管线）
                 {
                     // 目标按 PlayerId 解析为 Character（伤害管线按 Character.Id 定位）
                     Character target = state.GetCharacterByPlayer(targetPlayerId);
                     if (target == null || target.IsDead) return; // 目标在判定后失效：效果不结算
-                    DamagePipeline.ApplyDamage(state, c.Id, target.Id,
-                        itemId == 3 ? 2f : 1.5f, DamageType.Physical);
+                    // 伤害数值单一来源 = ItemRegistry.UseEffect（GetSanityDamage），与
+                    // UseItemCommand 同源——改动数值须改注册表，禁止在此另设伤害常量
+                    float damage = ItemRegistry.GetSanityDamage(ItemRegistry.Get(itemId));
+                    if (damage <= 0f) return; // 注册表缺伤害定义（数据缺失）：效果不结算
+                    DamagePipeline.ApplyDamage(state, c.Id, target.Id, damage, DamageType.Physical);
                     break;
                 }
                 case 2: // 血包：回 3 理智（复用道具 UseEffect GE，钳 MaxSanity）
