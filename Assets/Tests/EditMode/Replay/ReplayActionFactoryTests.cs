@@ -89,6 +89,7 @@ namespace Dynasty.Tests.Replay
                 case ReplayActionKind.DismountTurret: return new DismountTurretCommand(1, 0);
                 case ReplayActionKind.Attack: return new DamageCommand(1, 0, 3, 1.5f);
                 case ReplayActionKind.ChaosSimulate: return new ChaosSimulateCommand(1, 0, 3, 1);
+                case ReplayActionKind.TwinConvert: return new TwinConvertCommand(1, 0, 3);
                 default: return null;
             }
         }

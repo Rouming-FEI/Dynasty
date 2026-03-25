@@ -52,6 +52,15 @@ namespace Gameplay.Characters
             if (source.Definition != null && source.Definition.Id == 13)
                 source.ASC.MarkDamageDealt(state.CurrentTurn);
 
+            // 双子附灵·泣血（Id=123 状态）：武器攻击伤害 +0.5、每次攻击自身回 0.5
+            // （本钩子 = 来源侧每个伤害实例结算点；双子无 MistState，须位于早退前）
+            if (source.Definition != null && source.Definition.Id == SkillSystem.TwinCharacterId
+                && source.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric))
+            {
+                finalDamage += 0.5f;
+                source.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, 0.5f);
+            }
+
             if (!source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;
             bool win = JudgmentDuel.Resolve(state, source, target);
             if (win)

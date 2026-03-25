@@ -130,6 +130,20 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 双子附灵（123/124）：必须持有武器；无武器拒绝且不扣 AP（支付前特例）。
+            // 两槽共用单一附灵状态：激活即切到该技能对应形态（S3：作用于角色，换武器保留）。
+            if (skill.Id == SkillSystem.TwinVampiricSkillId || skill.Id == SkillSystem.TwinAgileSkillId)
+            {
+                if (c.Inventory.EquippedWeapon == null) return; // 无武器：拒绝不扣 AP
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+                c.ASC.Tags.RemoveTag(GameplayTagConstants.TwinVampiric);
+                c.ASC.Tags.RemoveTag(GameplayTagConstants.TwinAgile);
+                c.ASC.Tags.AddTag(skill.Id == SkillSystem.TwinVampiricSkillId
+                    ? GameplayTagConstants.TwinVampiric
+                    : GameplayTagConstants.TwinAgile);
+                return;
+            }
+
             // 支付消耗（非守护技能）：主成本 + 额外成本
             PayResource(c, skill.Cost);
             if (skill.ExtraCosts != null)
