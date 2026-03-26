@@ -10,6 +10,9 @@ namespace Gameplay.Characters
     /// </summary>
     public static class ReactiveSystem
     {
+        /// <summary>附灵·泣血加成量（技能效果量，非武器基础伤害数值源，豁免 GetSanityDamage 规则）。</summary>
+        private const float VampiricBonus = 0.5f;
+
         /// <summary>伤害应用前：响应技能可修改 finalDamage。返回修改后的伤害。</summary>
         public static void TryOnPreDamage(WorldState state, Character source, Character target, ref float finalDamage)
         {
@@ -57,8 +60,8 @@ namespace Gameplay.Characters
             if (source.Definition != null && source.Definition.Id == SkillSystem.TwinCharacterId
                 && source.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric))
             {
-                finalDamage += 0.5f;
-                source.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, 0.5f);
+                finalDamage += VampiricBonus;
+                source.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, VampiricBonus);
             }
 
             if (!source.ASC.Tags.HasTag(GameplayTagConstants.MistState)) return;

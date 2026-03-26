@@ -93,11 +93,47 @@ namespace Dynasty.Tests.Characters
             var twin = s.GetCharacterByPlayer(TwinPlayer);
             var victim = s.GetCharacterByPlayer(1);
             twin.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f); // 不满血，回血不被 MaxSanity 钳制掩盖
             victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
 
             new DamageCommand(0, TwinPlayer, 1, 1f).Execute(s);
             Assert.AreEqual(2f, victim.Sanity, 0.001f, "无加成普攻 1");
-            Assert.AreEqual(3f, twin.Sanity, 0.001f, "无附灵不回血");
+            Assert.AreEqual(2f, twin.Sanity, 0.001f, "无附灵不回血");
+        }
+
+        [Test]
+        public void 泣血态_任意武器伤害量均加05()
+        {
+            var s = BuildWithTwin();
+            var twin = s.GetCharacterByPlayer(TwinPlayer);
+            var victim = s.GetCharacterByPlayer(1);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f);
+            twin.ASC.Tags.AddTag(GameplayTagConstants.TwinVampiric);
+            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+
+            new DamageCommand(0, TwinPlayer, 1, 1.5f).Execute(s); // 刀量级伤害，攻防 0
+
+            Assert.AreEqual(1f, victim.Sanity, 0.001f, "1.5 + 0.5 泣血加成 = 2.0 伤害");
+            Assert.AreEqual(2.5f, twin.Sanity, 0.001f, "攻击回 0.5");
+        }
+
+        [Test]
+        public void 泣血态_换武器标签保留效果仍生效()
+        {
+            var s = BuildWithTwin();
+            var twin = s.GetCharacterByPlayer(TwinPlayer);
+            var victim = s.GetCharacterByPlayer(1);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f);
+            twin.ASC.Tags.AddTag(GameplayTagConstants.TwinVampiric);
+
+            twin.Inventory.EquipWeapon(ItemRegistry.Get(3)); // 刀 → 枪（S3：附灵作用于角色，换武器保留）
+            Assert.IsTrue(twin.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric), "换武器后泣血标签保留");
+
+            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, TwinPlayer, 1, 1f).Execute(s);
+            Assert.AreEqual(1.5f, victim.Sanity, 0.001f, "换枪后泣血 +0.5 仍生效");
         }
 
         [Test]
@@ -113,8 +149,26 @@ namespace Dynasty.Tests.Characters
 
             Assert.IsNotNull(twin.Inventory.EquippedWeapon);
             Assert.AreEqual(3, twin.Inventory.EquippedWeapon.Id, "装备枪");
-            Assert.AreEqual(0, twin.Inventory.EquippedWeaponAmmo, "新枪弹药默认 0（与拾取一致，需装填）");
+            Assert.AreEqual(0, twin.Inventory.EquippedWeaponAmmo, "转换弹药强制归零（需装填）");
             Assert.AreEqual(2, twin.ActionPoints, "转换扣 1 AP");
+        }
+
+        [Test]
+        public void 灵巧态_持圣盾转刀_卸下清理EquipEffect321()
+        {
+            var s = BuildWithTwin();
+            var twin = s.GetCharacterByPlayer(TwinPlayer);
+            twin.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+            twin.ASC.Tags.AddTag(GameplayTagConstants.TwinAgile);
+
+            new PickupItemCommand(0, TwinPlayer, 13).Execute(s); // 圣盾 13（拾取无角色限制）
+            Assert.AreEqual(13, twin.Inventory.EquippedWeapon.Id, "拾取后装备圣盾");
+            Assert.IsTrue(twin.ASC.HasActiveEffect(321), "圣盾 EquipEffect 321 挂载");
+
+            new TwinConvertCommand(0, TwinPlayer, 1).Execute(s); // 圣盾 → 刀
+
+            Assert.AreEqual(1, twin.Inventory.EquippedWeapon.Id, "转换到刀");
+            Assert.IsFalse(twin.ASC.HasActiveEffect(321), "转换卸下圣盾时 EquipEffect 321 被清理");
         }
 
         [Test]
