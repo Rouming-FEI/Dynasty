@@ -24,6 +24,7 @@ namespace Gameplay.Characters
                 case 13: return AgentDef.Create();
                 case 14: return ChaosMageDef.Create();
                 case 15: return TwinDef.Create();
+                case 16: return DataGhostDef.Create();
                 default: return null;
             }
         }

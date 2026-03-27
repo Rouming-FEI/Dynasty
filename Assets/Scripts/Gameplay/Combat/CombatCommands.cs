@@ -31,6 +31,13 @@ namespace Gameplay.Combat
             if (source.ActionPoints <= 0) return;
             if (source.ASC.Tags.HasTag(GameplayTagConstants.GhostForm)) return; // 灵体状态禁普通攻击
 
+            // 数据幽灵形态攻击（V1-V5 全形态）：内部完成目标校验/扣 AP（S10/S11 语义）
+            if (source.Definition?.Id == SkillSystem.DataGhostCharacterId)
+            {
+                DataGhostFormAttack.Execute(state, source, target);
+                return;
+            }
+
             // Spend 1 AP
             source.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 

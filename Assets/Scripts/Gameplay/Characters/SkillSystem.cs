@@ -144,6 +144,15 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 数据幽灵 Handsonic 形态切换（125，0 AP）：每回合限 1 次由 BlockingTags(FormSwitched)
+            // 在 CanActivate 层拦截；此处只做「按序循环到下一已解锁形态」（仅 V1 时无效返回）。
+            if (skill.Id == SkillSystem.HandsonicSkillId)
+            {
+                if (c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                    DataGhostFormAttack.SwitchForm(c);
+                return;
+            }
+
             // 支付消耗（非守护技能）：主成本 + 额外成本
             PayResource(c, skill.Cost);
             if (skill.ExtraCosts != null)

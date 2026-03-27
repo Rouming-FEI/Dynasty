@@ -14,7 +14,8 @@ namespace Gameplay.Characters
         private const float VampiricBonus = 0.5f;
 
         /// <summary>伤害应用前：响应技能可修改 finalDamage。返回修改后的伤害。</summary>
-        public static void TryOnPreDamage(WorldState state, Character source, Character target, ref float finalDamage)
+        public static void TryOnPreDamage(WorldState state, Character source, Character target,
+            DamageType damageType, ref float finalDamage)
         {
             if (target == null || target.Definition == null || target.Definition.Skills == null) return;
 
@@ -30,7 +31,7 @@ namespace Gameplay.Characters
                 SkillDef s = skills[i];
                 if (s == null || s.Activation != SkillActivationType.Reactive) continue;
                 if (s.ReactiveTrigger != ReactiveTriggerType.OnPreDamage) continue;
-                DispatchOnPreDamage(state, source, target, s.Id, ref finalDamage);
+                DispatchOnPreDamage(state, source, target, s.Id, damageType, ref finalDamage);
             }
         }
 
@@ -92,7 +93,8 @@ namespace Gameplay.Characters
 
         // ---- 测试分派与正式分派按 skillId 分支 ----
 
-        private static void DispatchOnPreDamage(WorldState state, Character source, Character target, int skillId, ref float finalDamage)
+        private static void DispatchOnPreDamage(WorldState state, Character source, Character target,
+            int skillId, DamageType damageType, ref float finalDamage)
         {
             switch (skillId)
             {
@@ -101,6 +103,9 @@ namespace Gameplay.Characters
                     break;
                 case 30:  // 魔术师镜花水月（Task 3 实现）
                     MagicianMirror.Resolve(state, source, target, ref finalDamage);
+                    break;
+                case 127: // 数据幽灵规诫：受击解锁形态（近战/远程近似规则见 GhostDiscipline 注释）
+                    GhostDiscipline.Unlock(target, source, damageType);
                     break;
             }
         }
@@ -160,6 +165,35 @@ namespace Gameplay.Characters
             bool win = rival == null || JudgmentDuel.Resolve(state, killer, rival);
             killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.ErosionLimit, 1f); // 侵蚀 +1
             killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, win ? -0.5f : -1f);
+        }
+    }
+
+    /// <summary>
+    /// 数据幽灵规诫（技能 Id=127）：受击解锁形态，永久。
+    /// 任意伤害解锁 V4；物理伤害按来源判定近战/远程（spec 批准近似）：
+    /// 来源装备枪（Id=3）或自带 V5Form → 远程 → 解锁 V5；否则近战 → 解锁 V2/V3。
+    /// Effect/Magic 伤害只解锁 V4。此近似规则已同步进验收注释。
+    /// </summary>
+    public static class GhostDiscipline
+    {
+        public static void Unlock(Character ghost, Character source, DamageType damageType)
+        {
+            if (ghost == null || ghost.Definition == null
+                || ghost.Definition.Id != SkillSystem.DataGhostCharacterId) return;
+
+            ghost.ASC.Tags.AddTag(GameplayTagConstants.V4Unlocked);
+            if (damageType != DamageType.Physical) return;
+
+            bool ranged = source != null && source.Definition != null
+                && ((source.Inventory.EquippedWeapon != null && source.Inventory.EquippedWeapon.Id == 3)
+                    || source.ASC.Tags.HasTag(GameplayTagConstants.V5Form));
+            if (ranged)
+                ghost.ASC.Tags.AddTag(GameplayTagConstants.V5Unlocked);
+            else
+            {
+                ghost.ASC.Tags.AddTag(GameplayTagConstants.V2Unlocked);
+                ghost.ASC.Tags.AddTag(GameplayTagConstants.V3Unlocked);
+            }
         }
     }
 }
