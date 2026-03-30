@@ -173,6 +173,9 @@ namespace Gameplay.Characters
     /// 任意伤害解锁 V4；物理伤害按来源判定近战/远程（spec 批准近似）：
     /// 来源装备枪（Id=3）或自带 V5Form → 远程 → 解锁 V5；否则近战 → 解锁 V2/V3。
     /// Effect/Magic 伤害只解锁 V4。此近似规则已同步进验收注释。
+    /// 挂点语义（钉死）：OnPreDamage 位于管线第 2.5 段，先于护盾（第 3 段）与死亡豁免
+    /// （第 4.5 段）——被盾挡/被豁免的伤害同样触发解锁（spec §5.3 挂点裁决，
+    /// 字面宽于 7.15 的"受击"表述）；唯免疫段（第 1 段）早退的伤害不触发。
     /// </summary>
     public static class GhostDiscipline
     {

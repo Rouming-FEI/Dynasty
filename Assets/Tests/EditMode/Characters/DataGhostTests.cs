@@ -135,6 +135,47 @@ namespace Dynasty.Tests.Characters
         }
 
         [Test]
+        public void 规诫_伤害被盾挡_仍解锁V2V3V4()
+        {
+            // 挂点语义：OnPreDamage（第 2.5 段）先于护盾段（第 3 段）→ 盾挡伤害同样触发解锁
+            var s = BuildWithGhost();
+            var g = Ghost(s);
+            var src = Other(s);
+            src.Inventory.EquipWeapon(ItemRegistry.Get(1)); // 刀 = 近战
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            g.ASC.Tags.AddTag(GameplayTagConstants.HasShield);
+
+            float dealt = DamagePipeline.ApplyDamage(s, src.Id, g.Id, 1f, DamageType.Physical);
+
+            Assert.AreEqual(0f, dealt, 0.001f, "伤害被护盾吸收");
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.HasShield), "盾破");
+            Assert.IsTrue(g.ASC.Tags.HasTag(GameplayTagConstants.V2Unlocked), "盾挡也解锁 V2");
+            Assert.IsTrue(g.ASC.Tags.HasTag(GameplayTagConstants.V3Unlocked), "盾挡也解锁 V3");
+            Assert.IsTrue(g.ASC.Tags.HasTag(GameplayTagConstants.V4Unlocked), "盾挡也解锁 V4");
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.V5Unlocked), "近战不解锁 V5");
+        }
+
+        [Test]
+        public void 规诫_伤害被免疫_不解锁任何形态()
+        {
+            // 免疫检查（第 1 段）先于 OnPreDamage（第 2.5 段）早退 → 被免疫的伤害不触发规诫
+            var s = BuildWithGhost();
+            var g = Ghost(s);
+            var src = Other(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            g.ASC.Tags.AddTag(GameplayTagConstants.ImmunePhysical);
+
+            float dealt = DamagePipeline.ApplyDamage(s, src.Id, g.Id, 1f, DamageType.Physical);
+
+            Assert.AreEqual(0f, dealt, 0.001f, "物理伤害被免疫");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "理智不受损");
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.V2Unlocked));
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.V3Unlocked));
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.V4Unlocked));
+            Assert.IsFalse(g.ASC.Tags.HasTag(GameplayTagConstants.V5Unlocked));
+        }
+
+        [Test]
         public void 形态结算_V1近战1伤害_切出V1失去减伤()
         {
             var s = BuildWithGhost();
@@ -192,7 +233,7 @@ namespace Dynasty.Tests.Characters
         }
 
         [Test]
-        public void 形态结算_V3目标中途死亡_剩余击空()
+        public void 形态结算_V3目标中途死亡_只结算两击()
         {
             var s = BuildWithGhost();
             var g = Ghost(s);
@@ -200,11 +241,22 @@ namespace Dynasty.Tests.Characters
             g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
             g.ASC.Tags.RemoveTag(GameplayTagConstants.V1Form);
             g.ASC.Tags.AddTag(GameplayTagConstants.V3Form);
-            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f); // 第一击 0.5、第二击 0.5 即死
+            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f); // 第 2 击（0.5×2）即死
 
+            // 死亡由 DamagePipeline 入队的 DeathCommand 延迟结算（IsDead 滞后），循环停判据须
+            // 与管线 155 行同源（Sanity <= 0）：每完整结算一击恰好派发一次 DamageDealt，
+            // 计数 = 结算次数（若旧缺陷复发会结算满 3 击并重复入队死亡命令 → 计数 3 必红）
+            int hits = 0;
+            s.Events.RecorderHook = delegate (int type, ref GameplayEvent e)
+            {
+                if (type == GameplayEventTypes.DamageDealt) hits++;
+            };
             new DamageCommand(0, GhostPlayer, 1, 1f).Execute(s);
-            Assert.IsTrue(victim.IsDead || victim.Sanity <= 0.5f, "第二击后死亡");
-            Assert.AreEqual(1, g.ActionPoints);
+            s.Events.RecorderHook = null;
+
+            Assert.AreEqual(2, hits, "第 2 击杀后第 3 击不得结算");
+            Assert.AreEqual(0f, victim.Sanity, 0.001f, "两击合计 1.0 伤害，理智归零");
+            Assert.AreEqual(1, g.ActionPoints, "三连整体只扣 1 AP");
         }
 
         [Test]
@@ -256,6 +308,35 @@ namespace Dynasty.Tests.Characters
             new DamageCommand(0, GhostPlayer, 1, 1f).Execute(s);
             Assert.AreEqual(3f, victim.Sanity, 0.001f, "藏匿不可命中");
             Assert.AreEqual(2, g.ActionPoints, "无效目标不扣 AP");
+        }
+
+        [Test]
+        public void 数据幽灵_拾取武器被拒不扣AP()
+        {
+            // 形态自带武器语义：实体武器无行动路由 → 显式拦截拾取（与鬼化同款裁决）
+            var s = BuildWithGhost();
+            var g = Ghost(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+
+            new PickupItemCommand(0, GhostPlayer, 1).Execute(s); // 刀（Weapon）
+
+            Assert.IsNull(g.Inventory.EquippedWeapon, "武器未被装备");
+            Assert.AreEqual(0, g.Inventory.Consumables.Count, "背包无武器");
+            Assert.AreEqual(2, g.ActionPoints, "拦截拾取不扣 AP");
+        }
+
+        [Test]
+        public void 数据幽灵_拾取消耗品成功扣AP()
+        {
+            var s = BuildWithGhost();
+            var g = Ghost(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+
+            new PickupItemCommand(0, GhostPlayer, 2).Execute(s); // 血包（Consumable）
+
+            Assert.AreEqual(1, g.Inventory.Consumables.Count, "血包入背包");
+            Assert.AreEqual(2, g.Inventory.Consumables[0].Id, "背包中为血包 Id=2");
+            Assert.AreEqual(1, g.ActionPoints, "成功拾取扣 1 AP");
         }
     }
 }

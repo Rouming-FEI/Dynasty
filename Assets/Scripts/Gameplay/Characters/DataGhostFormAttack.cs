@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Gameplay.Combat;
+using Gameplay.Items;
 
 namespace Gameplay.Characters
 {
@@ -67,7 +68,8 @@ namespace Gameplay.Characters
 
         /// <summary>
         /// 数据幽灵普攻行动（DamageCommand 分派入口；已通过 CanAct/AP>0/非鬼化守卫）。
-        /// 各形态：V1 近战 1 / V2 近战 1.5 / V3 一次行动 3 连 0.5（目标中途死亡停）/
+        /// 各形态：V1 近战 1 / V2 近战 1.5 / V3 一次行动 3 连 0.5（目标死亡/理智归零即停——
+        /// 死亡由管线入队的 DeathCommand 延迟置 IsDead，停判据须按理智，详见 ApplyHits）/
         /// V4 花 = 自愈 0.5（回复不走伤害管线，不触发规诫/荆棘等）/ V5 远程 1（任意地点、免弹药、
         /// 藏匿不可选 → 返回且不扣 AP）。全部消耗 1 AP（有效目标校验后扣）。
         /// </summary>
@@ -75,11 +77,9 @@ namespace Gameplay.Characters
         {
             int form = CurrentForm(source);
 
-            // V5 藏匿拦截（与 WeaponSystem.RangedAttack 同规则：审判者无视藏匿）
-            if (form == 5
-                && target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden)
-                && !source.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden)
-                && !source.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode))
+            // V5 藏匿拦截（规则源 = WeaponSystem.CanSelectRangedTarget，与 RangedAttack 共用：
+            // 目标藏匿且自身未同处藏匿、非审判者 → 不可瞄准）
+            if (form == 5 && !WeaponSystem.CanSelectRangedTarget(source, target))
                 return; // 不扣 AP
 
             source.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
@@ -95,14 +95,17 @@ namespace Gameplay.Characters
             // Task 5 在此插入 MirrorCopy 调用点（同步双发）
         }
 
-        /// <summary>按形态施放命中序列（V3 = 3 × 0.5，目标死亡即停；其余单发）。</summary>
+        /// <summary>按形态施放命中序列（V3 = 3 × 0.5，目标死亡或理智归零即停；其余单发）。</summary>
         public static void ApplyHits(WorldState state, Character source, Character target, int form)
         {
             if (form == 3)
             {
                 for (int hit = 0; hit < 3; hit++)
                 {
-                    if (target.IsDead) break;
+                    // 死亡判据须与 DamagePipeline 155 行同源：DeathCommand 由管线入队、延迟设置 IsDead，
+                    // 仅查 IsDead 恒 false → 击杀后剩余击仍完整结算（重复伤害事件/日志、重复 TryOnKill
+                    // （行向深渊将双触发）、骑士精神转移会打到尸体）。
+                    if (target.IsDead || target.Sanity <= 0f) break;
                     DamagePipeline.ApplyDamage(state, source.Id, target.Id, 0.5f, DamageType.Physical);
                 }
                 return;

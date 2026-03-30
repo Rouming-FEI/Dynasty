@@ -11,20 +11,29 @@ namespace Gameplay.Items
     public static class WeaponSystem
     {
         /// <summary>
+        /// 藏匿瞄准判定（无副作用）：目标藏匿且攻击者未同处藏匿、亦非审判者 → 不可瞄准。
+        /// 规则源：RangedAttack 与数据幽灵 V5 远程（DataGhostFormAttack）共用，勿两处各自复制。
+        /// </summary>
+        public static bool CanSelectRangedTarget(Character attacker, Character target)
+        {
+            // 审判者模式：无视藏匿
+            return !(target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden)
+                && !attacker.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden)
+                && !attacker.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode));
+        }
+
+        /// <summary>
         /// 远程攻击：不限同地点，消耗 1 弹药对目标造成伤害。
         /// 返回 false 表示弹药不足或目标处于藏匿状态无法瞄准，攻击未执行。
         /// </summary>
         public static bool RangedAttack(WorldState state, Character attacker, Character target, ItemDef weapon, float damage)
         {
-            // 审判者模式：无视藏匿
-            bool judge = attacker.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode);
-            // 藏匿处隐身：目标隐身且攻击者未同处藏匿状态（且非审判者）→ 无法瞄准
-            if (target.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) &&
-                !attacker.ASC.Tags.HasTag(GameplayTagConstants.HideoutHidden) && !judge)
-                return false;
+            // 藏匿瞄准检查（含审判者无视藏匿，与数据幽灵 V5 共用同一规则源）
+            if (!CanSelectRangedTarget(attacker, target)) return false;
 
             if (attacker.Inventory.EquippedWeaponAmmo <= 0) return false;
             attacker.Inventory.EquippedWeaponAmmo--;
+            bool judge = attacker.ASC.Tags.HasTag(GameplayTagConstants.JudgeMode);
             // 枪伤害 +0.5 且转法术（审判者）
             DamagePipeline.ApplyDamage(state, attacker.Id, target.Id,
                 damage + (judge ? 0.5f : 0f), judge ? DamageType.Magic : DamageType.Physical);

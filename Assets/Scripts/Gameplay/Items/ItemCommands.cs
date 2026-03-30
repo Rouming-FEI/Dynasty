@@ -40,6 +40,11 @@ namespace Gameplay.Items
             // 鬼化：禁拾取武器
             if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm) && item.Type == ItemType.Weapon) return;
 
+            // 数据幽灵（Def 16）：形态自带武器语义（普攻由 DamageCommand 按角色分派到
+            // DataGhostFormAttack，实体武器无行动路由）→ 拦截武器拾取（与鬼化同款裁决），
+            // 消除"可拾取但永远用不上"的死角；消耗品仍可拾取
+            if (c.Definition?.Id == SkillSystem.DataGhostCharacterId && item.Type == ItemType.Weapon) return;
+
             // 武器类进装备位（与 TurnManager.AddItemToInventory 一致）。
             // 修复：武器曾进背包，UseItemCommand 走武器路由后从不移除，
             // 核弹（Weapon 类）因此可无限复用。
