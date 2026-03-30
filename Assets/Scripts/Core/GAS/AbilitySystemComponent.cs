@@ -376,6 +376,12 @@ namespace Core.GAS
                             ApplyLoneWill(state);
                             continue;
                         }
+                        // 数据幽灵分身负载（Id=341）：分身每回合末扣 1 理智；至 0 → 分身死亡判定链
+                        if (ge.Id == 341)
+                        {
+                            ApplyGhostCloneDrain(state);
+                            continue;
+                        }
                         GameplayEffectSpec spec = RentSpec();
                         spec.Definition = ge;
                         spec.SourceId = OwnerId;
@@ -540,6 +546,19 @@ namespace Core.GAS
                 GetAttributeValue(AttributeConstants.ErosionLimit) - 0.5f);
             SetAttributeBaseValue(AttributeConstants.PhysicalDefense,
                 GetAttributeValue(AttributeConstants.PhysicalDefense) + 0.5f);
+        }
+
+        /// <summary>
+        /// 数据幽灵分身负载（Id=341，周期被动 129 的载体，S5）：本体回合末分身扣 1 理智。
+        /// 无分身零开销返回；本体死亡时由 DeathCommand 清理分身（此处 IsDead 防御双清）。
+        /// 归 0 → 分身死亡判定链（本体 vs 数组序第一存活他人，败 → 本体 DeathCommand，EndTurn 统一执行）。
+        /// </summary>
+        private void ApplyGhostCloneDrain(WorldState state)
+        {
+            if (state == null) return;
+            Character owner = state.GetCharacter(OwnerId);
+            if (owner == null || owner.IsDead) return;
+            GhostAbyss.DrainClone(state, owner);
         }
 
         // ---------------------------------------------------------------------

@@ -92,6 +92,13 @@ namespace Gameplay.Combat
                 return;
             }
 
+            // 数据幽灵本体死亡：分身随本体消亡（S6：分身无独立棋盘实体，无清理残留）
+            if (target.Definition?.Id == SkillSystem.DataGhostCharacterId)
+            {
+                state.GhostCloneActive = false;
+                state.GhostCloneSanity = 0f;
+            }
+
             // Internal death event -> adds Dead tag
             target.ASC.SendEvent(GameplayEventTypes.OnDeath, KillerPlayerId, target.Id, 0f);
             target.ASC.ProcessEvents();

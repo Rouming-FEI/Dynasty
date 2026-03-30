@@ -1,3 +1,4 @@
+using System;
 using Core;
 using Core.GAS;
 using Gameplay.Characters;
@@ -256,7 +257,9 @@ namespace Dynasty.Tests.Characters
 
             Assert.AreEqual(2, hits, "第 2 击杀后第 3 击不得结算");
             Assert.AreEqual(0f, victim.Sanity, 0.001f, "两击合计 1.0 伤害，理智归零");
-            Assert.AreEqual(1, g.ActionPoints, "三连整体只扣 1 AP");
+            // Task 5 起击杀会触发行向深渊（128）：本体扣 1 AP 后，判定胜 +1 / 败不动 → AP 只可能 1 或 2
+            Assert.IsTrue(g.ActionPoints == 1 || g.ActionPoints == 2,
+                $"三连行动整体只扣 1 AP（± 行向深渊判定胜 +1），实际 AP={g.ActionPoints}");
         }
 
         [Test]
@@ -337,6 +340,197 @@ namespace Dynasty.Tests.Characters
             Assert.AreEqual(1, g.Inventory.Consumables.Count, "血包入背包");
             Assert.AreEqual(2, g.Inventory.Consumables[0].Id, "背包中为血包 Id=2");
             Assert.AreEqual(1, g.ActionPoints, "成功拾取扣 1 AP");
+        }
+
+        // ---------------- Task 5 Part B：分身（Harmonics）+ 同步双发 + 行向深渊 + 生命周期 ----------------
+
+        /// <summary>带周期被动注册的数据幽灵（供回合末/分身负载测试）。</summary>
+        private static WorldState BuildWithGhostPassive(int seed)
+        {
+            var state = BuildWithGhost(seed);
+            Character g = Ghost(state);
+            for (int i = 0; i < g.Definition.Skills.Length; i++)
+                g.ASC.RegisterPassive(g.Definition.Skills[i]);
+            g.ASC.EnsureCooldownSlots(g.Definition.Skills.Length);
+            return state;
+        }
+
+        private static void CastHarmonics(WorldState s)
+        {
+            Character g = Ghost(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+            SkillSystem.Activate(g.Definition.Skills[1], g, g, s, 1); // 126 Harmonics
+        }
+
+        [Test]
+        public void Harmonics_制造分身扣1AP_已有分身拒绝不扣费()
+        {
+            var s = BuildWithGhost();
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            Assert.IsTrue(s.GhostCloneActive, "分身激活");
+            Assert.AreEqual(3f, s.GhostCloneSanity, 0.001f, "分身理智初始 3");
+            Assert.AreEqual(1, g.ActionPoints, "扣 1 AP");
+
+            // 已有分身：拒绝且不扣 AP（S4）
+            SkillSystem.Activate(g.Definition.Skills[1], g, g, s, 1);
+            Assert.AreEqual(1, g.ActionPoints, "重复施放不扣 AP");
+            Assert.AreEqual(3f, s.GhostCloneSanity, 0.001f, "不刷新分身");
+        }
+
+        [Test]
+        public void 同步双发_V1普攻后分身复制一次同伤害()
+        {
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            Character victim = Other(s);
+            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+
+            new DamageCommand(0, GhostPlayer, 1, 1f).Execute(s); // V1 普攻 1
+
+            Assert.AreEqual(1f, victim.Sanity, 0.001f, "本体 1 + 分身复制 1 = 2 总伤");
+            Assert.AreEqual(0, g.ActionPoints, "复制 0 AP：施放后剩 1，普攻扣 1 → 0");
+        }
+
+        [Test]
+        public void 同步双发_V3三连整体视为一次行动_分身复制完整三连()
+        {
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            Character victim = Other(s);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V1Form);
+            g.ASC.Tags.AddTag(GameplayTagConstants.V3Form);
+            victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+
+            new DamageCommand(0, GhostPlayer, 1, 1f).Execute(s); // V3 三连 + 分身复制三连
+
+            Assert.AreEqual(0f, victim.Sanity, 0.001f, "本体 1.5 + 分身 1.5 = 3 总伤");
+            Assert.AreEqual(1, g.ActionPoints, "复制 0 AP：2 - 1 = 1");
+        }
+
+        [Test]
+        public void V4花回复_不参与分身复制()
+        {
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V1Form);
+            g.ASC.Tags.AddTag(GameplayTagConstants.V4Form);
+
+            new DamageCommand(0, GhostPlayer, GhostPlayer, 1f).Execute(s); // 自愈
+
+            Assert.AreEqual(2.5f, g.Sanity, 0.001f, "本体自愈 0.5");
+            Assert.AreEqual(3f, s.GhostCloneSanity, 0.001f, "花回复不复制（分身理智不动）");
+        }
+
+        [Test]
+        public void 分身每回合末扣1理智_扣至0触发死亡判定()
+        {
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+
+            g.ASC.TickEffects(s); // 回合末 1：3 → 2
+            Assert.AreEqual(2f, s.GhostCloneSanity, 0.001f);
+            Assert.IsTrue(s.GhostCloneActive);
+
+            g.ASC.TickEffects(s); // 回合末 2：2 → 1
+            Assert.AreEqual(1f, s.GhostCloneSanity, 0.001f);
+
+            g.ASC.TickEffects(s); // 回合末 3：1 → 0 → 分身死亡判定（胜/败两态，确定性随机）
+            Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
+            s.Commands.ExecuteAll(s); // 模拟 EndTurn 收尾执行入队命令
+
+            bool bodyDead = g.IsDead;
+            bool bodySurvived = !g.IsDead && g.Sanity > 0f;
+            Assert.IsTrue(bodyDead || bodySurvived, "分身死亡判定后本体必为两态之一");
+            if (bodySurvived)
+                Assert.AreEqual(3f, g.Sanity, 0.001f, "判定胜：本体无事（满血 3）");
+        }
+
+        [Test]
+        public void 无分身时_回合末周期负载零开销()
+        {
+            var s = BuildWithGhostPassive(42);
+            Character g = Ghost(s);
+            g.ASC.TickEffects(s);
+            Assert.IsFalse(s.GhostCloneActive);
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "本体不受分身负载影响");
+        }
+
+        /// <summary>扫描 seed 使行向深渊判定为期望分支（本体胜/败）。victim 0.5 理智被 V1 一击击杀。</summary>
+        private static WorldState AbyssScene(bool wantWin, bool withClone, out Character g, out Character victim)
+        {
+            for (int seed = 42; seed < 400; seed++)
+            {
+                var s = BuildWithGhostPassive(seed);
+                g = Ghost(s);
+                victim = Other(s);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                if (withClone)
+                {
+                    s.GhostCloneActive = true;
+                    s.GhostCloneSanity = 1f; // 败连坐 -1 → 0 → 分身死亡判定链
+                }
+                DamagePipeline.ApplyDamage(s, g.Id, victim.Id, 1f, DamageType.Physical); // 击杀 → 触发 128
+                s.Commands.ExecuteAll(s); // 执行可能入队的 DeathCommand（分身死亡链）
+                // 分支判定：胜 = 本体不死且理智仍 3；败 = 本体死亡或理智 2（本体 -1）
+                bool win = !g.IsDead && Math.Abs(g.Sanity - 3f) < 0.001f;
+                bool lose = g.IsDead || (Math.Abs(g.Sanity - 2f) < 0.001f);
+                if (wantWin && win) return s;
+                if (!wantWin && lose) return s;
+            }
+            g = null;
+            victim = null;
+            Assert.Fail("400 个 seed 内未命中期望分支");
+            return null;
+        }
+
+        [Test]
+        public void 行向深渊_判定胜_本体AP加1()
+        {
+            var s = AbyssScene(true, false, out Character g, out Character victim);
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "胜：本体无损");
+            Assert.AreEqual(3, g.ActionPoints, "杀敌 + 行向深渊胜：AP 2 → 3");
+        }
+
+        [Test]
+        public void 行向深渊_判定败_本体扣1理智()
+        {
+            var s = AbyssScene(false, false, out Character g, out Character victim);
+            Assert.IsTrue(g.IsDead || Math.Abs(g.Sanity - 2f) < 0.001f, "败：本体理智 3 → 2");
+        }
+
+        [Test]
+        public void 行向深渊_败连坐_分身扣至0进入分身死亡判定()
+        {
+            var s = AbyssScene(false, true, out Character g, out Character victim);
+            // 败：本体 -1；分身 1 → 0 → 分身死亡判定（胜：无事 / 败：本体死亡）——两态合法即过
+            Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
+            Assert.IsTrue(g.IsDead || Math.Abs(g.Sanity - 2f) < 0.001f,
+                $"本体终态合法：死亡或 2 理智（实际 sanity={g.Sanity}, dead={g.IsDead}）");
+        }
+
+        [Test]
+        public void 本体死亡_分身随本体消亡()
+        {
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            Character src = Other(s);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f);
+
+            DamagePipeline.ApplyDamage(s, src.Id, g.Id, 3f, DamageType.Physical); // 致死
+            s.Commands.ExecuteAll(s);
+
+            Assert.IsTrue(g.IsDead, "本体死亡");
+            Assert.IsFalse(s.GhostCloneActive, "分身清理");
+            Assert.AreEqual(0f, s.GhostCloneSanity, 0.001f);
         }
     }
 }

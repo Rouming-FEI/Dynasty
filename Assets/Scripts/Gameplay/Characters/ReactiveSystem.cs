@@ -123,6 +123,9 @@ namespace Gameplay.Characters
                 case 92:  // 阵法大师阵法回路（Task 3 实现）
                     FormationCircuit.OnKill(state, killer);
                     break;
+                case SkillSystem.AbyssSkillId: // 128 数据幽灵行向深渊（Task 5 实现）
+                    GhostAbyss.OnKill(state, killer);
+                    break;
             }
         }
     }
@@ -197,6 +200,72 @@ namespace Gameplay.Characters
                 ghost.ASC.Tags.AddTag(GameplayTagConstants.V2Unlocked);
                 ghost.ASC.Tags.AddTag(GameplayTagConstants.V3Unlocked);
             }
+        }
+    }
+
+    /// <summary>
+    /// 数据幽灵行向深渊（技能 Id=128）：击杀（本体或分身任意来源——复制伤害归本体，来源即本体）后
+    /// 与数组序第一存活他人判定（S8）。胜 → 本体 AP+1；败 → 本体扣 1、分身扣 1（至 0 触发
+    /// 分身死亡判定：本体 vs 数组序第一存活他人，败 → 本体直接死亡 DeathCommand）。
+    /// 扣理智致死一律走死亡结算入队（先例：混沌反噬 T2 修复），不做直扣后存活。
+    /// </summary>
+    public static class GhostAbyss
+    {
+        /// <summary>行向深渊 OnKill 入口（本体击杀目标后；对手 = 数组序第一存活他人，无他人视为胜）。</summary>
+        public static void OnKill(WorldState state, Character killer)
+        {
+            if (killer == null || killer.Definition == null
+                || killer.Definition.Id != SkillSystem.DataGhostCharacterId) return;
+
+            Character rival = FindFirstOtherAlive(state, killer);
+            bool win = rival == null || JudgmentDuel.Resolve(state, killer, rival);
+            if (win)
+            {
+                killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, 1f);
+                return;
+            }
+
+            // 败：本体 -1 理智；致死（≤0）入队 DeathCommand（对照 DamagePipeline 死亡出口，避免直扣存活）
+            killer.ASC.ModifyAttributeCurrentValue(AttributeConstants.Sanity, -1f);
+            if (killer.Sanity <= 0f)
+            {
+                state.Commands.Enqueue(new Gameplay.Combat.DeathCommand(state.CurrentTick, killer.PlayerId, -1));
+                return; // 本体死亡 → 分身随本体消亡（DeathCommand 清理），不再连坐扣减
+            }
+
+            DrainClone(state, killer);
+        }
+
+        /// <summary>分身扣 1 理智；归 0 → 分身死亡（S5），进入分身死亡判定链。</summary>
+        public static void DrainClone(WorldState state, Character body)
+        {
+            if (state == null || body == null || !state.GhostCloneActive) return;
+            state.GhostCloneSanity -= 1f;
+            if (state.GhostCloneSanity > 0f) return;
+            state.GhostCloneSanity = 0f;
+            state.GhostCloneActive = false;
+            BodyDuelOnCloneDeath(state, body);
+        }
+
+        /// <summary>分身死亡（理智归 0）判定：本体 vs 数组序第一存活他人（S8）；败 → 本体直接死亡。</summary>
+        public static void BodyDuelOnCloneDeath(WorldState state, Character body)
+        {
+            if (body == null || body.IsDead) return;
+            Character rival = FindFirstOtherAlive(state, body);
+            bool win = rival == null || JudgmentDuel.Resolve(state, body, rival);
+            if (win) return;
+            state.Commands.Enqueue(new Gameplay.Combat.DeathCommand(state.CurrentTick, body.PlayerId, -1));
+        }
+
+        /// <summary>数组序第一存活他人（不含 self；无 → null，调用方视为判定胜）。</summary>
+        public static Character FindFirstOtherAlive(WorldState state, Character self)
+        {
+            for (int i = 0; i < state.Characters.Length; i++)
+            {
+                Character ch = state.Characters[i];
+                if (ch != null && !ch.IsDead && ch.Id != self.Id) return ch;
+            }
+            return null;
         }
     }
 }

@@ -8,7 +8,7 @@ namespace Gameplay.Characters
     /// <summary>
     /// 数据幽灵形态系统：当前形态标签（V1Form..V5Form 独占）+ 永久解锁标签（V2Unlocked..V5Unlocked）。
     /// 普通攻击统一由 DamageCommand.Execute 按角色 16 分派到本类（形态自带武器语义）。
-    /// 本文件亦承载 Task 5 的镜像双发（MirrorCopy 由 Task 5 在该 Execute 尾部补调用点）。
+    /// 本文件亦承载同步双发：Execute 尾部按分身活跃态复制一次完整形态结算（S7/S12）。
     /// </summary>
     public static class DataGhostFormAttack
     {
@@ -92,7 +92,11 @@ namespace Gameplay.Characters
 
             ApplyHits(state, source, target, form);
 
-            // Task 5 在此插入 MirrorCopy 调用点（同步双发）
+            // 同步双发（S7/S12）：分身活跃且本体/目标仍存活 → 复制一次完整行动（0 AP、同形态同结算、
+            // 不递归；V4 花回复已提前 return 不复制）。杀人数归本体（复制伤害 source=本体，
+            // TryOnKill 自然触发——本体首段已击杀目标则目标理智 ≤0 → 此段不执行，无双触发）。
+            if (state.GhostCloneActive && source.Sanity > 0f && target.Sanity > 0f)
+                ApplyHits(state, source, target, form);
         }
 
         /// <summary>按形态施放命中序列（V3 = 3 × 0.5，目标死亡或理智归零即停；其余单发）。</summary>

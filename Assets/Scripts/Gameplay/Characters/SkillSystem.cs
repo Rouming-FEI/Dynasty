@@ -153,6 +153,17 @@ namespace Gameplay.Characters
                 return;
             }
 
+            // 数据幽灵 Harmonics（126，1 AP）：制造分身（S4：已有分身拒绝不扣费；S5：分身理智 3）
+            if (skill.Id == SkillSystem.HarmonicsSkillId)
+            {
+                if (c.Definition?.Id != SkillSystem.DataGhostCharacterId) return;
+                if (state.GhostCloneActive) return; // 已有分身：拒绝且不扣 AP
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+                state.GhostCloneActive = true;
+                state.GhostCloneSanity = 3f;
+                return;
+            }
+
             // 支付消耗（非守护技能）：主成本 + 额外成本
             PayResource(c, skill.Cost);
             if (skill.ExtraCosts != null)
