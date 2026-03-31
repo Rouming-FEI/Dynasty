@@ -30,6 +30,28 @@ namespace Dynasty.Tests.Characters
         private static Character Ghost(WorldState s) => s.GetCharacterByPlayer(GhostPlayer);
         private static Character Other(WorldState s) => s.GetCharacterByPlayer(1);
 
+        /// <summary>
+        /// 2 人残局（I1）：p0 槽 = 普通人敌人（无 Reactive/无盾/无防，可一击必杀），
+        /// p1 槽 = 数据幽灵。击杀最后一人后全场无「存活他人」。
+        /// </summary>
+        private static WorldState Build2PWithGhost(int seed)
+        {
+            var state = ScenarioBuilder.Create(2, seed).WithAllAt(4).Build();
+            var enemy = state.Characters[0];
+            var normal = NormalPersonDef.Create();
+            normal.ApplyTo(enemy); // 覆盖为干净普通人（替换 Def/属性/技能登记）
+            enemy.ASC.Tags.RemoveTag(GameplayTagConstants.HasShield); // p0 守护者开局护盾须清，否则挡伤不触发击杀
+            var old = state.Characters[1];
+            var def = DataGhostDef.Create();
+            var c = new Character(old.Id, old.PlayerId, def.Name) { CurrentLocationId = 4 };
+            def.ApplyTo(c);
+            c.Inventory.EquippedWeapon = null;
+            c.Inventory.Consumables.Clear();
+            c.ASC.Tags.AddTag(GameplayTagConstants.V1Form);
+            state.Characters[1] = c;
+            return state;
+        }
+
         private static void UseFormSkill(WorldState s, int skillIndex)
         {
             Character g = Ghost(s);
@@ -257,9 +279,11 @@ namespace Dynasty.Tests.Characters
 
             Assert.AreEqual(2, hits, "第 2 击杀后第 3 击不得结算");
             Assert.AreEqual(0f, victim.Sanity, 0.001f, "两击合计 1.0 伤害，理智归零");
-            // Task 5 起击杀会触发行向深渊（128）：本体扣 1 AP 后，判定胜 +1 / 败不动 → AP 只可能 1 或 2
-            Assert.IsTrue(g.ActionPoints == 1 || g.ActionPoints == 2,
-                $"三连行动整体只扣 1 AP（± 行向深渊判定胜 +1），实际 AP={g.ActionPoints}");
+            // Task 5 起击杀必触发行向深渊（128）：败 → 本体 -1 理智、AP 不 +1 → (1,2)；
+            // 胜 → AP +1 → (2,3)。(1,3)（128 未触发）与 (3,·)（胜双触发）为非法关联。
+            // 实测 seed42 为胜分支：(AP=2, sanity=3)。
+            Assert.AreEqual(2, g.ActionPoints, "三连扣 1 AP + 行向深渊判定胜 +1：2 → 2");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "胜：本体理智不扣");
         }
 
         [Test]
@@ -407,7 +431,10 @@ namespace Dynasty.Tests.Characters
             new DamageCommand(0, GhostPlayer, 1, 1f).Execute(s); // V3 三连 + 分身复制三连
 
             Assert.AreEqual(0f, victim.Sanity, 0.001f, "本体 1.5 + 分身 1.5 = 3 总伤");
-            Assert.AreEqual(1, g.ActionPoints, "复制 0 AP：2 - 1 = 1");
+            // victim 被击杀触发行向深渊（128）：胜 → AP +1 → (AP=1, sanity=3)；败 → 本体 -1 → (0,2)。
+            // 仅 (1,2) 或 (0,3) 等错位关联可捕获「128 未触发但 AP 巧合」类回归。实测 seed42 为胜分支。
+            Assert.AreEqual(1, g.ActionPoints, "复制 0 AP：2 - 施放 1 - 三连 1 + 判定胜 +1 = 1");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "胜：本体理智不扣");
         }
 
         [Test]
@@ -426,29 +453,54 @@ namespace Dynasty.Tests.Characters
             Assert.AreEqual(3f, s.GhostCloneSanity, 0.001f, "花回复不复制（分身理智不动）");
         }
 
-        [Test]
-        public void 分身每回合末扣1理智_扣至0触发死亡判定()
+        /// <summary>
+        /// 扫描 seed 使「分身回合末扣理智归零 → 分身死亡判定」（DoT 路径）命中期望分支。
+        /// 分身制造（扣 1 AP）后连续 3 次回合末：3 → 2 → 1 → 0 → BodyDuelOnCloneDeath
+        /// （本体 vs 数组序第一存活他人：胜 → 本体无额外变动 / 败 → 本体死亡 DeathCommand）。
+        /// 判定两态互补测试各自命中即证明败/胜分支均真实可达（42..399 内两态均存在），
+        /// 任何一态整体丢失（如删除判定链）都会让对应扫描 Assert.Fail 兜底——两态或然断言无效。
+        /// </summary>
+        private static WorldState CloneDoomDuelScene(bool wantBodyDead, out Character g)
         {
-            var s = BuildWithGhostPassive(42);
-            CastHarmonics(s);
-            Character g = Ghost(s);
+            for (int seed = 42; seed < 400; seed++)
+            {
+                var s = BuildWithGhostPassive(seed);
+                g = Ghost(s);
+                CastHarmonics(s); // 制造分身（AP 2 → 1，分身理智 3）
+                g.ASC.TickEffects(s); // 回合末 1：分身 3 → 2
+                Assert.AreEqual(2f, s.GhostCloneSanity, 0.001f);
+                Assert.IsTrue(s.GhostCloneActive);
+                g.ASC.TickEffects(s); // 回合末 2：分身 2 → 1
+                Assert.AreEqual(1f, s.GhostCloneSanity, 0.001f);
+                g.ASC.TickEffects(s); // 回合末 3：分身 1 → 0 → 分身死亡判定
+                Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
+                s.Commands.ExecuteAll(s); // 模拟 EndTurn 收尾执行入队命令
 
-            g.ASC.TickEffects(s); // 回合末 1：3 → 2
-            Assert.AreEqual(2f, s.GhostCloneSanity, 0.001f);
-            Assert.IsTrue(s.GhostCloneActive);
+                if (wantBodyDead && g.IsDead) return s;
+                if (!wantBodyDead && !g.IsDead && Math.Abs(g.Sanity - 3f) < 0.001f) return s;
+            }
+            g = null;
+            Assert.Fail(wantBodyDead
+                ? "400 个 seed 内未命中分身死亡判定败分支（本体死亡）"
+                : "400 个 seed 内未命中分身死亡判定胜分支（本体存活 3 理智）");
+            return null;
+        }
 
-            g.ASC.TickEffects(s); // 回合末 2：2 → 1
-            Assert.AreEqual(1f, s.GhostCloneSanity, 0.001f);
-
-            g.ASC.TickEffects(s); // 回合末 3：1 → 0 → 分身死亡判定（胜/败两态，确定性随机）
+        [Test]
+        public void 分身每回合末扣1理智_归零判定胜_本体无损满理智()
+        {
+            var s = CloneDoomDuelScene(false, out Character g);
             Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
-            s.Commands.ExecuteAll(s); // 模拟 EndTurn 收尾执行入队命令
+            Assert.IsFalse(g.IsDead, "判定胜：本体存活");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "判定胜：本体无事（满血 3）");
+        }
 
-            bool bodyDead = g.IsDead;
-            bool bodySurvived = !g.IsDead && g.Sanity > 0f;
-            Assert.IsTrue(bodyDead || bodySurvived, "分身死亡判定后本体必为两态之一");
-            if (bodySurvived)
-                Assert.AreEqual(3f, g.Sanity, 0.001f, "判定胜：本体无事（满血 3）");
+        [Test]
+        public void 分身每回合末扣1理智_归零判定败_本体死亡()
+        {
+            var s = CloneDoomDuelScene(true, out Character g);
+            Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
+            Assert.IsTrue(g.IsDead, "判定败：本体死亡（DeathCommand 已结算）");
         }
 
         [Test]
@@ -459,6 +511,44 @@ namespace Dynasty.Tests.Characters
             g.ASC.TickEffects(s);
             Assert.IsFalse(s.GhostCloneActive);
             Assert.AreEqual(3f, g.Sanity, 0.001f, "本体不受分身负载影响");
+        }
+
+        [Test]
+        public void 本体回合末被周期负载打死_分身不裁决随本体清理()
+        {
+            // M3：TickEffects 的周期负载段先于周期被动段（341 drain）。本体被负载打死时
+            // DeathCommand 已入队而 Dead 标记滞后——若 341 仍对濒死本体 drain，分身 1 → 0
+            // 会触发分身死亡裁决（消耗随机 + 可能入队冗余死亡命令）；正确语义 = 分身随本体
+            // 清理（DeathCommand），不做裁决。
+            var s = BuildWithGhostPassive(42);
+            CastHarmonics(s);
+            Character g = Ghost(s);
+            s.GhostCloneSanity = 1f; // 分身濒临归零：误 drain 一次即触发裁决链
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+            var dot = new GameplayEffect
+            {
+                Id = 9999, // 非特判 Id：走通用周期负载路径（Sanity 负增量 → DamagePipeline Effect 伤害）
+                DurationType = GameplayEffectDurationType.HasDuration,
+                DurationTurns = 1,
+                Period = new GameplayEffectPeriod(1),
+                Modifiers = new[] { new AttributeModifier(AttributeConstants.Sanity, AttributeModifierOp.Add, -1f) }
+            };
+            GameplayEffectSpec spec = g.ASC.RentSpec();
+            spec.Definition = dot;
+            spec.SourceId = -1; // 无来源：死亡不触发任何 OnKill 响应（隔绝干扰）
+            spec.TargetId = g.Id;
+            g.ASC.ApplyGameplayEffect(spec);
+
+            g.ASC.TickEffects(s); // 回合末：周期负载 0.5 → 0（死亡入队，Dead 滞后）→ 341 drain 段
+            Assert.AreEqual(0f, g.Sanity, 0.001f, "本体理智归零（DeathCommand 已入队）");
+            Assert.IsFalse(g.IsDead, "Dead 标记滞后：DeathCommand 尚未执行");
+            Assert.IsTrue(s.GhostCloneActive, "本体已死：分身不被误裁决/drain");
+            Assert.AreEqual(1f, s.GhostCloneSanity, 0.001f, "分身理智保留至 DeathCommand 清理");
+
+            s.Commands.ExecuteAll(s);
+            Assert.IsTrue(g.IsDead, "本体死亡结算完成");
+            Assert.IsFalse(s.GhostCloneActive, "分身随本体清理");
+            Assert.AreEqual(0f, s.GhostCloneSanity, 0.001f);
         }
 
         /// <summary>扫描 seed 使行向深渊判定为期望分支（本体胜/败）。victim 0.5 理智被 V1 一击击杀。</summary>
@@ -506,14 +596,102 @@ namespace Dynasty.Tests.Characters
             Assert.IsTrue(g.IsDead || Math.Abs(g.Sanity - 2f) < 0.001f, "败：本体理智 3 → 2");
         }
 
-        [Test]
-        public void 行向深渊_败连坐_分身扣至0进入分身死亡判定()
+        /// <summary>
+        /// 扫描 seed 使「行向深渊 128 败连坐 → 分身死亡判定」命中期望分支（I2 败链拆分）。
+        /// victim 0.5 理智被 V1 击杀 → 128 判定败（本体 3 → 2）→ 分身 1 → 0 → BodyDuelOnCloneDeath
+        /// （胜 → 本体存活 2 理智 / 败 → 本体死亡）。仅在 128 败连坐已发生（分身消亡）的 seed
+        /// 内分类；两分类互补命中即证明 42..399 内两态均真实可达。
+        /// </summary>
+        private static WorldState CloneDoomChainScene(bool wantBodyDead, out Character g)
         {
-            var s = AbyssScene(false, true, out Character g, out Character victim);
-            // 败：本体 -1；分身 1 → 0 → 分身死亡判定（胜：无事 / 败：本体死亡）——两态合法即过
+            for (int seed = 42; seed < 400; seed++)
+            {
+                var s = BuildWithGhostPassive(seed);
+                g = Ghost(s);
+                Character victim = Other(s);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                s.GhostCloneActive = true;
+                s.GhostCloneSanity = 1f; // 败连坐 -1 → 0 → 分身死亡判定链
+                DamagePipeline.ApplyDamage(s, g.Id, victim.Id, 1f, DamageType.Physical); // 击杀 → 触发 128
+                s.Commands.ExecuteAll(s); // 执行可能入队的 DeathCommand（分身死亡链）
+                if (!s.GhostCloneActive) // 分身已消亡：128 败连坐必然已发生（胜分支分身仍活跃，跳过）
+                {
+                    if (wantBodyDead && g.IsDead) return s;
+                    if (!wantBodyDead && !g.IsDead && Math.Abs(g.Sanity - 2f) < 0.001f) return s;
+                }
+            }
+            g = null;
+            Assert.Fail(wantBodyDead
+                ? "400 个 seed 内未命中败连坐分身死亡判定败分支（本体死亡）"
+                : "400 个 seed 内未命中败连坐分身死亡判定胜分支（本体存活 2 理智）");
+            return null;
+        }
+
+        [Test]
+        public void 行向深渊_败连坐_分身死亡判定胜_本体存活2理智()
+        {
+            var s = CloneDoomChainScene(false, out Character g);
             Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
-            Assert.IsTrue(g.IsDead || Math.Abs(g.Sanity - 2f) < 0.001f,
-                $"本体终态合法：死亡或 2 理智（实际 sanity={g.Sanity}, dead={g.IsDead}）");
+            Assert.IsFalse(g.IsDead, "分身死亡判定胜：本体存活");
+            Assert.AreEqual(2f, g.Sanity, 0.001f, "128 败连坐后本体理智 3 → 2 保持不变");
+        }
+
+        [Test]
+        public void 行向深渊_败连坐_分身死亡判定败_本体死亡()
+        {
+            var s = CloneDoomChainScene(true, out Character g);
+            Assert.IsFalse(s.GhostCloneActive, "分身已消亡");
+            Assert.IsTrue(g.IsDead, "分身死亡判定败：本体直接死亡（DeathCommand 已结算）");
+        }
+
+        [Test]
+        public void 行向深渊_2人残局击杀最后一人_无他人视为胜_本体无损()
+        {
+            // I1：TryOnKill 在 DamagePipeline 中先于 DeathCommand/Dead 标记派发 → 被杀目标此刻
+            // 仍 !IsDead。修复前（FindFirstOtherAlive 仅查 IsDead）全场唯一他人被杀时尸体被选为
+            // rival：seed 43 判败 → 本体理智 3 → 2（42% seed 走败）。修复后按 S8「无他人视为胜」，
+            // 判定不消耗随机、行为确定 → 固定 seed 直断胜分支。
+            var s = Build2PWithGhost(43);
+            Character g = s.GetCharacterByPlayer(1);
+            Character enemy = s.GetCharacterByPlayer(0);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2f);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            enemy.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+
+            DamagePipeline.ApplyDamage(s, g.Id, enemy.Id, 1f, DamageType.Physical);
+            s.Commands.ExecuteAll(s); // 最后一人死亡结算（补 Dead 标记）
+
+            Assert.IsTrue(enemy.IsDead, "最后一人死亡结算完成");
+            Assert.IsFalse(g.IsDead, "本体不得因尸体判定自损");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "无他人 → 判定胜：本体理智不扣");
+            Assert.AreEqual(3, g.ActionPoints, "判定胜：AP +1（2 → 3）");
+        }
+
+        [Test]
+        public void 行向深渊_2人残局带分身击杀最后一人_不连坐不同归于尽()
+        {
+            // I1 极端变体：修复前 seed 43 尸体 rival 双判败 → 分身 1→0 → 本体 DeathCommand 同归于尽
+            // （红验证实测 42..399 内 55 个 seed 如此）。修复后无他人 → 胜：分身不受牵连。
+            var s = Build2PWithGhost(43);
+            Character g = s.GetCharacterByPlayer(1);
+            Character enemy = s.GetCharacterByPlayer(0);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2f);
+            g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            enemy.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+            s.GhostCloneActive = true;
+            s.GhostCloneSanity = 1f;
+
+            DamagePipeline.ApplyDamage(s, g.Id, enemy.Id, 1f, DamageType.Physical);
+            s.Commands.ExecuteAll(s);
+
+            Assert.IsTrue(enemy.IsDead, "最后一人死亡结算完成");
+            Assert.IsFalse(g.IsDead, "本体不得因尸体判定死亡");
+            Assert.AreEqual(3f, g.Sanity, 0.001f, "胜：本体理智不扣");
+            Assert.AreEqual(3, g.ActionPoints, "判定胜：AP +1（2 → 3）");
+            Assert.IsTrue(s.GhostCloneActive, "分身不因尸体判定连坐消亡");
+            Assert.AreEqual(1f, s.GhostCloneSanity, 0.001f, "分身理智不动");
         }
 
         [Test]

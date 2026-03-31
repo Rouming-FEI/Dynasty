@@ -557,7 +557,9 @@ namespace Core.GAS
         {
             if (state == null) return;
             Character owner = state.GetCharacter(OwnerId);
-            if (owner == null || owner.IsDead) return;
+            // Sanity <= 0 守卫：本体 TickEffects 的周期负载（本方法之前的段）可能已把本体打到 0，
+            // DeathCommand 已入队而 Dead 标记滞后 → 分身随本体清理语义，不做裁决（判定入队冗余命令）。
+            if (owner == null || owner.IsDead || owner.Sanity <= 0f) return;
             GhostAbyss.DrainClone(state, owner);
         }
 

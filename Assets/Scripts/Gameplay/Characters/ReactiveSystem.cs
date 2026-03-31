@@ -205,7 +205,8 @@ namespace Gameplay.Characters
 
     /// <summary>
     /// 数据幽灵行向深渊（技能 Id=128）：击杀（本体或分身任意来源——复制伤害归本体，来源即本体）后
-    /// 与数组序第一存活他人判定（S8）。胜 → 本体 AP+1；败 → 本体扣 1、分身扣 1（至 0 触发
+    /// 与数组序第一存活他人判定（S8；存活他人按 Sanity > 0 裁决，刚被杀者的尸体不参与判定——
+    /// 2 人残局终杀视为「无他人」直接胜）。胜 → 本体 AP+1；败 → 本体扣 1、分身扣 1（至 0 触发
     /// 分身死亡判定：本体 vs 数组序第一存活他人，败 → 本体直接死亡 DeathCommand）。
     /// 扣理智致死一律走死亡结算入队（先例：混沌反噬 T2 修复），不做直扣后存活。
     /// </summary>
@@ -257,13 +258,19 @@ namespace Gameplay.Characters
             state.Commands.Enqueue(new Gameplay.Combat.DeathCommand(state.CurrentTick, body.PlayerId, -1));
         }
 
-        /// <summary>数组序第一存活他人（不含 self；无 → null，调用方视为判定胜）。</summary>
+        /// <summary>
+        /// 数组序第一存活他人（不含 self；无 → null，调用方按「无对手 → 判定胜」处理）。
+        /// 语义裁决：Sanity ≤ 0 视为死（与 DamagePipeline 死亡判据同源）——TryOnKill/分身死亡判定
+        /// 在 DeathCommand/Dead 标记落定前派发，刚被杀者此刻仍 !IsDead，必须以理智归零排除尸体
+        /// （2 人残局终杀否则会把尸体判为 rival，违背 S8「无他人视为胜」）。
+        /// 阵法回路/混沌/地狱呓语的内联副本为各自场景自洽语义，不随本 helper 改动。
+        /// </summary>
         public static Character FindFirstOtherAlive(WorldState state, Character self)
         {
             for (int i = 0; i < state.Characters.Length; i++)
             {
                 Character ch = state.Characters[i];
-                if (ch != null && !ch.IsDead && ch.Id != self.Id) return ch;
+                if (ch != null && !ch.IsDead && ch.Sanity > 0f && ch.Id != self.Id) return ch;
             }
             return null;
         }
