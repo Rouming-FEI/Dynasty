@@ -43,6 +43,23 @@ namespace AI
             ICommand emergency = TryUseEmergencyDevice(state, c, playerId);
             if (emergency != null) return emergency;
 
+            // P7-A 角色特例：混沌/数据幽灵全接管（绝不落回通用技能流——否则混沌 120 会被
+            // TryUseSkill 当普通技能空放烧 AP）；双子只拦截附灵/转换/泣血攻击（其余落通用流）
+            int defId = c.Definition?.Id ?? 0;
+            if (defId == SkillSystem.ChaosMageCharacterId)
+                return TryChaosAction(state, c, playerId)
+                    ?? TryMove(state, c, playerId)
+                    ?? new WasteAPCommand(state.CurrentTick, playerId);
+            if (defId == SkillSystem.DataGhostCharacterId)
+                return TryGhostAction(state, c, playerId)
+                    ?? TryMove(state, c, playerId)
+                    ?? new WasteAPCommand(state.CurrentTick, playerId);
+            if (defId == SkillSystem.TwinCharacterId)
+            {
+                ICommand twinCmd = TryTwinAction(state, c, playerId);
+                if (twinCmd != null) return twinCmd;
+            }
+
             int roll = _random.Next(100);
 
             // Find enemy at same location (for combat) and any alive enemy (for movement)
@@ -229,6 +246,103 @@ namespace AI
                 ItemDef item = c.Inventory.Consumables[i];
                 if (item != null && item.Id == 8)
                     return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
+            }
+            return null;
+        }
+
+        /// <summary>按技能 Id 找技能槽索引（无 → -1）。</summary>
+        private static int FindSkillIndex(Character c, int skillId)
+        {
+            if (c?.Definition?.Skills == null) return -1;
+            for (int i = 0; i < c.Definition.Skills.Length; i++)
+                if (c.Definition.Skills[i].Id == skillId) return i;
+            return -1;
+        }
+
+        /// <summary>混沌法师决策：低理智模拟血包；有敌人时 60% 混乱模拟（刀/枪掷选）或普攻；否则交给移动。</summary>
+        private ICommand TryChaosAction(WorldState state, Character c, int playerId)
+        {
+            if (c.Sanity <= 1.5f && c.Sanity < c.MaxSanity)
+                return new ChaosSimulateCommand(state.CurrentTick, playerId, 2, playerId); // 模拟血包
+
+            int enemy = FindNearestEnemy(state, c, playerId);
+            if (enemy < 0) return null;
+
+            if (_random.Next(100) < 60)
+            {
+                int itemId = _random.Next(2) == 0 ? 1 : 3; // 刀（近战 1.5）/ 枪（远程 2，免弹药地理）
+                return new ChaosSimulateCommand(state.CurrentTick, playerId, itemId, enemy);
+            }
+            if (c.Inventory.EquippedWeapon == null) return null; // 空手：无普攻
+            return TryAttack(state, c, playerId, enemy);
+        }
+
+        /// <summary>数据幽灵决策：无分身且充裕时概率造分身；低理智切 V4 花；远程优势切 V5；
+        /// V1 常态概率升 V2；按当前形态攻击（V4 自愈）。</summary>
+        private ICommand TryGhostAction(WorldState state, Character c, int playerId)
+        {
+            int harmIdx = FindSkillIndex(c, SkillSystem.HarmonicsSkillId);
+            int switchIdx = FindSkillIndex(c, SkillSystem.HandsonicSkillId);
+
+            if (!state.GhostCloneActive && c.Sanity >= 2.5f && c.ActionPoints >= 1
+                && harmIdx >= 0 && _random.Next(100) < 30)
+                return new UseSkillCommand(state.CurrentTick, playerId, harmIdx, playerId);
+
+            int enemy = FindNearestEnemy(state, c, playerId);
+            bool sameLoc = enemy >= 0
+                && state.GetCharacterByPlayer(enemy)?.CurrentLocationId == c.CurrentLocationId;
+            int form = DataGhostFormAttack.CurrentForm(c);
+
+            if (switchIdx >= 0 && !c.ASC.Tags.HasTag(GameplayTagConstants.FormSwitched))
+            {
+                if (c.Sanity < 2f && c.Sanity < c.MaxSanity && DataGhostFormAttack.IsUnlocked(c, 4) && form != 4)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V4 花
+                if (enemy >= 0 && !sameLoc && DataGhostFormAttack.IsUnlocked(c, 5) && form != 5)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V5 远程
+                if (sameLoc && form == 1 && DataGhostFormAttack.IsUnlocked(c, 2) && _random.Next(100) < 35)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V2 长刃
+            }
+
+            if (form == 4)
+                return c.Sanity < c.MaxSanity
+                    ? (ICommand)new DamageCommand(state.CurrentTick, playerId, playerId, 1f) // V4 自愈
+                    : null;
+            if (sameLoc)
+                return new DamageCommand(state.CurrentTick, playerId, enemy, 1f); // V1/V2/V3 近战
+            if (enemy >= 0 && form == 5)
+                return new DamageCommand(state.CurrentTick, playerId, enemy, 1f); // V5 远程
+            return null;
+        }
+
+        /// <summary>双子决策：无附灵且持武器时附灵（低理智泣血 / 否则随机）；灵巧态周期换枪；
+        /// 泣血态低理智打近战吸血。其余交给通用流。</summary>
+        private ICommand TryTwinAction(WorldState state, Character c, int playerId)
+        {
+            if (c.Inventory.EquippedWeapon == null) return null;
+            if (c.ActionPoints < 1) return null;
+
+            bool vamp = c.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric);
+            bool agile = c.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile);
+
+            if (!vamp && !agile)
+            {
+                bool wantVamp = c.Sanity < 2.5f || _random.Next(2) == 0;
+                int idx = wantVamp
+                    ? FindSkillIndex(c, SkillSystem.TwinVampiricSkillId)
+                    : FindSkillIndex(c, SkillSystem.TwinAgileSkillId);
+                if (idx >= 0)
+                    return new UseSkillCommand(state.CurrentTick, playerId, idx, playerId);
+            }
+
+            if (agile && c.Inventory.EquippedWeapon.Id != 3 && _random.Next(100) < 18)
+                return new TwinConvertCommand(state.CurrentTick, playerId, 3); // 周期换枪（简化）
+
+            if (vamp && c.Sanity < c.MaxSanity - 0.9f)
+            {
+                int enemy = FindNearestEnemy(state, c, playerId);
+                if (enemy >= 0
+                    && state.GetCharacterByPlayer(enemy)?.CurrentLocationId == c.CurrentLocationId)
+                    return TryAttack(state, c, playerId, enemy); // 泣血攻击吸血
             }
             return null;
         }
