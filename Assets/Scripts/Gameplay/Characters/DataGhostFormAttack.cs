@@ -36,18 +36,26 @@ namespace Gameplay.Characters
             }
         }
 
+        /// <summary>只读预测：从 fromForm 单步前进后的落点形态（V1→V2→V3→V4→V5→V1 循环，
+        /// 取按序第一个已解锁形态；无其他解锁 → 返回 fromForm）。与 SwitchForm 同源扫描逻辑，
+        /// 不改任何状态——供 AI 决策按落点匹配目标形态（Task 6 评审 I1）。</summary>
+        public static int NextUnlockedForm(Character c, int fromForm)
+        {
+            for (int step = 1; step <= 5; step++)
+            {
+                int cand = fromForm + step;
+                if (cand > 5) cand -= 5;
+                if (IsUnlocked(c, cand)) return cand;
+            }
+            return fromForm;
+        }
+
         /// <summary>切换到「当前形态之后按序第一个已解锁形态」（V1→V2→V3→V4→V5→V1 循环）。
         /// 仅 V1 且无其他解锁 → 无效返回（不置 FormSwitched）。</summary>
         public static void SwitchForm(Character c)
         {
             int current = CurrentForm(c);
-            int next = current;
-            for (int step = 1; step <= 5; step++)
-            {
-                int cand = current + step;
-                if (cand > 5) cand -= 5;
-                if (IsUnlocked(c, cand)) { next = cand; break; }
-            }
+            int next = NextUnlockedForm(c, current);
             if (next == current) return;
 
             c.ASC.Tags.RemoveTag(GameplayTagConstants.V1Form);

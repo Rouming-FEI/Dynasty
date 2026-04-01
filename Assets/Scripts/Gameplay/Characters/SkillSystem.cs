@@ -37,6 +37,11 @@ namespace Gameplay.Characters
             if (skill.Activation != SkillActivationType.Active) return false; // 被动/响应型技能不可主动施放
             if (skill.RequiredTags != null && !c.ASC.Tags.HasAll(skill.RequiredTags)) return false;
             if (skill.BlockingTags != null && c.ASC.Tags.HasAny(skill.BlockingTags)) return false;
+            // 双子附灵（123/124）前置特例：无武器拒绝且不扣 AP（spec 4.2 指定落点；
+            // 附灵以手中武器为载体）。Activate 支付分支内保留同款检查作双保险。
+            if ((skill.Id == SkillSystem.TwinVampiricSkillId || skill.Id == SkillSystem.TwinAgileSkillId)
+                && c.Inventory.EquippedWeapon == null)
+                return false;
             if (skill.Cost.Type == SkillCostType.AP)
             {
                 // 守护满充能时免费给盾，不检查 AP（阈值取 skill.ChargeThreshold，0 值兜底 3）
@@ -130,7 +135,8 @@ namespace Gameplay.Characters
                 return;
             }
 
-            // 双子附灵（123/124）：必须持有武器；无武器拒绝且不扣 AP（支付前特例）。
+            // 双子附灵（123/124）：必须持有武器；无武器拒绝且不扣 AP（CanActivate 已前置拦截，
+            // 此处双保险，防御直接命令调用路径）。
             // 两槽共用单一附灵状态：激活即切到该技能对应形态（S3：作用于角色，换武器保留）。
             if (skill.Id == SkillSystem.TwinVampiricSkillId || skill.Id == SkillSystem.TwinAgileSkillId)
             {
