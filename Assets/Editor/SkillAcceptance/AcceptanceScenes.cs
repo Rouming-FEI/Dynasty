@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Gameplay.Characters;
+using Gameplay.Items;
 
 namespace SkillAcceptance
 {
@@ -29,6 +30,20 @@ namespace SkillAcceptance
                     c.ASC.RegisterPassive(c.Definition.Skills[s]);
                 c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
                 state.Characters[3] = c;
+
+                // 初始道具与真开局对齐：GrantInitialItems 等价子集（武器进装备位 / 消耗品入背包）
+                if (extra.InitialItem > 0)
+                {
+                    ItemDef init = ItemRegistry.Get(extra.InitialItem);
+                    if (init != null)
+                    {
+                        if (init.Type == ItemType.Weapon) c.Inventory.EquipWeapon(init);
+                        else c.Inventory.AddConsumable(init);
+                    }
+                }
+                // 数据幽灵初始形态 V1（真开局由 TurnManager.StartGame 补；验收自建需手动同步）
+                if (extra.Id == SkillSystem.DataGhostCharacterId)
+                    c.ASC.Tags.AddTag(GameplayTagConstants.V1Form);
             }
             return state;
         }
