@@ -31,7 +31,10 @@ namespace SkillAcceptance
                 c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
                 state.Characters[3] = c;
 
-                // 初始道具与真开局对齐：GrantInitialItems 等价子集（武器进装备位 / 消耗品入背包）
+                // 初始道具 = 仅补发角色 Def 自带 InitialItem（武器进装备位 / 消耗品入背包）。
+                // 与真开局（TurnManager.GrantInitialItems）的差异：不发「每人 1 血包」与
+                // 「出生地点初始道具」——本路径只覆盖 Def.InitialItem 等价子集；需要背包道具
+                // 的验收链路须在脚本 Override 显式投放/清零，禁止依赖开局背包。
                 if (extra.InitialItem > 0)
                 {
                     ItemDef init = ItemRegistry.Get(extra.InitialItem);

@@ -136,6 +136,7 @@ namespace SkillAcceptance
                     break;
                 case 125: // Handsonic 形态切换
                     results.AddRange(VerifyFormSwitch());
+                    results.AddRange(VerifyFormDamage());
                     break;
                 case 126: // Harmonics
                     results.AddRange(VerifyHarmonics());
@@ -1181,7 +1182,8 @@ namespace SkillAcceptance
             var sw = ChaosAct(true, 1, 1, 4f);
             var sl = ChaosAct(false, 1, 1, 4f);
             var sb = ChaosAct(true, 2, 3, 1f);
-            if (sw == null || sl == null || sb == null)
+            var sbl = ChaosAct(false, 2, 3, 2f); // 败侧：血包自用 → 反噬自扣 1 且无回血
+            if (sw == null || sl == null || sb == null || sbl == null)
                 return Single("混乱-分支扫描", false, "400 seed 内未命中期望分支（实现回归）");
 
             Character cw = sw.GetCharacterByPlayer(3);
@@ -1201,6 +1203,10 @@ namespace SkillAcceptance
             Character cb = sb.GetCharacterByPlayer(3);
             results.Add(Check(Math.Abs(cb.Sanity - 4f) < 0.001f && cb.ActionPoints == 2,
                 "混乱-血包模拟回 3（1 → 4）扣 1 AP", $"chaos sanity {cb.Sanity} AP {cb.ActionPoints}"));
+
+            Character cbl = sbl.GetCharacterByPlayer(3);
+            results.Add(Check(Math.Abs(cbl.Sanity - 1f) < 0.001f && cbl.ActionPoints == 2,
+                "混乱-血包败-反噬自扣无回血（2 → 1）", $"chaos sanity {cbl.Sanity} AP {cbl.ActionPoints}"));
 
             // 池外道具拒绝
             var so = ChaosScene(42);
@@ -1283,7 +1289,7 @@ namespace SkillAcceptance
         {
             var results = new List<CheckResult>();
 
-            // 无武器拒绝
+            // 无武器拒绝（123 + 124 同款直调）
             var s1 = TwinScene(42);
             Character t1 = Twin(s1);
             t1.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
@@ -1291,7 +1297,12 @@ namespace SkillAcceptance
             SkillSystem.Activate(t1.Definition.Skills[0], t1, t1, s1, 0);
             results.Add(Check(t1.ActionPoints == 2
                 && !t1.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric),
-                "附灵-无武器拒绝不扣 AP", $"AP {t1.ActionPoints}"));
+                "附灵-无武器拒绝(123)不扣 AP", $"AP {t1.ActionPoints}"));
+            SkillSystem.Activate(t1.Definition.Skills[1], t1, t1, s1, 1);
+            results.Add(Check(t1.ActionPoints == 2
+                && !t1.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile)
+                && !t1.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric),
+                "附灵-无武器拒绝(124)不扣 AP", $"AP {t1.ActionPoints}"));
 
             // 泣血：伤害 +0.5 且命中回血
             var s2 = TwinScene(42);
@@ -1306,6 +1317,23 @@ namespace SkillAcceptance
                 "泣血-武器伤害 +0.5（1 → 1.5）", $"victim {victim.Sanity}"));
             results.Add(Check(Math.Abs(t2.Sanity - 2.5f) < 0.001f,
                 "泣血-命中回 0.5", $"twin {t2.Sanity}"));
+
+            // 切换互斥与扣费：123 → 124 → 123 三连直调，AP 精确递减 3 → 2 → 1 → 0（照搬 TwinTests 同款）
+            var s3 = TwinScene(42);
+            Character t3 = Twin(s3);
+            t3.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SkillSystem.Activate(t3.Definition.Skills[0], t3, t3, s3, 0);
+            results.Add(Check(t3.ActionPoints == 2 && t3.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric)
+                && !t3.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile),
+                "切换-123 挂泣血扣 1 AP", $"AP {t3.ActionPoints}"));
+            SkillSystem.Activate(t3.Definition.Skills[1], t3, t3, s3, 1);
+            results.Add(Check(t3.ActionPoints == 1 && t3.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile)
+                && !t3.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric),
+                "切换-124 互斥替换泣血再扣 1 AP", $"AP {t3.ActionPoints}"));
+            SkillSystem.Activate(t3.Definition.Skills[0], t3, t3, s3, 0);
+            results.Add(Check(t3.ActionPoints == 0 && t3.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric)
+                && !t3.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile),
+                "切换-123 切回扣至 0 AP", $"AP {t3.ActionPoints}"));
             return results;
         }
 
@@ -1321,11 +1349,12 @@ namespace SkillAcceptance
             results.Add(Check(t1.ActionPoints == 2 && t1.Inventory.EquippedWeapon.Id == 1,
                 "转换-非灵巧态拒绝", $"AP {t1.ActionPoints}"));
 
-            // 灵巧态刀 → 枪（弹药归零）
+            // 灵巧态刀 → 枪（弹药归零：预置弹药 1，防「默认 0 恒绿」假窗口）
             var s2 = TwinScene(42);
             Character t2 = Twin(s2);
             t2.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
             t2.ASC.Tags.AddTag(GameplayTagConstants.TwinAgile);
+            t2.Inventory.EquippedWeaponAmmo = 1; // 转换前预置弹药：删除归零实现必须红
             new TwinConvertCommand(0, 3, 3).Execute(s2);
             results.Add(Check(t2.Inventory.EquippedWeapon != null
                 && t2.Inventory.EquippedWeapon.Id == 3
@@ -1439,8 +1468,111 @@ namespace SkillAcceptance
             return results;
         }
 
-        /// <summary>扫描 seed 至行向深渊判定为期望分支（victim 0.5 被 V1 一击击杀）。</summary>
-        private static WorldState AbyssAct(bool wantWin, bool withClone)
+        /// <summary>把角色切到指定形态标签（独占：先清全部形态标签再打目标标签，同 SwitchForm 落点）。</summary>
+        private static void SetForm(Character g, int form)
+        {
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V1Form);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V2Form);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V3Form);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V4Form);
+            g.ASC.Tags.RemoveTag(GameplayTagConstants.V5Form);
+            switch (form)
+            {
+                case 2: g.ASC.Tags.AddTag(GameplayTagConstants.V2Form); break;
+                case 3: g.ASC.Tags.AddTag(GameplayTagConstants.V3Form); break;
+                case 4: g.ASC.Tags.AddTag(GameplayTagConstants.V4Form); break;
+                case 5: g.ASC.Tags.AddTag(GameplayTagConstants.V5Form); break;
+                default: g.ASC.Tags.AddTag(GameplayTagConstants.V1Form); break;
+            }
+        }
+
+        /// <summary>形态结算特例（真实 DamageCommand → DataGhostFormAttack 形态分派）：
+        /// V1 近战 1（V1 减伤侧已在 VerifyDiscipline）/ V2 1.5 / V3 三连 0.5×3（护盾只挡第一击）/
+        /// V4 花自愈 0.5（victim 无损）/ V5 跨地点命中（空手免弹药）。
+        /// victim 理智预置 3（满值防中道死亡干扰断言）。</summary>
+        private static List<CheckResult> VerifyFormDamage()
+        {
+            var results = new List<CheckResult>();
+
+            // V1 近战 1
+            var s1 = GhostScene(42);
+            Character g1 = Ghost(s1);
+            g1.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SetForm(g1, 1);
+            Character v1 = s1.GetCharacterByPlayer(1);
+            v1.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, 3, 1, 1f).Execute(s1);
+            results.Add(Check(Math.Abs(v1.Sanity - 2f) < 0.001f,
+                "形态结算-V1 近战 1", $"victim {v1.Sanity}（期望 2）"));
+
+            // V2 近战 1.5
+            var s2 = GhostScene(42);
+            Character g2 = Ghost(s2);
+            g2.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SetForm(g2, 2);
+            Character v2 = s2.GetCharacterByPlayer(1);
+            v2.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, 3, 1, 1f).Execute(s2);
+            results.Add(Check(Math.Abs(v2.Sanity - 1.5f) < 0.001f,
+                "形态结算-V2 近战 1.5", $"victim {v2.Sanity}（期望 1.5）"));
+
+            // V3 三连 0.5×3（无盾）
+            var s3 = GhostScene(42);
+            Character g3 = Ghost(s3);
+            g3.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SetForm(g3, 3);
+            Character v3 = s3.GetCharacterByPlayer(1);
+            v3.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, 3, 1, 1f).Execute(s3);
+            results.Add(Check(Math.Abs(v3.Sanity - 1.5f) < 0.001f,
+                "形态结算-V3 三连 0.5×3", $"victim {v3.Sanity}（期望 1.5）"));
+
+            // V3 三连 + 护盾：只挡第一击（0.5 被盾吃 + 0.5 + 0.5 = 净损 1），盾已破
+            var s4 = GhostScene(42);
+            Character g4 = Ghost(s4);
+            g4.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SetForm(g4, 3);
+            Character v4 = s4.GetCharacterByPlayer(1);
+            v4.ASC.Tags.AddTag(GameplayTagConstants.HasShield);
+            v4.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, 3, 1, 1f).Execute(s4);
+            results.Add(Check(Math.Abs(v4.Sanity - 2f) < 0.001f,
+                "形态结算-V3 护盾只挡首击", $"victim {v4.Sanity}（期望 2：净损 1）"));
+            results.Add(Check(!v4.ASC.Tags.HasTag(GameplayTagConstants.HasShield),
+                "形态结算-V3 护盾已破", "首击破盾后剩余两击生效"));
+
+            // V4 花：自愈 0.5（victim 无损）
+            var s5 = GhostScene(42);
+            Character g5 = Ghost(s5);
+            g5.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            g5.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 2f);
+            SetForm(g5, 4);
+            Character v5 = s5.GetCharacterByPlayer(1);
+            v5.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            new DamageCommand(0, 3, 1, 1f).Execute(s5);
+            results.Add(Check(Math.Abs(g5.Sanity - 2.5f) < 0.001f,
+                "形态结算-V4 自愈 0.5", $"ghost {g5.Sanity}（期望 2.5）"));
+            results.Add(Check(Math.Abs(v5.Sanity - 3f) < 0.001f,
+                "形态结算-V4 目标无损", $"victim {v5.Sanity}（期望 3）"));
+
+            // V5 远程：跨地点命中（空手免弹药）
+            var s6 = GhostScene(42);
+            Character g6 = Ghost(s6);
+            g6.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+            SetForm(g6, 5);
+            Character v6 = s6.GetCharacterByPlayer(1);
+            v6.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+            v6.CurrentLocationId = 8; // 异地目标（非藏匿可瞄准）
+            results.Add(Check(g6.Inventory.EquippedWeapon == null,
+                "形态结算-V5 前置空手", "V5 形态自带远程语义（无实体武器）"));
+            new DamageCommand(0, 3, 1, 1f).Execute(s6);
+            results.Add(Check(Math.Abs(v6.Sanity - 2f) < 0.001f,
+                "形态结算-V5 跨地点命中", $"victim {v6.Sanity}（期望 2）"));
+            return results;
+        }
+
+        /// <summary>扫描 seed 至行向深渊判定为期望分支（victim 0.5 被 V1 一击击杀，无分身干扰）。</summary>
+        private static WorldState AbyssAct(bool wantWin)
         {
             for (int seed = 42; seed < 400; seed++)
             {
@@ -1450,11 +1582,6 @@ namespace SkillAcceptance
                 g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
                 g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
                 victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
-                if (withClone)
-                {
-                    s.GhostCloneActive = true;
-                    s.GhostCloneSanity = 1f;
-                }
                 DamagePipeline.ApplyDamage(s, g.Id, victim.Id, 1f, DamageType.Physical); // 击杀 → 128
                 s.Commands.ExecuteAll(s);
                 bool win = !g.IsDead && Math.Abs(g.Sanity - 3f) < 0.001f;
@@ -1465,14 +1592,76 @@ namespace SkillAcceptance
             return null;
         }
 
+        /// <summary>
+        /// 扫描 seed 至「128 败连坐 → 分身死亡判定」终态（victim 0.5 被 V1 一击击杀 → 128 判定败
+        /// （本体 3 → 2）→ 分身 1 → 0 → BodyDuelOnCloneDeath：胜 → 本体存活 2 理智 / 败 → 本体直接死亡）。
+        /// 仅在分身已消亡（!GhostCloneActive）的 seed 内分类；两分类互补命中才证明 42..399 内两态均可达
+        /// ——两态都强制存在，任一分支删除即扫描 Fail 变红。
+        /// </summary>
+        private static WorldState AbyssDoomChain(bool wantBodyDead)
+        {
+            for (int seed = 42; seed < 400; seed++)
+            {
+                var s = GhostScene(seed);
+                Character g = Ghost(s);
+                Character victim = s.GetCharacterByPlayer(1);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 2);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0.5f);
+                s.GhostCloneActive = true;
+                s.GhostCloneSanity = 1f; // 败连坐 -1 → 0 → 分身死亡判定链
+                DamagePipeline.ApplyDamage(s, g.Id, victim.Id, 1f, DamageType.Physical); // 击杀 → 128
+                s.Commands.ExecuteAll(s); // 执行可能入队的 DeathCommand（分身死亡链）
+                if (!s.GhostCloneActive) // 分身已消亡：128 败连坐必然已发生（胜分支分身仍活跃，跳过）
+                {
+                    if (wantBodyDead && g.IsDead) return s;
+                    if (!wantBodyDead && !g.IsDead && Math.Abs(g.Sanity - 2f) < 0.001f) return s;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 扫描 seed 至「分身活跃双发攻击 → 复制段击杀目标」场景（victim 1.5：首击 1 → 0.5 未死、
+        /// 复制段再 1 → 0 击杀——分身击杀归本体触发 128，判定胜 → AP+1 且分身无连坐）。
+        /// 返回 victim 死亡而本体/分身无恙的 seed（128 胜分支落点），供精确终态断言。
+        /// </summary>
+        private static WorldState CloneKillScene(out Character ghost, out Character victim)
+        {
+            for (int seed = 42; seed < 400; seed++)
+            {
+                var s = GhostScene(seed);
+                Character g = Ghost(s);
+                Character v = s.GetCharacterByPlayer(1);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3f);
+                g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
+                v.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1.5f);
+                s.GhostCloneActive = true;
+                s.GhostCloneSanity = 1f;
+                new DamageCommand(0, 3, 1, 1f).Execute(s); // V1 双发：victim 死于复制段
+                s.Commands.ExecuteAll(s);
+                if (!v.IsDead || v.Sanity > 0f) continue; // 击杀未发生（双发语义缺失）：跳过
+                if (g.IsDead) continue; // 128 败连坐本体死亡链：AbyssDoomChain 覆盖，跳过
+                if (!s.GhostCloneActive) continue; // 128 败连坐分身消亡：跳过
+                ghost = g;
+                victim = v;
+                return s;
+            }
+            ghost = null;
+            victim = null;
+            return null;
+        }
+
         private static List<CheckResult> VerifyAbyss()
         {
             var results = new List<CheckResult>();
-            var w = AbyssAct(true, false);
-            var l = AbyssAct(false, false);
-            var lc = AbyssAct(false, true);
-            if (w == null || l == null || lc == null)
-                return Single("行向深渊-分支扫描", false, "400 seed 内未命中期望分支（实现回归）");
+            var w = AbyssAct(true);
+            var l = AbyssAct(false);
+            var cd = AbyssDoomChain(true);
+            var ca = AbyssDoomChain(false);
+            if (w == null || l == null || cd == null || ca == null)
+                return Single("行向深渊-分支扫描", false,
+                    "400 seed 内未命中期望终态（胜/败/败连坐分身死亡判定两态必须全部存在——实现回归）");
 
             Character gw = w.GetCharacterByPlayer(3);
             results.Add(Check(gw.ActionPoints == 3 && Math.Abs(gw.Sanity - 3f) < 0.001f,
@@ -1482,27 +1671,47 @@ namespace SkillAcceptance
             results.Add(Check(Math.Abs(gl.Sanity - 2f) < 0.001f,
                 "行向深渊-败本体 -1", $"sanity {gl.Sanity}"));
 
-            Character glc = lc.GetCharacterByPlayer(3);
-            bool cloneCleared = !lc.GhostCloneActive;
-            bool chainLegal = cloneCleared && (glc.IsDead || Math.Abs(glc.Sanity - 2f) < 0.001f);
-            results.Add(Check(chainLegal,
-                "行向深渊-败连坐分身死亡链合法", $"dead={glc.IsDead} sanity={glc.Sanity} clone={lc.GhostCloneActive}"));
+            // 败连坐 → 分身死亡判定：败分支（本体直接死亡）
+            Character gcd = cd.GetCharacterByPlayer(3);
+            results.Add(Check(!cd.GhostCloneActive && gcd.IsDead,
+                "行向深渊-败连坐-分身死亡判定败：本体直接死亡",
+                $"dead={gcd.IsDead} clone={cd.GhostCloneActive}"));
+
+            // 败连坐 → 分身死亡判定：胜分支（本体存活 2 理智）
+            Character gca = ca.GetCharacterByPlayer(3);
+            results.Add(Check(!ca.GhostCloneActive && !gca.IsDead && Math.Abs(gca.Sanity - 2f) < 0.001f,
+                "行向深渊-败连坐-分身死亡判定胜：本体存活 2 理智",
+                $"dead={gca.IsDead} sanity={gca.Sanity} clone={ca.GhostCloneActive}"));
+
+            // 分身复制段击杀 → 归本体触发 128（胜：AP+1 无连坐；未触发则 AP 2 无 +1）
+            Character gk;
+            Character vk;
+            WorldState ck = CloneKillScene(out gk, out vk);
+            results.Add(ck != null
+                ? CheckResult.Pass("行向深渊-分身复制段击杀触发", "victim 死于双发复制段且 128 胜分支可达")
+                : CheckResult.Fail("行向深渊-分身复制段击杀触发",
+                    "400 seed 内未命中（复制段击杀未归本体触发 128——实现回归）"));
+            if (ck != null)
+            {
+                results.Add(Check(gk.ActionPoints == 3 && Math.Abs(gk.Sanity - 3f) < 0.001f
+                    && ck.GhostCloneActive && Math.Abs(ck.GhostCloneSanity - 1f) < 0.001f,
+                    "行向深渊-复制段击杀归本体（胜 AP+1 分身无连坐）",
+                    $"AP {gk.ActionPoints} sanity {gk.Sanity} clone {ck.GhostCloneSanity}"));
+                results.Add(Check(vk.IsDead && vk.Sanity <= 0f,
+                    "行向深渊-复制段击杀已结算死亡", $"victim dead={vk.IsDead} sanity={vk.Sanity}"));
+            }
             return results;
         }
 
-        /// <summary>4 人局固定筹码：slot3 每回合 Winner（1 AP），其余 Neutral（同 ChipsTimeThiefWinner）。</summary>
-        private static ChipAllocation[] ChipsSlot3Winner()
-        {
-            return new[]
-            {
-                new ChipAllocation(0) { Rock = 1, Scissors = 1, Paper = 1 },
-                new ChipAllocation(1) { Rock = 1, Scissors = 1, Paper = 1 },
-                new ChipAllocation(2) { Rock = 1, Scissors = 1, Paper = 1 },
-                new ChipAllocation(3) { Rock = 2, Scissors = 1, Paper = 0 }
-            };
-        }
+        /// <summary>4 人局固定筹码：slot3 每回合 Winner（1 AP），其余 Neutral。
+        /// 与 ChipsTimeThiefWinner 同源同构（首个回合行 = p0-p2 Neutral + p3 Winner）——
+        /// 直接复用其首行，杜绝双表重复定义漂移。</summary>
+        private static ChipAllocation[] ChipsSlot3Winner() => ChipsTimeThiefWinner()[0];
 
-        /// <summary>通用替换：slot3 换成指定 Def 的角色（同 TerminalIllnessTurns 先例）。</summary>
+        /// <summary>通用替换：slot3 换成指定 Def 的角色（同 TerminalIllnessTurns 先例）。
+        /// 注意：新角色不继承任何开局道具——连 Def.InitialItem 都不发（真开局 GrantInitialItems 的
+        /// 「每人 1 血包 + 出生地点道具」同样缺失），依赖背包的链路（拾刀/转换/附灵等）必须在脚本
+        /// Override 显式空手投放或补齐，勿依赖开局背包。</summary>
         private static void ReplaceSlot3(WorldState s, CharacterDef def)
         {
             Character c = new Character(4, 3, def.Name) { CurrentLocationId = 4 };
@@ -1532,26 +1741,39 @@ namespace SkillAcceptance
                 Character chaos = s.GetCharacterByPlayer(3);
                 chaos.Inventory.EquippedWeapon = null;
                 chaos.Inventory.Consumables.Clear();
-                chaos.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 4f);
+                // 起始理智 3：T1 胜 → 3 / 败 → 2；T2 从 3（或 2）出发回 3 钳 4 必可见——
+                // 若从 4 出发，回 3 被上限钳制会与「无回血」不可区分（恒真窗口）
+                chaos.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
                 Character victim = s.GetCharacterByPlayer(1);
                 victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
             });
-            // T1：模拟刀 → 胜（victim 1.5，chaos 4）或 败（victim 3，chaos 3）双分支合法
+            // T1：模拟刀 → 胜（victim 1.5，chaos 3）或 败（victim 3，chaos 2）双分支合法
             script.Steps.Add(new ActStep(3, new ChaosSimulateCommand(0, 3, 1, 1)));
             script.Steps.Add(new AssertTrueStep("刀模拟后 chaos 理智两态",
-                s => { Character c = s.GetCharacterByPlayer(3); return Math.Abs(c.Sanity - 4f) < 0.001f || Math.Abs(c.Sanity - 3f) < 0.001f; }));
+                s => { Character c = s.GetCharacterByPlayer(3); return Math.Abs(c.Sanity - 3f) < 0.001f || Math.Abs(c.Sanity - 2f) < 0.001f; }));
             script.Steps.Add(new AssertTrueStep("刀模拟后 victim 两态",
                 s => { Character v = s.GetCharacterByPlayer(1); return Math.Abs(v.Sanity - 3f) < 0.001f || Math.Abs(v.Sanity - 1.5f) < 0.001f; }));
             script.Steps.Add(new AssertTrueStep("胜败互斥出现",
                 s => { Character c = s.GetCharacterByPlayer(3); Character v = s.GetCharacterByPlayer(1);
-                       bool win = Math.Abs(c.Sanity - 4f) < 0.001f && Math.Abs(v.Sanity - 1.5f) < 0.001f;
-                       bool lose = Math.Abs(c.Sanity - 3f) < 0.001f && Math.Abs(v.Sanity - 3f) < 0.001f;
+                       bool win = Math.Abs(c.Sanity - 3f) < 0.001f && Math.Abs(v.Sanity - 1.5f) < 0.001f;
+                       bool lose = Math.Abs(c.Sanity - 2f) < 0.001f && Math.Abs(v.Sanity - 3f) < 0.001f;
                        return win || lose; }));
             script.Steps.Add(new EndTurnStep());
-            // T2：血包模拟（低理智从 1 出发不可行——用现状理智直接模拟；两态：胜回满 4 / 败自扣 1）
+            // T2：血包模拟（自用）。真实回合语义推演：T1 胜 → 出发 3 / T1 败 → 出发 2；
+            // T2 胜 → 回 3 钳上限 4；T2 败 → 反噬自扣 1（3 → 2 / 2 → 1）且不回血。
+            // 四终态两两互斥且穷尽：删除回血/反噬任一实现分支必落集合外 → 红。
             script.Steps.Add(new ActStep(3, new ChaosSimulateCommand(0, 3, 2, 3)));
-            script.Steps.Add(new AssertTrueStep("血包模拟后两态合法",
-                s => { Character c = s.GetCharacterByPlayer(3); return c.Sanity <= 4f && c.Sanity >= 1f; }));
+            script.Steps.Add(new AssertTrueStep("血包模拟终态精确（胜回 3 钳 4 / 败自扣 1，互斥穷尽）",
+                s =>
+                {
+                    Character c = s.GetCharacterByPlayer(3);
+                    Character v = s.GetCharacterByPlayer(1);
+                    bool t1wT2w = Math.Abs(c.Sanity - 4f) < 0.001f && Math.Abs(v.Sanity - 1.5f) < 0.001f;
+                    bool t1wT2l = Math.Abs(c.Sanity - 2f) < 0.001f && Math.Abs(v.Sanity - 1.5f) < 0.001f;
+                    bool t1lT2w = Math.Abs(c.Sanity - 4f) < 0.001f && Math.Abs(v.Sanity - 3f) < 0.001f;
+                    bool t1lT2l = Math.Abs(c.Sanity - 1f) < 0.001f && Math.Abs(v.Sanity - 3f) < 0.001f;
+                    return t1wT2w || t1wT2l || t1lT2w || t1lT2l;
+                }));
             script.Steps.Add(new EndTurnStep());
             return script;
         }
@@ -1600,10 +1822,12 @@ namespace SkillAcceptance
             script.Steps.Add(new AssertStep("泣血普攻伤害", 1.5f, s => s.GetCharacterByPlayer(1).Sanity));
             script.Steps.Add(new AssertStep("命中回血", 2.5f, s => s.GetCharacterByPlayer(3).Sanity));
             script.Steps.Add(new EndTurnStep());
-            // T5 切换灵巧
+            // T5 切换灵巧（互斥：旧泣血标签须移除——删除 RemoveTag(TwinVampiric) 实现必红）
             script.Steps.Add(new ActStep(3, new UseSkillCommand(0, 3, 1, 3)));
-            script.Steps.Add(new AssertTrueStep("切到灵巧",
-                s => s.GetCharacterByPlayer(3).ASC.Tags.HasTag(GameplayTagConstants.TwinAgile)));
+            script.Steps.Add(new AssertTrueStep("切到灵巧并移除泣血",
+                s => { Character c = s.GetCharacterByPlayer(3);
+                       return c.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile)
+                           && !c.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric); }));
             script.Steps.Add(new EndTurnStep());
             // T6 转换枪
             script.Steps.Add(new ActStep(3, new TwinConvertCommand(0, 3, 3)));
@@ -1614,9 +1838,11 @@ namespace SkillAcceptance
             return script;
         }
 
-        /// <summary>数据幽灵-分身完整生命周期链路（Harmonics → 回合末扣减 → 分身死亡判定）。
-        /// 分身由 Override 注入（同 MistFogExit 先例）：RunTurn 单次含回合末，注入后首个
-        /// EndTurn 才是第 1 次扣减，保证数值断言与「3 回合理智归零」口径一致。</summary>
+        /// <summary>数据幽灵-分身完整生命周期链路（Harmonics → 分身活跃双发普攻 → 回合末扣减 → 分身死亡判定）。
+        /// 分身由 Override 注入（同 MistFogExit 先例）：RunTurn 单次含回合末，注入后首个完整回合
+        /// （攻击 ActStep 所在回合）的回合末即第 1 次扣减，保证数值断言与「每回合末扣 1」口径一致。
+        /// 双发攻击观察 ×2 同步复制（victim 3 → 1）；复制段击杀触发 128 的归本体语义由
+        /// VerifyAbyss 的 CloneKillScene 扫描精确断言。</summary>
         private static TurnScript GhostCloneLifecycle()
         {
             var script = new TurnScript
@@ -1636,20 +1862,27 @@ namespace SkillAcceptance
                 g.ASC.Tags.AddTag(GameplayTagConstants.V1Form); // 数据幽灵基线（同 TurnManager）
                 g.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f);
                 g.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 1);
+                Character victim = s.GetCharacterByPlayer(1);
+                victim.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 3f); // 双发 1×2 后余 1，防中道死亡
                 SkillSystem.Activate(g.Definition.Skills[1], g, g, s, 1); // 造分身：理智 3
             });
             // 首步断言直接落「分身生成」（造分身后尚未经过任何回合末）
             script.Steps.Add(new AssertTrueStep("分身生成",
                 s => s.GhostCloneActive && Math.Abs(s.GhostCloneSanity - 3f) < 0.001f));
-            script.Steps.Add(new EndTurnStep());   // 回合末：3 → 2
-            script.Steps.Add(new AssertStep("回合末扣 1（第 1 次）", 2f, s => s.GhostCloneSanity));
+            // 分身活跃当回合普攻：同步双发 ×2（V1 1×2 总 2）→ victim 3 → 1；攻击回合末分身 3 → 2
+            script.Steps.Add(new ActStep(3, new DamageCommand(0, 3, 1, 1f)));
+            script.Steps.Add(new AssertStep("双发普攻合计 -2（victim 3 → 1）", 1f, s => s.GetCharacterByPlayer(1).Sanity));
+            script.Steps.Add(new AssertStep("回合末扣 1（攻击当回合）", 2f, s => s.GhostCloneSanity));
             script.Steps.Add(new EndTurnStep());   // 2 → 1
             script.Steps.Add(new AssertStep("回合末扣 1（第 2 次）", 1f, s => s.GhostCloneSanity));
-            script.Steps.Add(new EndTurnStep());   // 1 → 0 → 分身死亡判定（胜/败两态）
+            script.Steps.Add(new EndTurnStep());   // 1 → 0 → 分身死亡判定（胜/败由 seed 42 确定性落点）
             script.Steps.Add(new AssertTrueStep("分身消亡", s => !s.GhostCloneActive));
-            script.Steps.Add(new AssertTrueStep("判定后本体两态合法",
+            // 分身死亡判定终态按 seed 42 确定性落点精确断言：本体存活满理智 3（BodyDuel 胜）。
+            // 「败 → 本体直接死亡」分支删除变红的强制保障在 VerifyAbyss 的 AbyssDoomChain
+            // 双态扫描（dead 终态 seed 必须存在），两态互补钉死本判定。
+            script.Steps.Add(new AssertTrueStep("分身死亡判定胜：本体存活 3 理智",
                 s => { Character g = s.GetCharacterByPlayer(3);
-                       return g.IsDead || (Math.Abs(g.Sanity - 3f) < 0.001f && !g.IsDead); }));
+                       return !g.IsDead && Math.Abs(g.Sanity - 3f) < 0.001f; }));
             return script;
         }
     }

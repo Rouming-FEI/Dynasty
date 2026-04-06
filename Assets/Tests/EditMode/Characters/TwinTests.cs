@@ -143,7 +143,7 @@ namespace Dynasty.Tests.Characters
             var twin = s.GetCharacterByPlayer(TwinPlayer);
             twin.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
             twin.ASC.Tags.AddTag(GameplayTagConstants.TwinAgile);
-            twin.Inventory.EquippedWeaponAmmo = 0;
+            twin.Inventory.EquippedWeaponAmmo = 1; // 预置弹药：删除转换归零实现必须红
 
             new TwinConvertCommand(0, TwinPlayer, 3).Execute(s); // 刀 → 枪
 
