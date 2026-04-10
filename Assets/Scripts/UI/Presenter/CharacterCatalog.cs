@@ -4,7 +4,7 @@ using Gameplay.Characters;
 
 namespace UI.Presenter
 {
-    /// <summary>13 角色 Def 目录（id → Create() 工厂），供选角画面使用。</summary>
+    /// <summary>16 角色 Def 目录（id → Create() 工厂），供选角画面使用。</summary>
     public static class CharacterCatalog
     {
         private static readonly Dictionary<int, Func<CharacterDef>> Factories = new Dictionary<int, Func<CharacterDef>>
@@ -22,10 +22,13 @@ namespace UI.Presenter
             { 11, FormationMasterDef.Create },
             { 12, PaladinDef.Create },
             { 13, AgentDef.Create },
+            { 14, ChaosMageDef.Create },
+            { 15, TwinDef.Create },
+            { 16, DataGhostDef.Create },
         };
 
         private static readonly int[] AllIds =
-            { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+            { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
 
         public static CharacterDef Create(int id) => Factories[id]();
         public static int[] GetAllIds() => (int[])AllIds.Clone();

@@ -50,6 +50,11 @@ namespace UI
 
         private const int ChipsTotal = 3;
 
+        // P7-A 带参技能子选单（混乱模拟道具 / 双子转换武器）
+        private VisualElement _submenuOverlay;
+        private Label _submenuTitle;
+        private VisualElement _submenuList;
+
         private void Start()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
@@ -74,10 +79,12 @@ namespace UI
             _chipOverlay = BuildChipOverlay();
             _resultOverlay = BuildResultOverlay();
             _logOverlay = BuildLogOverlay();
+            _submenuOverlay = BuildSubmenuOverlay();
             _root.Add(_charSelectOverlay);
             _root.Add(_chipOverlay);
             _root.Add(_resultOverlay);
             _root.Add(_logOverlay);
+            _root.Add(_submenuOverlay);   // 最后挂载 = 渲染于最上层
         }
 
         private void Update()
