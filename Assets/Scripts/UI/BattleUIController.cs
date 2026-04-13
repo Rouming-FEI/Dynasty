@@ -264,6 +264,10 @@ namespace UI
             Character c = state.GetCharacterByPlayer(actorRow.PlayerId);
             if (c == null) return;
 
+            // 数据幽灵分身活跃时：行动提示行追加分身理智小字（分身无独立棋盘实体）
+            if (state.GhostCloneActive && c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                _actionHint.text += $"　分身 {state.GhostCloneSanity:F1} 理智";
+
             AddMoveButtons(state, c);
             AddAttackButtons(state, c);
             AddSkillButtons(state, c);
@@ -313,8 +317,46 @@ namespace UI
         private void AddAttackButtons(WorldState state, Character c)
         {
             if (!c.CanAct) return;
-            string weapon = c.Inventory.EquippedWeapon?.Name ?? "空手";
 
+            // 数据幽灵：普攻 = 形态攻击（数值/拦截语义以 DataGhostFormAttack 为准）。
+            // V4 花无攻击，普攻位替换为自愈按钮；V5 无视地点（藏匿不可选）；V1/V2/V3 同地点近战。
+            if (c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+            {
+                int form = DataGhostFormAttack.CurrentForm(c);
+                int tick = state.CurrentTick;
+                int playerId = c.PlayerId;
+                if (form == 4)
+                {
+                    // V4 花：自愈 0.5（DamageCommand 自目标，命令层按 16 号分派到形态自愈）
+                    if (c.Sanity < c.MaxSanity)
+                        AddButton("自愈 · V4 花 (1 AP)",
+                            () => _presenter.SubmitCommand(new DamageCommand(tick, playerId, playerId, 1f)));
+                    return; // 花形态无攻击按钮
+                }
+                string formName = FormDisplayName(form);
+                for (int i = 0; i < state.PlayerCount; i++)
+                {
+                    Character other = state.Characters[i];
+                    if (other == null || other.IsDead || other.PlayerId == c.PlayerId) continue;
+                    if (form == 5)
+                    {
+                        // V5 远程：任意地点；藏匿不可选（规则源 = WeaponSystem.CanSelectRangedTarget）
+                        if (!WeaponSystem.CanSelectRangedTarget(c, other)) continue;
+                    }
+                    else if (other.CurrentLocationId != c.CurrentLocationId)
+                    {
+                        continue; // V1/V2/V3 近战需同地点
+                    }
+                    int targetId = other.PlayerId;
+                    string targetName = other.Name;
+                    AddButton($"攻击 {targetName} [{formName}] (1 AP)",
+                        () => _presenter.SubmitCommand(new DamageCommand(tick, playerId, targetId, 1f)));
+                }
+                return;
+            }
+
+            // 原逻辑：同地点敌人 + 武器名
+            string weapon = c.Inventory.EquippedWeapon?.Name ?? "空手";
             for (int i = 0; i < state.PlayerCount; i++)
             {
                 Character other = state.Characters[i];
@@ -330,6 +372,18 @@ namespace UI
             }
         }
 
+        /// <summary>数据幽灵形态显示名（UI 展示用；V4 花无普攻按钮不在此列）。</summary>
+        private static string FormDisplayName(int form)
+        {
+            switch (form)
+            {
+                case 2: return "V2 长刃";
+                case 3: return "V3 三尖戟";
+                case 5: return "V5 恶魔猎弩";
+                default: return "V1 音刃";
+            }
+        }
+
         private void AddSkillButtons(WorldState state, Character c)
         {
             SkillDef[] skills = c.Definition?.Skills;
@@ -338,6 +392,19 @@ namespace UI
             for (int i = 0; i < skills.Length; i++)
             {
                 SkillDef skill = skills[i];
+
+                // 混沌法师「混乱」(120)：打开模拟道具子选单（不走通用目标循环）
+                if (skill.Id == SkillSystem.ChaosSkillId
+                    && c.Definition?.Id == SkillSystem.ChaosMageCharacterId)
+                {
+                    if (!SkillSystem.CanActivate(skill, c, i)) continue;
+                    int skillTick = state.CurrentTick;
+                    int skillPlayer = c.PlayerId;
+                    AddButton("技能 混乱 → 选择模拟道具 (1 AP)",
+                        () => OpenChaosMenu(state, c, skillTick, skillPlayer));
+                    continue;
+                }
+
                 if (!SkillSystem.CanActivate(skill, c, i)) continue;
 
                 string cost = SkillCostText(skill);
@@ -391,6 +458,18 @@ namespace UI
                         () => _presenter.SubmitCommand(
                             new UseSkillCommand(tick, playerId, skillIndex, targetId)));
                 }
+            }
+
+            // 双子灵巧态：转换武器入口（非技能槽，是灵巧状态的衍生行动；TwinConvertCommand）
+            if (c.Definition?.Id == SkillSystem.TwinCharacterId
+                && c.CanAct
+                && c.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile)
+                && c.Inventory.EquippedWeapon != null
+                && c.ActionPoints >= 1)
+            {
+                int tick = state.CurrentTick;
+                int pid = c.PlayerId;
+                AddButton("转换武器 (1 AP)", () => OpenConvertMenu(c, tick, pid));
             }
         }
 
@@ -616,6 +695,123 @@ namespace UI
             return overlay;
         }
 
+        // ---------------- P7-A 带参行动子选单（混乱模拟道具 / 转换武器） ----------------
+
+        /// <summary>带参行动子选单：关闭按钮 + 标题 + 选项按钮列表。</summary>
+        private VisualElement BuildSubmenuOverlay()
+        {
+            var overlay = new VisualElement();
+            overlay.AddToClassList("overlay");
+            overlay.style.display = DisplayStyle.None;
+
+            var box = new VisualElement();
+            box.AddToClassList("overlay-box");
+            _submenuTitle = new Label("");
+            _submenuTitle.AddToClassList("result-text");
+            box.Add(_submenuTitle);
+
+            _submenuList = new VisualElement();
+            box.Add(_submenuList);
+
+            var close = new Button(CloseSubmenu) { text = "关闭" };
+            close.AddToClassList("big-button");
+            box.Add(close);
+
+            overlay.Add(box);
+            return overlay;
+        }
+
+        /// <summary>打开子选单：标题 + (文本, 点击回调) 列表。</summary>
+        private void OpenSubmenu(string title, List<(string label, Action onClick)> items)
+        {
+            _submenuTitle.text = title;
+            _submenuList.Clear();
+            for (int i = 0; i < items.Count; i++)
+            {
+                Action onClick = items[i].onClick;
+                var b = new Button(onClick) { text = items[i].label };
+                b.AddToClassList("action-button");
+                _submenuList.Add(b);
+            }
+            _submenuOverlay.style.display = DisplayStyle.Flex;
+        }
+
+        private void CloseSubmenu()
+        {
+            _submenuOverlay.style.display = DisplayStyle.None;
+        }
+
+        /// <summary>混沌「混乱」第一步：选模拟道具。池成员资格唯一取自
+        /// ChaosSimulateCommand.IsSimulatable（UI 不另设池表），注册表现有 Id 域 1-9/12/13。</summary>
+        private void OpenChaosMenu(WorldState state, Character c, int tick, int playerId)
+        {
+            var items = new List<(string label, Action onClick)>();
+            for (int itemId = 1; itemId <= 13; itemId++)
+            {
+                if (!ChaosSimulateCommand.IsSimulatable(itemId)) continue;
+                ItemDef item = ItemRegistry.Get(itemId);
+                if (item == null) continue;
+                items.Add((item.Name, () => OpenChaosTarget(state, tick, playerId, itemId)));
+            }
+            OpenSubmenu($"混乱：模拟道具（{c.Name}）", items);
+        }
+
+        /// <summary>混沌第二步：自身类道具直接对自己施放；武器类列出全部存活敌人（豁免地理/持有限制）。</summary>
+        private void OpenChaosTarget(WorldState state, int tick, int playerId, int itemId)
+        {
+            // 自身类道具（血包/荆棘素/炸弹/净化）：无需选目标，直接对自己施放
+            if (ChaosSimulateCommand.IsSelfItem(itemId))
+            {
+                _presenter.SubmitCommand(new ChaosSimulateCommand(tick, playerId, itemId, playerId));
+                CloseSubmenu();
+                return;
+            }
+            // 敌人道具：列出全部存活敌人（混乱豁免地理/持有限制）
+            var targets = new List<(string label, Action onClick)>();
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character other = state.Characters[i];
+                if (other == null || other.IsDead || other.PlayerId == playerId) continue;
+                int targetId = other.PlayerId;
+                targets.Add(($"{other.Name}（{state.Locations.GetName(other.CurrentLocationId)}）",
+                    () =>
+                    {
+                        _presenter.SubmitCommand(new ChaosSimulateCommand(tick, playerId, itemId, targetId));
+                        CloseSubmenu();
+                    }));
+            }
+            if (targets.Count == 0)
+            {
+                // 无可用目标：清空选项并改标题（保持覆盖层关闭按钮可退回）
+                _submenuTitle.text = "混乱：无可用目标（无存活敌人）";
+                _submenuList.Clear();
+                return;
+            }
+            string itemName = ItemRegistry.Get(itemId)?.Name ?? itemId.ToString();
+            OpenSubmenu($"混乱：选择 {itemName} 的目标", targets);
+        }
+
+        /// <summary>双子灵巧「转换武器」：刀/枪/施工锤（与 TwinConvertCommand 白名单同步，不含幻剑/圣盾）。</summary>
+        private void OpenConvertMenu(Character c, int tick, int playerId)
+        {
+            var items = new List<(string label, Action onClick)>();
+            int[] pool = { 1, 3, 4 }; // 刀/枪/施工锤（TwinConvertCommand.Execute 仅放行 1/3/4）
+            ItemDef current = c.Inventory.EquippedWeapon;
+            for (int i = 0; i < pool.Length; i++)
+            {
+                int weaponId = pool[i];
+                ItemDef weapon = ItemRegistry.Get(weaponId);
+                if (weapon == null) continue;
+                if (current != null && current.Id == weaponId) continue; // 同武器转换无意义
+                items.Add((weapon.Name, () =>
+                {
+                    _presenter.SubmitCommand(new TwinConvertCommand(tick, playerId, weaponId));
+                    CloseSubmenu();
+                }));
+            }
+            OpenSubmenu("灵巧：转换武器（1 AP）", items);
+        }
+
         private void RenderOverlays(BattleSnapshot s)
         {
             // 选角层：仅游戏未开始时显示（presenter==null 的早期分支在 Update 内处理）
@@ -681,7 +877,7 @@ namespace UI
         {
             if (_presenter != null) return;   // 双击/重复回调防重入
 
-            // P0=真人选定角色；AI 从剩余 12 个不重复抽取（确定性随机）
+            // P0=真人选定角色；AI 从剩余角色不重复抽取（确定性随机）
             WorldState state = _bootstrap.GetState();
             var remaining = new List<int>();
             foreach (int id in CharacterCatalog.GetAllIds())
@@ -716,6 +912,7 @@ namespace UI
             _resultOverlay.style.display = DisplayStyle.None;
             _chipOverlay.style.display = DisplayStyle.None;
             CloseLogOverlay();
+            CloseSubmenu();
             ResetChipCounts();
         }
     }
