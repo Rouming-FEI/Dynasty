@@ -31,12 +31,19 @@ namespace Gameplay.Combat
             if (source.ActionPoints <= 0) return;
             if (source.ASC.Tags.HasTag(GameplayTagConstants.GhostForm)) return; // 灵体状态禁普通攻击
 
-            // 数据幽灵形态攻击（V1-V5 全形态）：内部完成目标校验/扣 AP（S10/S11 语义）
+            // 数据幽灵形态攻击（V1-V5 全形态）：内部完成目标校验/扣 AP（S10/S11 语义）。
+            // 注意：V4 花自愈是「自目标 DamageCommand」的合法用例（form==4 分支处理），
+            // 必须先于此完成形态分派，否则会被下方自目标拒绝误杀。
             if (source.Definition?.Id == SkillSystem.DataGhostCharacterId)
             {
                 DataGhostFormAttack.Execute(state, source, target);
                 return;
             }
+
+            // 自目标普通攻击拒绝（兜底）：UI/AI/回放正常路径的目标扫描均排除自己，
+            // 普通攻击不应指向自身——防御脏提交/篡改载荷的自伤（非 16 角色唯一合法
+            // 自目标 DamageCommand 不存在；技能自伤类走各自命令/管线，不经此路径）。
+            if (source.PlayerId == target.PlayerId) return;
 
             // Spend 1 AP
             source.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);

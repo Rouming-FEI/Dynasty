@@ -85,6 +85,12 @@ namespace Gameplay.Characters
         {
             int form = CurrentForm(source);
 
+            // 非 V4 自目标普攻拒绝（兜底）：V4 花自愈是唯一合法自目标 DamageCommand
+            // （走下方 form==4 分支，不受影响）；V1/V2/V3/V5 攻击按钮/AI 目标扫描均不
+            // 指向自己——防御陈旧 UI 按钮/脏提交把自愈或攻击载荷指向自身时误伤/误自愈。
+            if (form != 4 && source.PlayerId == target.PlayerId)
+                return; // 不扣 AP
+
             // V5 藏匿拦截（规则源 = WeaponSystem.CanSelectRangedTarget，与 RangedAttack 共用：
             // 目标藏匿且自身未同处藏匿、非审判者 → 不可瞄准）
             if (form == 5 && !WeaponSystem.CanSelectRangedTarget(source, target))

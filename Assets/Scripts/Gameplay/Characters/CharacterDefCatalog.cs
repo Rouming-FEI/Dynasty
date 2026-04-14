@@ -2,7 +2,7 @@ using Core.GAS;
 
 namespace Gameplay.Characters
 {
-    /// <summary>13 角色 Def 目录（id → 工厂），Simulation 层专用（快照反序列化重建角色用）。</summary>
+    /// <summary>16 角色 Def 目录（id → 工厂），Simulation 层专用（快照反序列化重建角色用）。</summary>
     public static class CharacterDefCatalog
     {
         public static CharacterDef Get(int id)

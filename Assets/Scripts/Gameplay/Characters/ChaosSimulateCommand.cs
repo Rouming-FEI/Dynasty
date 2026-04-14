@@ -80,14 +80,17 @@ namespace Gameplay.Characters
             Simulate(state, c, ItemId, TargetPlayerId);
         }
 
-        /// <summary>模拟池白名单（规格 3.2：排除核弹 5/应急装置 8/海幻刀 12/圣盾 13/重质量炮）。</summary>
+        /// <summary>模拟池候选 Id 单源表（规格 3.2：刀1/血包2/枪3/锤4/荆棘素6/炸弹7/净化9；
+        /// 排除核弹 5/应急装置 8/海幻刀 12/圣盾 13/重质量炮）。UI 候选遍历与成员判定
+        /// 共用本表，禁止另设池表/硬编码上限——改白名单只动这里（静态只读数组引用安全）。</summary>
+        public static readonly int[] SimPool = { 1, 2, 3, 4, 6, 7, 9 };
+
+        /// <summary>模拟池成员判定（与 SimPool 同源扫描；命令执行路径零堆分配）。</summary>
         public static bool IsSimulatable(int itemId)
         {
-            switch (itemId)
-            {
-                case 1: case 2: case 3: case 4: case 6: case 7: case 9: return true;
-                default: return false;
-            }
+            for (int i = 0; i < SimPool.Length; i++)
+                if (SimPool[i] == itemId) return true;
+            return false;
         }
 
         /// <summary>自身类道具：血包(2)/荆棘素(6)/炸弹(7)/净化(9)。</summary>

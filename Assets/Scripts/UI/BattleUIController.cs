@@ -41,7 +41,9 @@ namespace UI
         private bool _bootstrapWarned;               // _bootstrap 未接线只告警一次
 
         // 行动按钮脏检查签名（玩家|AP|地点|回合|阶段 变化才重建按钮；地点入签名
-        // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变）
+        // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变；数据幽灵
+        // actor 另追加 |form{形态}|clone{分身} 维度：Handsonic 切形态(125)/Harmonics
+        // 造分身都会让 AP/回合/阶段/地点全不变但攻击按钮语义/范围全变，必须重建）
         private string _actionSignature;
 
         // 日志尾巴脏检查（条数 + 末条字符串引用都未变则跳过重建）
@@ -229,7 +231,8 @@ namespace UI
 
         private void RenderActionBar(BattleSnapshot s)
         {
-            string signature = BuildActionSignature(s);
+            WorldState state = _bootstrap.GetState();
+            string signature = BuildActionSignature(s, state);
             if (signature == _actionSignature) return;
             _actionSignature = signature;
             while (_actionBar.childCount > 1)
@@ -238,6 +241,7 @@ namespace UI
             if (s.GameOver)
             {
                 _actionHint.text = "对局已结束";
+                CloseSubmenu(); // 防御：对局结束收掉可能还开着的带参子选单（幂等）
                 return;
             }
 
@@ -260,7 +264,6 @@ namespace UI
 
             _actionHint.text = $"{actorRow.Name} 的回合（{actorRow.ActionPoints} AP）";
 
-            WorldState state = _bootstrap.GetState();
             Character c = state.GetCharacterByPlayer(actorRow.PlayerId);
             if (c == null) return;
 
@@ -279,13 +282,23 @@ namespace UI
                 () => _presenter.SubmitCommand(new WasteAPCommand(tick, playerId)));
         }
 
-        private static string BuildActionSignature(BattleSnapshot s)
+        private static string BuildActionSignature(BattleSnapshot s, WorldState state)
         {
             for (int i = 0; i < s.CharacterRows.Count; i++)
             {
                 BattleSnapshot.CharacterRow r = s.CharacterRows[i];
                 if (r.IsCurrentActor && !r.IsDead)
-                    return $"{r.PlayerId}|{r.ActionPoints}|{r.LocationName}|{s.CurrentTurn}|{s.PhaseText}";
+                {
+                    string sig = $"{r.PlayerId}|{r.ActionPoints}|{r.LocationName}|{s.CurrentTurn}|{s.PhaseText}";
+                    // 数据幽灵：形态/分身不体现在快照行字段，须从 state 实况补维度——
+                    // 切形态(125, 0 AP)后若签名不变，旧形态按钮残留会误导（V1 按钮实际按
+                    // V2 结算 / V5 目标列表不更新 / stale 自愈按钮变自伤入口）
+                    Character actor = state.GetCharacterByPlayer(r.PlayerId);
+                    if (actor?.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                        sig += $"|form{DataGhostFormAttack.CurrentForm(actor)}"
+                             + $"|clone{(state.GhostCloneActive ? 1 : 0)}";
+                    return sig;
+                }
             }
             return "none";
         }
@@ -400,7 +413,8 @@ namespace UI
                     if (!SkillSystem.CanActivate(skill, c, i)) continue;
                     int skillTick = state.CurrentTick;
                     int skillPlayer = c.PlayerId;
-                    AddButton("技能 混乱 → 选择模拟道具 (1 AP)",
+                    // 费用文案走 SkillCostText（Def 120 Cost=AP1）；扣费由 ChaosSimulateCommand 执行
+                    AddButton($"技能 混乱 → 选择模拟道具 ({SkillCostText(skill)})",
                         () => OpenChaosMenu(state, c, skillTick, skillPlayer));
                     continue;
                 }
@@ -469,6 +483,8 @@ namespace UI
             {
                 int tick = state.CurrentTick;
                 int pid = c.PlayerId;
+                // 转换非技能槽（无 SkillDef 可查），费用文案与 TwinConvertCommand.Execute
+                // 扣 1 AP 同源——改动扣费须同步此文案
                 AddButton("转换武器 (1 AP)", () => OpenConvertMenu(c, tick, pid));
             }
         }
@@ -741,14 +757,14 @@ namespace UI
             _submenuOverlay.style.display = DisplayStyle.None;
         }
 
-        /// <summary>混沌「混乱」第一步：选模拟道具。池成员资格唯一取自
-        /// ChaosSimulateCommand.IsSimulatable（UI 不另设池表），注册表现有 Id 域 1-9/12/13。</summary>
+        /// <summary>混沌「混乱」第一步：选模拟道具。候选池唯一取自
+        /// ChaosSimulateCommand.SimPool（与命令层成员判定同源，UI 不另设池表/硬编码上限）。</summary>
         private void OpenChaosMenu(WorldState state, Character c, int tick, int playerId)
         {
             var items = new List<(string label, Action onClick)>();
-            for (int itemId = 1; itemId <= 13; itemId++)
+            for (int i = 0; i < ChaosSimulateCommand.SimPool.Length; i++)
             {
-                if (!ChaosSimulateCommand.IsSimulatable(itemId)) continue;
+                int itemId = ChaosSimulateCommand.SimPool[i]; // 每轮迭代新实例 → 闭包正确捕获
                 ItemDef item = ItemRegistry.Get(itemId);
                 if (item == null) continue;
                 items.Add((item.Name, () => OpenChaosTarget(state, tick, playerId, itemId)));
@@ -809,6 +825,7 @@ namespace UI
                     CloseSubmenu();
                 }));
             }
+            // 子选单标题费用硬编码：非技能槽，与 TwinConvertCommand.Execute 扣 1 AP 同源（改动须同步）
             OpenSubmenu("灵巧：转换武器（1 AP）", items);
         }
 
