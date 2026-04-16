@@ -14,6 +14,9 @@ namespace ReplayTools
     /// <summary>
     /// 回放面板：录制一局 AI 对战 → 存 .dynreplay → 加载 → Tick/回合/指令步进 →
     /// 实时哈希 vs 录制值（红绿）+ 角色状态表 + 事件时间线。
+    /// 限制：录制仅走默认轮换（StartGame 无注入 defs，Attach 传全零表）；P7 角色局
+    /// （Def Id 14-16，混沌/双子/数据幽灵）的录制→回放由测试层注入 defs 覆盖
+    /// （ReplayRoundTripTests.Replay_P7CharacterDefs_HashesMatchEveryTick），面板未提供选角注入。
     /// </summary>
     public class ReplayWindow : EditorWindow
     {

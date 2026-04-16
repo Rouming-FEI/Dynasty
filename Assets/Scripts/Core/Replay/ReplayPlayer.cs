@@ -102,26 +102,13 @@ namespace Core.Replay
             return true;
         }
 
-        /// <summary>按角色 Def Id 重建定义（1-13 全表；0 由 AllZero 分支处理）。</summary>
+        /// <summary>
+        /// 按角色 Def Id 重建定义——委托 CharacterDefCatalog（与快照反序列化同源，
+        /// 新增角色只扩目录，禁止在此另设硬编码表；未知 Id 返回 null 由调用方抛错）。
+        /// </summary>
         private static CharacterDef CreateDef(int id)
         {
-            switch (id)
-            {
-                case 1: return GuardianDef.Create();
-                case 2: return CharmSpiritDef.Create();
-                case 3: return NormalPersonDef.Create();
-                case 4: return SwordGhostDef.Create();
-                case 5: return MagicianDef.Create();
-                case 6: return TravelerDef.Create();
-                case 7: return TimeThiefDef.Create();
-                case 8: return ListenerDef.Create();
-                case 9: return SeaMirageDef.Create();
-                case 10: return WoodSpiritDef.Create();
-                case 11: return FormationMasterDef.Create();
-                case 12: return PaladinDef.Create();
-                case 13: return AgentDef.Create();
-                default: return null;
-            }
+            return CharacterDefCatalog.Get(id);
         }
 
         private ChipAllocation? TakeChips(int playerId)
