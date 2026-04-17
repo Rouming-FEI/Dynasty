@@ -51,18 +51,15 @@ namespace Gameplay.Characters
             // 扣 AP（施放行为发生；判定败也照扣——S2）
             c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
 
-            // 反噬判定对手：敌人道具的目标；否则数组序第一存活他人（地狱呓语先例）
+            // 反噬判定对手：敌人道具的目标；否则数组序第一存活他人（地狱呓语先例）。
+            // 无目标分支复用 GhostAbyss.FindFirstOtherAlive——存活他人按 Sanity > 0 裁决，
+            // 与 DamagePipeline 死亡判据同源：4AP 混沌同回合击杀后继续模拟自用道具时，
+            // DeathCommand 未结算的尸体（!IsDead 且 Sanity=0）不得参与判定（无他人视为胜）。
             Character rival = null;
             if (!selfItem)
                 rival = state.GetCharacterByPlayer(TargetPlayerId);
             if (rival == null)
-            {
-                for (int i = 0; i < state.Characters.Length; i++)
-                {
-                    Character ch = state.Characters[i];
-                    if (ch != null && !ch.IsDead && ch.PlayerId != c.PlayerId) { rival = ch; break; }
-                }
-            }
+                rival = GhostAbyss.FindFirstOtherAlive(state, c);
             bool win = rival == null || JudgmentDuel.Resolve(state, c, rival);
             if (!win)
             {

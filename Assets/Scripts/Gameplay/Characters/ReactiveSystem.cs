@@ -263,7 +263,8 @@ namespace Gameplay.Characters
         /// 语义裁决：Sanity ≤ 0 视为死（与 DamagePipeline 死亡判据同源）——TryOnKill/分身死亡判定
         /// 在 DeathCommand/Dead 标记落定前派发，刚被杀者此刻仍 !IsDead，必须以理智归零排除尸体
         /// （2 人残局终杀否则会把尸体判为 rival，违背 S8「无他人视为胜」）。
-        /// 阵法回路/混沌/地狱呓语的内联副本为各自场景自洽语义，不随本 helper 改动。
+        /// 阵法回路/地狱呓语的内联副本为各自场景自洽语义，不随本 helper 改动
+        /// （混沌反噬已于评审收敛复用本 helper，见 ChaosSimulateCommand）。
         /// </summary>
         public static Character FindFirstOtherAlive(WorldState state, Character self)
         {

@@ -213,5 +213,36 @@ namespace Dynasty.Tests.Characters
             Assert.AreEqual(0, lost.Commands.Count, "败而未死：无入队命令");
             Assert.AreEqual(3f, lost.GetCharacterByPlayer(1).Sanity, 0.001f, "败：他人不受任何影响");
         }
+
+        [Test]
+        public void 混乱_未结算尸体不参与反噬判定_无存活他人视为胜()
+        {
+            // M1：同回合刚被杀（DeathCommand 未结算）的角色 Sanity=0 且无 Dead 标记（!IsDead），
+            // 混沌无目标分支的「数组序第一存活他人」内联扫描曾只查 IsDead → 4AP 混沌同回合
+            // 击杀后再模拟血包等自用道具会与尸体判定（败 → 反噬自扣甚至入队死亡）。
+            // 修复语义与 FindFirstOtherAlive 对齐：Sanity ≤ 0 视为死（DamagePipeline 死亡判据
+            // 同源），尸体不得参与——全场只剩尸体的场景 rival 必须为 null → 免判定直结
+            // （1→4 满、无入队命令、不自损）。多 seed 断言行为恒等：尸体若被选中即引入
+            // 随机判定，落入败局（自扣至 0 + DeathCommand 入队）即红，检出旧内联实现。
+            for (int seed = 42; seed < 50; seed++)
+            {
+                var s = BuildWithChaos(seed);
+                var chaos = s.GetCharacterByPlayer(ChaosPlayer);
+                chaos.ASC.SetAttributeBaseValue(AttributeConstants.ActionPoints, 3);
+                chaos.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 1f);
+                for (int i = 0; i < s.Characters.Length; i++)
+                {
+                    Character ch = s.Characters[i];
+                    if (ch != null && ch.PlayerId != ChaosPlayer)
+                        ch.ASC.SetAttributeBaseValue(AttributeConstants.Sanity, 0f); // 未结算尸体：不打 Dead 标记
+                }
+                new ChaosSimulateCommand(0, ChaosPlayer, 2, ChaosPlayer).Execute(s);
+                Assert.AreEqual(4f, chaos.Sanity, 0.001f,
+                    $"seed={seed}：尸体不得参与判定，血包应直结回 3（1→4 钳 MaxSanity）");
+                Assert.AreEqual(2, chaos.ActionPoints, $"seed={seed}：施放扣 1 AP");
+                Assert.IsFalse(chaos.IsDead, $"seed={seed}：无他人视为胜，不自损");
+                Assert.AreEqual(0, s.Commands.Count, $"seed={seed}：胜分支不产生入队命令");
+            }
+        }
     }
 }
