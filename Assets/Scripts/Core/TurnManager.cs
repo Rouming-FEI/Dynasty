@@ -76,6 +76,10 @@ namespace Core
                 // 代行者主的庇护：NoStatus 常驻被动（无法被施加任何状态）
                 if (c.Definition?.Id == 13)
                     c.ASC.Tags.AddTag(GameplayTagConstants.NoStatus);
+
+                // 数据幽灵：初始形态 V1（形态标签自动进哈希/序列化）
+                if (c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                    c.ASC.Tags.AddTag(GameplayTagConstants.V1Form);
             }
 
             if (useDefaultRotation)
@@ -299,6 +303,14 @@ namespace Core
             // 重置本回合移动记录
             for (int i = 0; i < state.MovedThisTurn.Length; i++)
                 state.MovedThisTurn[i] = false;
+
+            // 数据幽灵：回合末重置「本回合已切换形态」标记（每回合限 1 次切换）
+            for (int i = 0; i < state.PlayerCount; i++)
+            {
+                Character ch = state.Characters[i];
+                if (ch != null && ch.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                    ch.ASC.Tags.RemoveTag(GameplayTagConstants.FormSwitched);
+            }
 
             // 地点规则回合结束钩子（如实验室深度潮汐周期判定）
             var locationRules = state.Locations.Rules;

@@ -4,16 +4,16 @@ using NUnit.Framework;
 
 namespace Dynasty.Tests
 {
-    /// <summary>13 角色 Def 目录：id 唯一性、工厂可用性、技能例外与名称顺序。</summary>
+    /// <summary>16 角色 Def 目录：id 唯一性、工厂可用性、技能例外与名称顺序。</summary>
     public class CharacterCatalogTests
     {
         [Test]
-        public void Catalog_HasThirteenDistinctIds()
+        public void Catalog_HasSixteenDistinctIds()
         {
             int[] ids = CharacterCatalog.GetAllIds();
 
-            Assert.AreEqual(13, ids.Length);
-            Assert.AreEqual(13, new HashSet<int>(ids).Count);
+            Assert.AreEqual(16, ids.Length);
+            Assert.AreEqual(16, new HashSet<int>(ids).Count);
         }
 
         [Test]
@@ -48,9 +48,12 @@ namespace Dynasty.Tests
         {
             string[] names = CharacterCatalog.GetNames();
 
-            Assert.AreEqual(13, names.Length);
+            Assert.AreEqual(16, names.Length);
             Assert.AreEqual("守护者", names[0]);
             Assert.AreEqual("普通人", names[2]);
+            Assert.AreEqual("混沌法师", names[13]);
+            Assert.AreEqual("双子", names[14]);
+            Assert.AreEqual("数据幽灵", names[15]);
         }
     }
 }

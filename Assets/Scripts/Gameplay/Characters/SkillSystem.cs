@@ -14,6 +14,21 @@ namespace Gameplay.Characters
     {
         /// <summary>守护技能 Id（GuardianDef 中定义，全技能表内唯一）。</summary>
         public const int GuardianSkillId = 2;
+        /// <summary>P7-A 角色 Id（新角色全局常量，禁止裸数字）。</summary>
+        public const int ChaosMageCharacterId = 14;
+        public const int TwinCharacterId = 15;
+        public const int DataGhostCharacterId = 16;
+        /// <summary>P7-A 技能 Id（混沌法师 120-122 / 双子 123-124 / 数据幽灵 125-129）。</summary>
+        public const int ChaosSkillId = 120;
+        public const int ChaosBackfireSkillId = 121;  // 被动占位（逻辑在 ChaosSimulateCommand 内联）
+        public const int HellChildSkillId = 122;      // 被动占位（逻辑在 ItemCommands 拦截）
+        public const int TwinVampiricSkillId = 123;
+        public const int TwinAgileSkillId = 124;
+        public const int HandsonicSkillId = 125;
+        public const int HarmonicsSkillId = 126;
+        public const int DisciplineSkillId = 127;     // Reactive OnPreDamage
+        public const int AbyssSkillId = 128;          // Reactive OnKill
+        public const int CloneDrainSkillId = 129;     // 周期被动 Interval=1（分身回合末扣 1）
         /// <summary>技能是否可激活：仅限主动技能、施放者存活可行动、满足 RequiredTags、不含 BlockingTags、AP 足够。</summary>
         /// <param name="skillIndex">技能在 CharacterDef.Skills 中的索引；-1 = 不检查冷却（既有调用点兼容）。</param>
         public static bool CanActivate(SkillDef skill, Character c, int skillIndex = -1)
@@ -22,6 +37,11 @@ namespace Gameplay.Characters
             if (skill.Activation != SkillActivationType.Active) return false; // 被动/响应型技能不可主动施放
             if (skill.RequiredTags != null && !c.ASC.Tags.HasAll(skill.RequiredTags)) return false;
             if (skill.BlockingTags != null && c.ASC.Tags.HasAny(skill.BlockingTags)) return false;
+            // 双子附灵（123/124）前置特例：无武器拒绝且不扣 AP（spec 4.2 指定落点；
+            // 附灵以手中武器为载体）。Activate 支付分支内保留同款检查作双保险。
+            if ((skill.Id == SkillSystem.TwinVampiricSkillId || skill.Id == SkillSystem.TwinAgileSkillId)
+                && c.Inventory.EquippedWeapon == null)
+                return false;
             if (skill.Cost.Type == SkillCostType.AP)
             {
                 // 守护满充能时免费给盾，不检查 AP（阈值取 skill.ChargeThreshold，0 值兜底 3）
@@ -112,6 +132,41 @@ namespace Gameplay.Characters
                 c.ASC.AddGuardianCharge();
                 if (c.ASC.GetGuardianCharge() >= threshold)
                     c.ASC.Tags.AddTag(GameplayTagConstants.FreeTravel);
+                return;
+            }
+
+            // 双子附灵（123/124）：必须持有武器；无武器拒绝且不扣 AP（CanActivate 已前置拦截，
+            // 此处双保险，防御直接命令调用路径）。
+            // 两槽共用单一附灵状态：激活即切到该技能对应形态（S3：作用于角色，换武器保留）。
+            if (skill.Id == SkillSystem.TwinVampiricSkillId || skill.Id == SkillSystem.TwinAgileSkillId)
+            {
+                if (c.Inventory.EquippedWeapon == null) return; // 无武器：拒绝不扣 AP
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+                c.ASC.Tags.RemoveTag(GameplayTagConstants.TwinVampiric);
+                c.ASC.Tags.RemoveTag(GameplayTagConstants.TwinAgile);
+                c.ASC.Tags.AddTag(skill.Id == SkillSystem.TwinVampiricSkillId
+                    ? GameplayTagConstants.TwinVampiric
+                    : GameplayTagConstants.TwinAgile);
+                return;
+            }
+
+            // 数据幽灵 Handsonic 形态切换（125，0 AP）：每回合限 1 次由 BlockingTags(FormSwitched)
+            // 在 CanActivate 层拦截；此处只做「按序循环到下一已解锁形态」（仅 V1 时无效返回）。
+            if (skill.Id == SkillSystem.HandsonicSkillId)
+            {
+                if (c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                    DataGhostFormAttack.SwitchForm(c);
+                return;
+            }
+
+            // 数据幽灵 Harmonics（126，1 AP）：制造分身（S4：已有分身拒绝不扣费；S5：分身理智 3）
+            if (skill.Id == SkillSystem.HarmonicsSkillId)
+            {
+                if (c.Definition?.Id != SkillSystem.DataGhostCharacterId) return;
+                if (state.GhostCloneActive) return; // 已有分身：拒绝且不扣 AP
+                c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
+                state.GhostCloneActive = true;
+                state.GhostCloneSanity = 3f;
                 return;
             }
 

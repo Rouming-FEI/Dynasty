@@ -27,6 +27,8 @@ namespace Dynasty.Tests.Network
             Assert.That(actual.WoodSeedPlayer, Is.EqualTo(expected.WoodSeedPlayer));
             Assert.That(actual.WoodSeedLocation, Is.EqualTo(expected.WoodSeedLocation));
             Assert.That(actual.PaladinAegisUsed, Is.EqualTo(expected.PaladinAegisUsed));
+            Assert.That(actual.GhostCloneActive, Is.EqualTo(expected.GhostCloneActive), "GhostCloneActive");
+            Assert.That(actual.GhostCloneSanity, Is.EqualTo(expected.GhostCloneSanity), "GhostCloneSanity");
             Assert.That(actual.LocationTrapCounts, Is.EqualTo(expected.LocationTrapCounts));
             Assert.That(actual.MovedThisTurn, Is.EqualTo(expected.MovedThisTurn));
 

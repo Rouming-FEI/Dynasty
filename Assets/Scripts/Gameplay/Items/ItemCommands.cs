@@ -33,8 +33,17 @@ namespace Gameplay.Items
                 if (item.Type == ItemType.Weapon && item.Id != 3) return;
             }
 
+            // 地狱的子民（技能 Id=122）拦截键 = 角色 Definition.Id==14（混沌法师），
+            // 非技能 Id——勿按技能 Id 改判定键：禁拾取武器类/消耗品（应急装置 Id=8 豁免，规格 3.3）
+            if (c.Definition?.Id == SkillSystem.ChaosMageCharacterId && item.Id != 8) return;
+
             // 鬼化：禁拾取武器
             if (c.ASC.Tags.HasTag(GameplayTagConstants.GhostForm) && item.Type == ItemType.Weapon) return;
+
+            // 数据幽灵（Def 16）：形态自带武器语义（普攻由 DamageCommand 按角色分派到
+            // DataGhostFormAttack，实体武器无行动路由）→ 拦截武器拾取（与鬼化同款裁决），
+            // 消除"可拾取但永远用不上"的死角；消耗品仍可拾取
+            if (c.Definition?.Id == SkillSystem.DataGhostCharacterId && item.Type == ItemType.Weapon) return;
 
             // 武器类进装备位（与 TurnManager.AddItemToInventory 一致）。
             // 修复：武器曾进背包，UseItemCommand 走武器路由后从不移除，
@@ -85,6 +94,10 @@ namespace Gameplay.Items
                 if (item.Id == 8) return;
                 if (item.Type == ItemType.Weapon) return;
             }
+
+            // 地狱的子民（技能 Id=122）拦截键 = 角色 Definition.Id==14（混沌法师），
+            // 非技能 Id——勿按技能 Id 改判定键：禁使用任何道具/武器（应急装置 Id=8 豁免）
+            if (c.Definition?.Id == SkillSystem.ChaosMageCharacterId && item.Id != 8) return;
 
             // 静止时空：期间禁治疗道具（血包 Id=2 / 应急装置 Id=8）
             if (c.ASC.Tags.HasTag(GameplayTagConstants.TimeStop) && IsHealingItem(item))
@@ -146,7 +159,8 @@ namespace Gameplay.Items
 
             if (item.UseEffect != null)
             {
-                float damage = GetSanityDamage(item.UseEffect);
+                // 伤害数值单一来源 = ItemRegistry.UseEffect（GetSanityDamage），勿另设常量
+                float damage = ItemRegistry.GetSanityDamage(item);
                 if (damage > 0f)
                 {
                     DamagePipeline.ApplyDamage(state, c.Id, target.Id, damage, DamageType.Physical);
@@ -172,34 +186,24 @@ namespace Gameplay.Items
         /// <summary>武器使用路由：根据武器类型分发到 WeaponSystem。</summary>
         private static void ExecuteWeaponUse(WorldState state, Character c, Character target, ItemDef item)
         {
+            // 武器伤害一律读 ItemRegistry.UseEffect（GetSanityDamage）——数值唯一来源
+            float itemDamage = ItemRegistry.GetSanityDamage(item);
             switch (item.Id)
             {
                 case 3: // 枪 — 远程攻击，需弹药
-                    WeaponSystem.RangedAttack(state, c, target, item, 2f);
+                    WeaponSystem.RangedAttack(state, c, target, item, itemDamage);
                     break;
                 case 4: // 施工锤 — 近战攻击（投掷/拆除由独立 Command 处理）
-                    DamagePipeline.ApplyDamage(state, c.Id, target.Id, 1.5f, DamageType.Physical);
+                    DamagePipeline.ApplyDamage(state, c.Id, target.Id, itemDamage, DamageType.Physical);
                     break;
                 case 5: // 核弹 — 嵌入 RPS 判定，胜者全体 3 真实伤害
                     NukeSystem.Launch(state, c);
                     break;
                 default: // 其他武器（刀等）— 走 UseEffect 伤害
-                    float damage = GetSanityDamage(item.UseEffect);
-                    if (damage > 0f)
-                        DamagePipeline.ApplyDamage(state, c.Id, target.Id, damage, DamageType.Physical);
+                    if (itemDamage > 0f)
+                        DamagePipeline.ApplyDamage(state, c.Id, target.Id, itemDamage, DamageType.Physical);
                     break;
             }
-        }
-
-        /// <summary>返回效果中负 Sanity 修改器对应的伤害值（正数）；无伤害修改器返回 0。</summary>
-        private static float GetSanityDamage(GameplayEffect effect)
-        {
-            AttributeModifier[] mods = effect.Modifiers;
-            if (mods == null) return 0f;
-            for (int i = 0; i < mods.Length; i++)
-                if (mods[i].AttributeId == AttributeConstants.Sanity && mods[i].Magnitude < 0f)
-                    return -mods[i].Magnitude;
-            return 0f;
         }
 
         /// <summary>治疗类道具判定：血包（Id=2）/ 应急处理装置（Id=8）。</summary>
@@ -385,8 +389,9 @@ namespace Gameplay.Items
             Character target = state.GetCharacterByPlayer(TargetPlayerId);
             if (target == null || target.IsDead || target.PlayerId == PlayerId) return;
 
-            // RangedAttack 内部处理弹药扣减与藏匿瞄准检查，失败则不扣 AP
-            if (WeaponSystem.RangedAttack(state, c, target, gun, 2f))
+            // RangedAttack 内部处理弹药扣减与藏匿瞄准检查，失败则不扣 AP。
+            // 伤害数值源 = ItemRegistry.UseEffect（GetSanityDamage），勿另设常量
+            if (WeaponSystem.RangedAttack(state, c, target, gun, ItemRegistry.GetSanityDamage(gun)))
                 c.ASC.ModifyAttributeCurrentValue(AttributeConstants.ActionPoints, -1f);
         }
     }

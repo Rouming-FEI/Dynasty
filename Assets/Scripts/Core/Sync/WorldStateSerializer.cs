@@ -101,6 +101,8 @@ namespace Core.Sync
             w.Write(state.WoodSeedPlayer);
             w.Write(state.WoodSeedLocation);
             w.Write(state.PaladinAegisUsed);
+            w.Write(state.GhostCloneActive);
+            w.Write(state.GhostCloneSanity);
 
             // LastAllocations
             w.Write(state.LastAllocations.Length);
@@ -350,6 +352,8 @@ namespace Core.Sync
             state.WoodSeedPlayer = r.ReadInt32();
             state.WoodSeedLocation = r.ReadInt32();
             state.PaladinAegisUsed = r.ReadBoolean();
+            state.GhostCloneActive = r.ReadBoolean();
+            state.GhostCloneSanity = r.ReadSingle();
 
             int allocLen = r.ReadInt32();
             CheckLength(allocLen, "LastAllocations", GameConfig.MaxPlayers);

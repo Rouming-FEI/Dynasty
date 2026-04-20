@@ -25,7 +25,10 @@ namespace SkillAcceptance
             WoodSpiritDef.Create(),
             FormationMasterDef.Create(),
             PaladinDef.Create(),
-            AgentDef.Create()
+            AgentDef.Create(),
+            ChaosMageDef.Create(),
+            TwinDef.Create(),
+            DataGhostDef.Create()
         };
 
         public static AcceptanceReport RunAll() => RunCore(includeLogic: true, includeTurn: true);

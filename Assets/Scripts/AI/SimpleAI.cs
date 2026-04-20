@@ -43,6 +43,23 @@ namespace AI
             ICommand emergency = TryUseEmergencyDevice(state, c, playerId);
             if (emergency != null) return emergency;
 
+            // P7-A 角色特例：混沌/数据幽灵全接管（绝不落回通用技能流——否则混沌 120 会被
+            // TryUseSkill 当普通技能空放烧 AP）；双子只拦截附灵/转换/泣血攻击（其余落通用流）
+            int defId = c.Definition?.Id ?? 0;
+            if (defId == SkillSystem.ChaosMageCharacterId)
+                return TryChaosAction(state, c, playerId)
+                    ?? TryMove(state, c, playerId)
+                    ?? new WasteAPCommand(state.CurrentTick, playerId);
+            if (defId == SkillSystem.DataGhostCharacterId)
+                return TryGhostAction(state, c, playerId)
+                    ?? TryMove(state, c, playerId)
+                    ?? new WasteAPCommand(state.CurrentTick, playerId);
+            if (defId == SkillSystem.TwinCharacterId)
+            {
+                ICommand twinCmd = TryTwinAction(state, c, playerId);
+                if (twinCmd != null) return twinCmd;
+            }
+
             int roll = _random.Next(100);
 
             // Find enemy at same location (for combat) and any alive enemy (for movement)
@@ -108,8 +125,11 @@ namespace AI
             Span<int> validSkills = stackalloc int[c.Definition.Skills.Length];
             int vc = 0;
             for (int i = 0; i < c.Definition.Skills.Length; i++)
-                if (SkillSystem.CanActivate(c.Definition.Skills[i], c))
+            {
+                SkillDef cand = c.Definition.Skills[i];
+                if (SkillSystem.CanActivate(cand, c) && !IsTwinFormRecast(c, cand))
                     validSkills[vc++] = i;
+            }
             if (vc == 0) return null;
 
             int skillIdx = validSkills[_random.Next(vc)];
@@ -134,7 +154,7 @@ namespace AI
             {
                 SkillDef skill = c.Definition.Skills[i];
                 if ((skill.Target == SkillTargetType.Self || skill.Target == SkillTargetType.Any)
-                    && SkillSystem.CanActivate(skill, c))
+                    && SkillSystem.CanActivate(skill, c) && !IsTwinFormRecast(c, skill))
                     validSkills[vc++] = i;
             }
             if (vc == 0) return null;
@@ -229,6 +249,140 @@ namespace AI
                 ItemDef item = c.Inventory.Consumables[i];
                 if (item != null && item.Id == 8)
                     return new UseItemCommand(state.CurrentTick, playerId, i, playerId);
+            }
+            return null;
+        }
+
+        /// <summary>按技能 Id 找技能槽索引（无 → -1）。</summary>
+        private static int FindSkillIndex(Character c, int skillId)
+        {
+            if (c?.Definition?.Skills == null) return -1;
+            for (int i = 0; i < c.Definition.Skills.Length; i++)
+                if (c.Definition.Skills[i].Id == skillId) return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// 双子（角色 15）已附灵（泣血/灵巧）时排除附灵技能槽 123/124：通用流随机再选附灵技能，
+        /// 要么重附空耗 1 AP、要么随机翻转泣血⇄灵巧——推翻 TryTwinAction 按理智/武器选定的形态策略
+        /// （Task 6 评审 I2-Minor）。docs 允许 1 AP 主动切换，但随机翻转非策略；附灵/切换决策
+        /// 只由 TryTwinAction 专属路径发出，通用流落攻击/移动。
+        /// </summary>
+        private static bool IsTwinFormRecast(Character c, SkillDef skill)
+        {
+            if (c.Definition?.Id != SkillSystem.TwinCharacterId) return false;
+            int id = skill == null ? 0 : skill.Id;
+            if (id != SkillSystem.TwinVampiricSkillId && id != SkillSystem.TwinAgileSkillId) return false;
+            return c.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric)
+                || c.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile);
+        }
+
+        /// <summary>混沌法师决策：低理智模拟血包；有敌人时 60% 混乱模拟（刀/枪掷选）或普攻；否则交给移动。</summary>
+        private ICommand TryChaosAction(WorldState state, Character c, int playerId)
+        {
+            if (c.Sanity <= 1.5f && c.Sanity < c.MaxSanity)
+                return new ChaosSimulateCommand(state.CurrentTick, playerId, 2, playerId); // 模拟血包
+
+            int enemy = FindNearestEnemy(state, c, playerId);
+            if (enemy < 0) return null;
+
+            if (_random.Next(100) < 60)
+            {
+                int itemId = _random.Next(2) == 0 ? 1 : 3; // 刀（近战 1.5）/ 枪（远程 2，免弹药地理）
+                return new ChaosSimulateCommand(state.CurrentTick, playerId, itemId, enemy);
+            }
+            if (c.Inventory.EquippedWeapon == null) return null; // 空手：无普攻
+            return TryAttack(state, c, playerId, enemy);
+        }
+
+        /// <summary>数据幽灵决策：无分身且充裕时概率造分身；低理智切 V4 花；远程优势切 V5；
+        /// V1 常态概率升 V2；按当前形态攻击（V4 自愈）。
+        /// 形态切换（125）按预测落点匹配目标才发（见下方 NextUnlockedForm 门控）。</summary>
+        private ICommand TryGhostAction(WorldState state, Character c, int playerId)
+        {
+            int harmIdx = FindSkillIndex(c, SkillSystem.HarmonicsSkillId);
+            int switchIdx = FindSkillIndex(c, SkillSystem.HandsonicSkillId);
+
+            if (!state.GhostCloneActive && c.Sanity >= 2.5f && c.ActionPoints >= 1
+                && harmIdx >= 0 && _random.Next(100) < 30)
+                return new UseSkillCommand(state.CurrentTick, playerId, harmIdx, playerId);
+
+            int enemy = FindNearestEnemy(state, c, playerId);
+            bool sameLoc = enemy >= 0
+                && state.GetCharacterByPlayer(enemy)?.CurrentLocationId == c.CurrentLocationId;
+            int form = DataGhostFormAttack.CurrentForm(c);
+
+            if (switchIdx >= 0 && !c.ASC.Tags.HasTag(GameplayTagConstants.FormSwitched))
+            {
+                // 技能 125 每次只单步落到「下一已解锁形态」（SwitchForm 语义）：决策按只读预测
+                // NextUnlockedForm 的落点匹配目标形态才发指令，否则「想切 V4 实际落 V2」要空烧
+                // 每回合一次的切换额度爬多回合、V5→V4 还会绕环。落点不匹配即放弃本次切换
+                // （走攻击/移动），保持简单确定性策略（Task 6 评审 I1）。
+                int nextForm = DataGhostFormAttack.NextUnlockedForm(c, form);
+                if (c.Sanity < 2f && c.Sanity < c.MaxSanity
+                    && DataGhostFormAttack.IsUnlocked(c, 4) && nextForm == 4)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V4 花
+                if (enemy >= 0 && !sameLoc
+                    && DataGhostFormAttack.IsUnlocked(c, 5) && nextForm == 5)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V5 远程
+                if (sameLoc && nextForm == 2 && _random.Next(100) < 35)
+                    return new UseSkillCommand(state.CurrentTick, playerId, switchIdx, playerId); // → V2 长刃
+            }
+
+            if (form == 4)
+                return c.Sanity < c.MaxSanity
+                    ? (ICommand)new DamageCommand(state.CurrentTick, playerId, playerId, 1f) // V4 自愈
+                    : null;
+            if (sameLoc)
+                return new DamageCommand(state.CurrentTick, playerId, enemy, 1f); // V1/V2/V3 近战
+            if (enemy >= 0 && form == 5)
+                return new DamageCommand(state.CurrentTick, playerId, enemy, 1f); // V5 远程
+            return null;
+        }
+
+        /// <summary>双子决策：无附灵且持武器时附灵（受伤 → 泣血回血；健康 → 灵巧换枪路线）；
+        /// 泣血态恢复健康后主动切灵巧（docs 7.6 设计内 1 AP 切换）；灵巧态周期换枪；
+        /// 泣血态受伤打近战吸血。附灵形态只在本分派内变更（通用技能流排除附灵槽，
+        /// 见 IsTwinFormRecast——避免随机重附/翻转推翻本策略）。其余交给通用流。</summary>
+        private ICommand TryTwinAction(WorldState state, Character c, int playerId)
+        {
+            if (c.Inventory.EquippedWeapon == null) return null;
+            if (c.ActionPoints < 1) return null;
+
+            bool vamp = c.ASC.Tags.HasTag(GameplayTagConstants.TwinVampiric);
+            bool agile = c.ASC.Tags.HasTag(GameplayTagConstants.TwinAgile);
+
+            if (!vamp && !agile)
+            {
+                // 确定性策略（非掷币）：受伤（需回血）→ 泣血；健康 → 灵巧（换枪路线）。
+                // AI 随机流按玩家固定，掷币结果跨对局恒定——无意义的随机源。
+                bool wantVamp = c.Sanity < c.MaxSanity - 0.9f;
+                int idx = wantVamp
+                    ? FindSkillIndex(c, SkillSystem.TwinVampiricSkillId)
+                    : FindSkillIndex(c, SkillSystem.TwinAgileSkillId);
+                if (idx >= 0)
+                    return new UseSkillCommand(state.CurrentTick, playerId, idx, playerId);
+            }
+
+            if (agile && c.Inventory.EquippedWeapon.Id != 3 && _random.Next(100) < 18)
+                return new TwinConvertCommand(state.CurrentTick, playerId, 3); // 周期换枪（简化）
+
+            if (vamp && c.Sanity < c.MaxSanity - 0.9f)
+            {
+                int enemy = FindNearestEnemy(state, c, playerId);
+                if (enemy >= 0
+                    && state.GetCharacterByPlayer(enemy)?.CurrentLocationId == c.CurrentLocationId)
+                    return TryAttack(state, c, playerId, enemy); // 泣血攻击吸血
+            }
+
+            if (vamp && c.Sanity >= c.MaxSanity - 0.9f
+                && c.Inventory.EquippedWeapon.Id != 3)
+            {
+                // 泣血仅在受伤时有回血价值：健康后主动切换灵巧续上换枪路线
+                // （随机翻转被通用流排除，这是形态变更的唯一健康路径）
+                int agileIdx = FindSkillIndex(c, SkillSystem.TwinAgileSkillId);
+                if (agileIdx >= 0)
+                    return new UseSkillCommand(state.CurrentTick, playerId, agileIdx, playerId);
             }
             return null;
         }

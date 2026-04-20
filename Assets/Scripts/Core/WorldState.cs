@@ -54,6 +54,10 @@ namespace Core
         // 圣骑士护佑一次性标记（全局仅一次）
         public bool PaladinAegisUsed;
 
+        // 数据幽灵分身（镜像复制体，S5/S6：全局单例，先例同 WoodSeedPlayer）
+        public bool GhostCloneActive;   // 分身是否活跃
+        public float GhostCloneSanity;  // 分身理智池（初始 3，每回合末 -1）
+
         public WorldState(int playerCount, int randomSeed = 42)
         {
             PlayerCount = playerCount;
@@ -69,6 +73,8 @@ namespace Core
             WoodSeedPlayer = -1;
             WoodSeedLocation = -1;
             PaladinAegisUsed = false;
+            GhostCloneActive = false;
+            GhostCloneSanity = 0f;
             CurrentTick = 0;
             CurrentTurn = 0;
             Phase = TurnPhase.Waiting;
@@ -135,6 +141,8 @@ namespace Core
             hash = hash * 31 + WoodSeedPlayer;
             hash = hash * 31 + WoodSeedLocation;
             hash = hash * 31 + (PaladinAegisUsed ? 1 : 0);
+            hash = hash * 31 + (GhostCloneActive ? 1 : 0);
+            hash = hash * 31 + (int)(GhostCloneSanity * 1000);
             for (int i = 0; i < LocationTrapCounts.Length; i++)
                 hash = hash * 31 + LocationTrapCounts[i];
             for (int i = 0; i < MovedThisTurn.Length; i++)

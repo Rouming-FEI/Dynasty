@@ -52,7 +52,7 @@ namespace Core.GAS
                 finalDamage += source?.ASC.GetAttributeValue(AttributeConstants.AttackBonus) ?? 0f;
 
             // 2.5 响应式前置钩子（OnPreDamage）：攻击加成后调用，响应技能可抵消或增伤（如镜花水月）
-            ReactiveSystem.TryOnPreDamage(state, source, target, ref finalDamage);
+            ReactiveSystem.TryOnPreDamage(state, source, target, damageType, ref finalDamage);
 
             // 2.6 来源侧攻击判定（魑魅迷离之境）：胜 → 本次伤害 + 1/2；败 → 心雾 +1
             ReactiveSystem.TryOnAttack(state, source, target, ref finalDamage);
@@ -83,6 +83,11 @@ namespace Core.GAS
                 finalDamage -= targetASC.GetAttributeValue(AttributeConstants.PhysicalDefense);
             else if (damageType == DamageType.Magic)
                 finalDamage -= targetASC.GetAttributeValue(AttributeConstants.MagicDefense);
+
+            // 数据幽灵 V1 音刃形态：物理防御 +0.5（标签等价线性减伤，仅 V1 持有期间）
+            if (damageType == DamageType.Physical
+                && targetASC.Tags.HasTag(GameplayTagConstants.V1Form))
+                finalDamage -= 0.5f;
 
             // 圣骑士守护之光：下次受伤 -2，一次性消耗（移除标签与 GE）
             if (targetASC.Tags.HasTag(GameplayTagConstants.GuardLight))

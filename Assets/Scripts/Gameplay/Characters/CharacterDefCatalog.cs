@@ -2,7 +2,7 @@ using Core.GAS;
 
 namespace Gameplay.Characters
 {
-    /// <summary>13 角色 Def 目录（id → 工厂），Simulation 层专用（快照反序列化重建角色用）。</summary>
+    /// <summary>16 角色 Def 目录（id → 工厂），Simulation 层专用（快照反序列化重建角色用）。</summary>
     public static class CharacterDefCatalog
     {
         public static CharacterDef Get(int id)
@@ -22,6 +22,9 @@ namespace Gameplay.Characters
                 case 11: return FormationMasterDef.Create();
                 case 12: return PaladinDef.Create();
                 case 13: return AgentDef.Create();
+                case 14: return ChaosMageDef.Create();
+                case 15: return TwinDef.Create();
+                case 16: return DataGhostDef.Create();
                 default: return null;
             }
         }

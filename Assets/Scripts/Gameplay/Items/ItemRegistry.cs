@@ -228,5 +228,21 @@ namespace Gameplay.Items
                 if (_items[i].Id == id) return _items[i];
             return null;
         }
+
+        /// <summary>
+        /// 读取道具 UseEffect 的理智伤害量（负向 Sanity Add 的绝对值；正数，无则 0）。
+        /// 伤害类道具/武器的数值**唯一来源** = 本注册表 UseEffect——各使用/模拟路径
+        /// （UseItemCommand、FireGunCommand、ChaosSimulateCommand）一律经此读取，
+        /// 命令层禁止另设伤害常量（曾三处硬编码刀 1.5/锤 1.5/枪 2 漂移）。
+        /// </summary>
+        public static float GetSanityDamage(ItemDef item)
+        {
+            if (item == null || item.UseEffect == null || item.UseEffect.Modifiers == null) return 0f;
+            AttributeModifier[] mods = item.UseEffect.Modifiers;
+            for (int i = 0; i < mods.Length; i++)
+                if (mods[i].AttributeId == AttributeConstants.Sanity && mods[i].Magnitude < 0f)
+                    return -mods[i].Magnitude;
+            return 0f;
+        }
     }
 }

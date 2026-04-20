@@ -311,5 +311,42 @@ namespace Dynasty.Tests.Replay
             Assert.That(player.State.CurrentTick, Is.GreaterThan(tickBefore), "消费真人行动后 Tick 应推进");
             Assert.That(player.HasDeviation, Is.False);
         }
+
+        [Test]
+        public void Replay_P7CharacterDefs_HashesMatchEveryTick()
+        {
+            // 三角色局注入 P7 角色（混沌14/双子15/数据幽灵16）录制 → 回放逐 Tick 哈希一致。
+            // 防回归锚点：CreateDef 曾硬编码 1-13，回放重建 14/15/16 抛「未知角色 Def Id」，
+            // 此类日志在修复前连 ReplayPlayer 构造都过不去。
+            int seed = 2026;
+            int[] defIds = { 14, 15, 16 };
+            var defs = new[]
+            {
+                CharacterDefCatalog.Get(14),
+                CharacterDefCatalog.Get(15),
+                CharacterDefCatalog.Get(16)
+            };
+            var state = new WorldState(3, seed);
+            var ais = new SimpleAI[3];
+            for (int i = 0; i < ais.Length; i++) ais[i] = new SimpleAI(i);
+            var lockstep = new LocalLockstep(state, ais);
+            lockstep.StartGame(defs);
+            var recorder = ReplayRecorder.Attach(lockstep, seed, defIds);
+            int guard = 0;
+            while (state.Phase != TurnPhase.GameOver && guard++ < GameConfig.MaxTurns)
+                lockstep.RunTurn();
+            var log = recorder.Finish();
+            Assert.That(log.CharacterDefIds, Is.EqualTo(defIds), "录制日志应带注入角色表");
+
+            var player = new ReplayPlayer(log); // 修复前：CreateDef 抛异常，回放不可达
+            guard = 0;
+            while (!player.Finished && !player.HasDeviation && guard++ < 10000)
+                player.StepTick();
+            Assert.That(player.HasDeviation, Is.False,
+                $"P7 角色局回放偏差发生在 Tick {player.DeviationTick}");
+            Assert.That(player.Finished, Is.True, "回放应推进到录制终点");
+            Assert.That(player.State.CurrentTurn, Is.EqualTo(lockstep.State.CurrentTurn));
+            Assert.That(player.State.Phase, Is.EqualTo(lockstep.State.Phase));
+        }
     }
 }

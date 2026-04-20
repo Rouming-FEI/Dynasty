@@ -10,6 +10,8 @@ namespace Core.Replay
         FireGun, SeedPlant, SeedRemove, DrawBlade, SheatheBlade, Unbind,
         ToggleDoor, ToggleTideSwitch, RemoveThreshold, MountTurret, LoadTurret,
         AimTurret, FireTurret, DismountTurret, Attack,
+        ChaosSimulate,
+        TwinConvert,
         /// <summary>未识别/不支持的命令类型。</summary>
         Unknown = 255
     }

@@ -1,6 +1,7 @@
 using Core;
 using Core.GAS;
 using Gameplay.Characters;
+using Gameplay.Items;
 
 namespace SkillAcceptance
 {
@@ -29,6 +30,23 @@ namespace SkillAcceptance
                     c.ASC.RegisterPassive(c.Definition.Skills[s]);
                 c.ASC.EnsureCooldownSlots(c.Definition.Skills.Length);
                 state.Characters[3] = c;
+
+                // 初始道具 = 仅补发角色 Def 自带 InitialItem（武器进装备位 / 消耗品入背包）。
+                // 与真开局（TurnManager.GrantInitialItems）的差异：不发「每人 1 血包」与
+                // 「出生地点初始道具」——本路径只覆盖 Def.InitialItem 等价子集；需要背包道具
+                // 的验收链路须在脚本 Override 显式投放/清零，禁止依赖开局背包。
+                if (extra.InitialItem > 0)
+                {
+                    ItemDef init = ItemRegistry.Get(extra.InitialItem);
+                    if (init != null)
+                    {
+                        if (init.Type == ItemType.Weapon) c.Inventory.EquipWeapon(init);
+                        else c.Inventory.AddConsumable(init);
+                    }
+                }
+                // 数据幽灵初始形态 V1（真开局由 TurnManager.StartGame 补；验收自建需手动同步）
+                if (extra.Id == SkillSystem.DataGhostCharacterId)
+                    c.ASC.Tags.AddTag(GameplayTagConstants.V1Form);
             }
             return state;
         }
