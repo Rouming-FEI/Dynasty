@@ -40,11 +40,14 @@ namespace Dynasty.Tests.Ladder
             Assert.AreEqual(rank, LadderRules.RankOf(streak));
         }
 
-        [Test]
-        public void RankName_Endpoints()
+        [TestCase(0, "未定级")]
+        [TestCase(1, "青铜")]
+        [TestCase(2, "白银")]
+        [TestCase(3, "黄金")]
+        [TestCase(4, "登顶")]
+        public void RankName_Table(int rankIndex, string expected)
         {
-            Assert.AreEqual("未定级", LadderRules.RankName(0));
-            Assert.AreEqual("登顶", LadderRules.RankName(4));
+            Assert.AreEqual(expected, LadderRules.RankName(rankIndex));
         }
 
         [Test]
