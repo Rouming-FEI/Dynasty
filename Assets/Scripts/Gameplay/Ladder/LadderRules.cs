@@ -1,10 +1,12 @@
+using Core;
+
 namespace Gameplay.Ladder
 {
     /// <summary>天梯·肉鸽挑战常量与纯函数（spec：纪录制段位 + 总量排名分）。</summary>
     public static class LadderRules
     {
         /// <summary>挑战层数上限（引擎 MaxPlayers=8 → 第 7 层 = 8 人局 1v7 封顶）。</summary>
-        public const int MaxLayers = 7;
+        public const int MaxLayers = GameConfig.MaxPlayers - 1;
 
         /// <summary>单层最大 RunTurn 次数（超出判失败终止，防死局；测试用小值覆盖）。</summary>
         public const int MaxRoundsPerLayer = 400;

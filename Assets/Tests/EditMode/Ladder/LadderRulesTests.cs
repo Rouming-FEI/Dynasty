@@ -1,3 +1,4 @@
+using Core;
 using Gameplay.Ladder;
 using NUnit.Framework;
 
@@ -9,7 +10,7 @@ namespace Dynasty.Tests.Ladder
         public void PlayerCountAtLayer_IncrementsFromTwo()
         {
             Assert.AreEqual(2, LadderRules.PlayerCountAtLayer(1));
-            Assert.AreEqual(8, LadderRules.PlayerCountAtLayer(LadderRules.MaxLayers));
+            Assert.AreEqual(GameConfig.MaxPlayers, LadderRules.PlayerCountAtLayer(LadderRules.MaxLayers));
             for (int layer = 1; layer <= LadderRules.MaxLayers; layer++)
                 Assert.AreEqual(layer + 1, LadderRules.PlayerCountAtLayer(layer));
         }
