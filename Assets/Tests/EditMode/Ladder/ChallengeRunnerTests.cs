@@ -141,5 +141,36 @@ namespace Dynasty.Tests.Ladder
             Assert.AreEqual(60L, p.TotalScore);   // 30 + 30
             Assert.AreEqual(2, p.Attempts);
         }
+
+        [Test]
+        public void GodVsPawns_ThenPawn_SecondLayerDeath_RecordsFirstStreak()
+        {
+            // 层 1 = God 必胜；层 2 起槽 0 = Pawn（必败）→ streak=1、score=10、FailedAtLayer=2
+            var store = new InMemoryProfileStore();
+            var cfg = new ChallengeConfig { Seed = 31415, LayerCap = 3 };
+            CharacterDef[] Draw(int layer, int playerCount, DeterministicRandom rng)
+                => layer == 1
+                    ? ChallengeTestDefs.GodVsPawns(layer, playerCount, rng)
+                    : ChallengeTestDefs.PawnVsGods(layer, playerCount, rng);
+            var runner = new ChallengeRunner(cfg, store, Draw);
+            ChallengeResult r = runner.Run();
+
+            Assert.IsFalse(r.Won);
+            Assert.AreEqual(1, r.Streak);
+            Assert.AreEqual(10L, r.Score);
+            Assert.AreEqual(2, r.FailedAtLayer);
+            Assert.IsFalse(r.TimedOut);
+            Assert.AreEqual(1, store.Load().BestStreak);
+            Assert.AreEqual(1, store.Load().Attempts);
+        }
+
+        [Test]
+        public void LayerCapBeyondMax_Throws()
+        {
+            var store = new InMemoryProfileStore();
+            var cfg = new ChallengeConfig { Seed = 1, LayerCap = LadderRules.MaxLayers + 1 };
+            var runner = new ChallengeRunner(cfg, store, ChallengeTestDefs.AllGods);
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => runner.Run());
+        }
     }
 }

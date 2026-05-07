@@ -35,6 +35,9 @@ namespace Gameplay.Ladder
         {
             var rng = new DeterministicRandom(_config.Seed);
             int layerCap = _config.LayerCap > 0 ? _config.LayerCap : LadderRules.MaxLayers;
+            if (layerCap > LadderRules.MaxLayers)
+                throw new ArgumentOutOfRangeException(nameof(_config.LayerCap),
+                    _config.LayerCap, $"层数上限不能超过 LadderRules.MaxLayers（{LadderRules.MaxLayers}）");
             int roundCap = _config.MaxRoundsPerLayer > 0
                 ? _config.MaxRoundsPerLayer : LadderRules.MaxRoundsPerLayer;
 
@@ -83,7 +86,9 @@ namespace Gameplay.Ladder
             public int Rounds;
         }
 
-        /// <summary>跑一层完整局：逐回合驱动到 GameOver 或护栏；槽 0 中途死亡立即退出（局未决）。</summary>
+        /// <summary>跑一层完整局：逐回合驱动到 GameOver 或护栏；槽 0 中途死亡立即退出（局未决）。
+        /// 隐含前提：roundCap 必须小于 GameConfig.MaxTurns（999）——否则回合上限式 GameOver
+        /// 可能多活者并存，`Slot0Alive && GameOver` 不再等价于唯一存活吃鸡（默认 400 安全）。</summary>
         public static LayerRunInfo RunLayerGame(int playerCount, int seed,
             CharacterDef[] defs, int roundCap)
         {
