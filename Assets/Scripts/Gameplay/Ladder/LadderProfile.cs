@@ -32,7 +32,8 @@ namespace Gameplay.Ladder
 
         public string RankName => LadderRules.RankName(Rank);
 
-        /// <summary>结算一次挑战：bestStreak 取 max、总分累加、次数 +1、last 字段覆盖；返回新实例。</summary>
+        /// <summary>结算一次挑战：bestStreak 取 max、总分累加、次数 +1、last 字段覆盖；
+        /// 进行中挑战三字段（HasActiveRun/ActiveSeed/ActiveLayer）保留不动；返回新实例。</summary>
         public LadderProfile Apply(int streak, long score)
         {
             var p = this;
