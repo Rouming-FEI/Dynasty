@@ -59,8 +59,9 @@ namespace Gameplay.Ladder
             return _session;
         }
 
-        /// <summary>会话模式：从存档层续跑（层间存档点）——重放 1..atLayer-1 的抽签/层 seed 消费序，
-        /// streak 起点 = atLayer-1（存档点意味着此前各层已吃鸡）。atLayer 越界抛 ArgumentOutOfRange。</summary>
+        /// <summary>会话模式：从存档层续跑（层间存档点）——补消费中间层抽签/层 seed
+        /// （层 1 已由 StartInternal 预备，重放 2..atLayer-1），streak 起点 = atLayer-1
+        /// （存档点意味着此前各层已吃鸡）。atLayer 越界抛 ArgumentOutOfRange。</summary>
         public ChallengeRunSession ResumeHumanRun(int seed, int atLayer)
         {
             if (atLayer < 1 || atLayer > LadderRules.MaxLayers)
@@ -68,12 +69,17 @@ namespace Gameplay.Ladder
                     $"续跑层必须在 1..LadderRules.MaxLayers（{LadderRules.MaxLayers}）内");
             StartInternal(seed);
             _streak = atLayer - 1;
-            for (int layer = 1; layer < atLayer; layer++)
+            if (atLayer > 1)
             {
-                _drawDefs(layer, LadderRules.PlayerCountAtLayer(layer), _rng);
-                _rng.Next(int.MaxValue);
+                // StartInternal 已把流推进到层 1 之后（PrepareNextLayer(1) 消费 draw(1)+seed）；
+                // 续跑需补消费 2..atLayer-1 各层，再备 atLayer 层（atLayer==1 等价 Begin，直接返回）。
+                for (int layer = 2; layer < atLayer; layer++)
+                {
+                    _drawDefs(layer, LadderRules.PlayerCountAtLayer(layer), _rng);
+                    _rng.Next(int.MaxValue);
+                }
+                PrepareNextLayer(atLayer);
             }
-            PrepareNextLayer(atLayer);
             return _session;
         }
 
@@ -151,6 +157,7 @@ namespace Gameplay.Ladder
                 TimedOut = timedOut
             };
             _session.CurrentDefs = null;
+            _session.CurrentLayerSeed = 0;
             _session.IsActive = false;
             _session.IsComplete = true;
         }
