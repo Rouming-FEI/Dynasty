@@ -123,25 +123,29 @@ namespace Dynasty.Tests.Ladder
             Assert.AreEqual(2, afterB.Attempts);
         }
 
-        [Test]
-        public void ResumeHumanRun_ReproducesDrawSequence()
+        [TestCase(2)]
+        [TestCase(3)]
+        public void ResumeHumanRun_ReproducesDrawSequence(int atLayer)
         {
             var cfg = new ChallengeConfig { Seed = 2026 };
-            // 参考系：新挑战吃鸡层 1 → 会话停在层 2（待跑），取层 2 defs 的 id 序
+            // 参考系：新挑战连赢 atLayer-1 层 → 会话停在 atLayer（待跑），取 defs/seed
             var refRunner = NewRunner(cfg, out _);
             ChallengeRunSession refSession = refRunner.BeginHumanRun(2026);
-            refSession = refRunner.ReportHumanLayerEnd(Win());
-            Assert.AreEqual(2, refSession.CurrentLayer);
+            for (int i = 1; i < atLayer; i++)
+                refSession = refRunner.ReportHumanLayerEnd(Win());
+            Assert.AreEqual(atLayer, refSession.CurrentLayer);
             int[] expected = DefIdsOf(refSession);
-            Assert.AreEqual(3, expected.Length);          // 层 2 = 3 人局
+            int expectedSeed = refSession.CurrentLayerSeed;
+            Assert.AreEqual(atLayer + 1, expected.Length);   // 层 k = k+1 人局
 
-            // 续跑路径：Resume(seed, 2) → defs 与参考逐槽一致（消费序同源）
+            // 续跑路径：Resume(seed, atLayer) → defs/seed 与参考一致（消费序同源）
             var r2 = NewRunner(cfg, out var store);
-            ChallengeRunSession resumed = r2.ResumeHumanRun(2026, 2);
+            ChallengeRunSession resumed = r2.ResumeHumanRun(2026, atLayer);
 
             Assert.IsTrue(resumed.IsActive);
-            Assert.AreEqual(2, resumed.CurrentLayer);
+            Assert.AreEqual(atLayer, resumed.CurrentLayer);
             CollectionAssert.AreEqual(expected, DefIdsOf(resumed));
+            Assert.AreEqual(expectedSeed, resumed.CurrentLayerSeed);
             Assert.AreEqual(0, store.Load().Attempts);    // 续跑本身不结算
         }
 
