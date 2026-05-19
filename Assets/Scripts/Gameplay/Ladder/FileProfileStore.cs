@@ -7,8 +7,9 @@ namespace Gameplay.Ladder
 {
     /// <summary>档案文件存储（Simulation 内纯 .NET IO——asmdef noEngineReferences 允许 System.IO）。
     /// Unity 侧传 Application.persistentDataPath 为目录；测试传临时目录。
-    /// 格式：KV 行 + 版本头（零依赖、人类可读；v1 字段见各字段名）。
-    /// 容错：文件缺失/版本不符/坏行 → 零值档案（HasActiveRun=false），不抛——存档损坏不应炸游戏。</summary>
+    /// 格式：KV 行 + 版本头（零依赖、人类可读、无 BOM；v1 字段见各字段名）。
+    /// 容错：文件缺失/版本头不符/坏编码 → 整档零值（HasActiveRun=false）；坏行/坏值 → 行级降级（该字段归零、其余保留）；
+    /// 任何损坏不抛——存档异常不应炸游戏。Save 走临时文件 + 同卷原子替换，崩溃/断电不留半截档。</summary>
     public sealed class FileProfileStore : IProfileStore
     {
         private const string Header = "dynasty-ladder-profile v1";
@@ -71,7 +72,13 @@ namespace Gameplay.Ladder
             sb.Append("hasActiveRun=").Append(profile.HasActiveRun ? 1 : 0).Append('\n');
             sb.Append("activeSeed=").Append(profile.ActiveSeed.ToString(CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("activeLayer=").Append(profile.ActiveLayer.ToString(CultureInfo.InvariantCulture)).Append('\n');
-            File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
+            // 原子写：同卷 .tmp → 替换/移动——崩溃/断电不留半截主档（半截 → Load 零值 → 后续零值覆盖 = 生涯纪录不可逆丢失）
+            string tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, sb.ToString(), new System.Text.UTF8Encoding(false));   // 无 BOM：人类可读、首行无噪声
+            if (File.Exists(FilePath))
+                File.Replace(tmp, FilePath, null);   // 同卷原子替换（net48 可用）
+            else
+                File.Move(tmp, FilePath);            // 首次写：目标不存在走 Move
         }
 
         private static int ParseInt(string s) => int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
