@@ -278,5 +278,19 @@ namespace Bootstrap
             _state = new WorldState(_playerCount, _randomSeed);
             SubscribeEvents(_state.Events);
         }
+
+        /// <summary>热座重开：指定种子 + 注入角色（天梯挑战层局用——层局 = 标准热座局，
+        /// 只是 defs/seed 由挑战会话给出；Start 里建的 _ais 按 playerId 固定，无需重建）。</summary>
+        public void RestartHotseat(int seed, CharacterDef[] defs)
+        {
+            StopAllCoroutines();
+            _running = false;
+            _gameStarted = false;
+            _lockstep = null;
+            _randomSeed = seed;
+            _state = new WorldState(_playerCount, _randomSeed);
+            SubscribeEvents(_state.Events);
+            BeginHotseat(defs);
+        }
     }
 }

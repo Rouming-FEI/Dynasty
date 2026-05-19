@@ -909,13 +909,26 @@ namespace UI
                 remaining.RemoveAt(pick);
             }
 
+            BeginBattleWithDefs(defs);
+        }
+
+        /// <summary>以给定角色直接开局（热座选角回调与天梯挑战层局共用入口）。
+        /// 前置：bootstrap 已处于待开局态（_gameStarted == false——挑战层局由
+        /// RestartHotseat(seed, defs) 先复位）。内部重建 presenter 并 Bind 当前锁步。</summary>
+        public void BeginBattleWithDefs(CharacterDef[] defs)
+        {
+            if (_presenter != null) return;   // 防重入（选角双击同语义）
             _bootstrap.BeginHotseat(defs);
-            _presenter = new BattlePresenter(state);
+            _presenter = new BattlePresenter(_bootstrap.GetState());
             _presenter.Bind(_bootstrap.GetLockstep(), 0);
             _actionSignature = null;
-
-            // 立即收起选角层：不等下一帧 Update，关闭双击窗口
             _charSelectOverlay.style.display = DisplayStyle.None;
+        }
+
+        /// <summary>回到选角态（挑战菜单/终局回菜单用）：复位 bootstrap 与 presenter。</summary>
+        public void ResetToCharacterSelect()
+        {
+            RequestRestart();   // 既有私有方法语义完备（RestartHotseat + presenter 清空 + 各层收起）
         }
 
         private void RequestRestart()
