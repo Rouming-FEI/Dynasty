@@ -1,0 +1,33 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- 天梯挑战：菜单 / HUD / 弹层（overlay 由控制器控制显隐） -->
+    <ui:VisualElement name="ladder-root" class="ladder-root">
+        <!-- ① 挑战主菜单 -->
+        <ui:VisualElement name="menu-root" class="ladder-panel">
+            <ui:Label text="天梯挑战" class="ladder-title" />
+            <ui:Label name="menu-rank-label" class="ladder-rank" />
+            <ui:Label name="menu-stats-label" class="ladder-stats" />
+            <ui:Button name="new-run-button" text="新挑战（从第 1 层开始）" class="ladder-button" />
+            <ui:Button name="continue-button" text="继续进行中的挑战" class="ladder-button" />
+            <ui:Label name="menu-continue-hint" class="ladder-hint" />
+            <ui:Button name="to-hotseat-button" text="跳过挑战 → 直接热座对局" class="ladder-button" />
+        </ui:VisualElement>
+
+        <!-- ② 挑战 HUD（层局进行中，置顶条） -->
+        <ui:VisualElement name="hud-root" class="ladder-hud">
+            <ui:Label name="hud-layer-label" class="ladder-hud-item" />
+            <ui:Label name="hud-char-label" class="ladder-hud-item" />
+            <ui:Label name="hud-streak-label" class="ladder-hud-item" />
+            <ui:Button name="abandon-button" text="放弃挑战" class="ladder-button ladder-abandon" />
+        </ui:VisualElement>
+
+        <!-- ③ 弹层（层间/终局共用） -->
+        <ui:VisualElement name="overlay-root" class="ladder-overlay">
+            <ui:VisualElement class="ladder-overlay-card">
+                <ui:Label name="overlay-title" class="ladder-title" />
+                <ui:Label name="overlay-body" class="ladder-stats" />
+                <ui:Button name="overlay-primary-button" class="ladder-button" />
+                <ui:Button name="overlay-secondary-button" class="ladder-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -913,8 +913,9 @@ namespace UI
         }
 
         /// <summary>以给定角色直接开局（热座选角回调与天梯挑战层局共用入口）。
-        /// 前置：bootstrap 已处于待开局态（_gameStarted == false——挑战层局由
-        /// RestartHotseat(seed, defs) 先复位）。内部重建 presenter 并 Bind 当前锁步。</summary>
+        /// 前置：bootstrap 已开局（RestartHotseat 自启）或待开局均可——BeginHotseat 幂等
+        /// （_gameStarted 已 true 时跳过，defs 由调用方先行注入）；本方法核心职责 =
+        /// presenter 重建并 Bind 当前锁步（层局切换时必须，否则 UI 绑旧锁步无人接线）。</summary>
         public void BeginBattleWithDefs(CharacterDef[] defs)
         {
             if (_presenter != null) return;   // 防重入（选角双击同语义）
