@@ -3,7 +3,6 @@ using Bootstrap;
 using Core;
 using Gameplay.Characters;
 using Gameplay.Ladder;
-using UI.Presenter;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -16,6 +15,7 @@ namespace UI
     /// 每帧轮询层局终态（GameOver 或槽 0 死亡）→ ReportHumanLayerEnd 推进会话。
     /// 挂载要求：UIDocument（Source Asset = LadderUI.uxml）+ Inspector 引用 GameBootstrap 与 BattleUIController。
     /// </summary>
+    [RequireComponent(typeof(UIDocument))]
     public class ChallengeUIController : MonoBehaviour
     {
         [SerializeField] private GameBootstrap _bootstrap;
@@ -181,6 +181,7 @@ namespace UI
 
         private void OnAbandon()
         {
+            if (!_layerRunning) return;
             // 弃局 = 当前层判败（层内中断不存档；结束挑战）
             _layerRunning = false;
             var info = new ChallengeRunner.LayerRunInfo

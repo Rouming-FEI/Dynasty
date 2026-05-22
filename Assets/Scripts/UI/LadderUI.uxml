@@ -1,4 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <ui:Style src="LadderUI.uss" />
     <!-- 天梯挑战：菜单 / HUD / 弹层（overlay 由控制器控制显隐） -->
     <ui:VisualElement name="ladder-root" class="ladder-root">
         <!-- ① 挑战主菜单 -->
