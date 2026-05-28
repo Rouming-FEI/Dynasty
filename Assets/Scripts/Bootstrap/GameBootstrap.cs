@@ -118,17 +118,17 @@ namespace Bootstrap
                     sb.Append("中立: ").AppendLine(j.NeutralHand >= 0 ? handNames[j.NeutralHand] : "-");
                 }
                 sb.Append("  筹码: ");
-                for (int i = 0; i < _playerCount; i++)
+                for (int i = 0; i < _state.PlayerCount; i++)
                 {
                     Character c = _state.Characters[i];
                     if (c == null || c.IsDead) continue;
                     var a = _state.LastAllocations[i];
                     sb.Append($"{c.Name}:石{a.Rock}剪{a.Scissors}布{a.Paper}");
-                    if (i < _playerCount - 1) sb.Append(" | ");
+                    if (i < _state.PlayerCount - 1) sb.Append(" | ");
                 }
                 sb.AppendLine();
                 sb.Append("  AP: ");
-                for (int i = 0; i < _playerCount; i++)
+                for (int i = 0; i < _state.PlayerCount; i++)
                 {
                     Character c = _state.Characters[i];
                     if (c == null || c.IsDead) continue;
@@ -137,7 +137,7 @@ namespace Bootstrap
                         role = _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Winner ? "[胜]" :
                                _state.LastJudgment.Roles[i] == Gameplay.Judgment.JudgmentRole.Loser ? "[败]" : "[中]";
                     sb.Append($"{c.Name}:{c.ActionPoints}AP{role}");
-                    if (i < _playerCount - 1) sb.Append(" | ");
+                    if (i < _state.PlayerCount - 1) sb.Append(" | ");
                 }
                 Debug.Log(sb.ToString());
             });
@@ -226,7 +226,7 @@ namespace Bootstrap
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.Append($"[Round {_state.CurrentTurn}] ");
-            for (int i = 0; i < _playerCount; i++)
+            for (int i = 0; i < _state.PlayerCount; i++)
             {
                 Character c = _state.Characters[i];
                 if (c == null) continue;
@@ -243,7 +243,7 @@ namespace Bootstrap
                         : $" [{equipped.Name}]";
 
                 sb.Append($"{c.Name}:{c.Sanity:F1}HP AP={c.ActionPoints}{shield}{dead} @{location}{weapon}");
-                if (i < _playerCount - 1) sb.Append(" | ");
+                if (i < _state.PlayerCount - 1) sb.Append(" | ");
             }
             Debug.Log(sb.ToString());
         }
@@ -277,6 +277,25 @@ namespace Bootstrap
             _lockstep = null;
             _state = new WorldState(_playerCount, _randomSeed);
             SubscribeEvents(_state.Events);
+        }
+
+        /// <summary>热座重开：指定种子 + 注入角色（天梯挑战层局用——层局人数与 AI 流按 defs
+        /// 重建，2..8 人层通用；热座默认路径不调本重载，仍走 Start 的 _playerCount）。</summary>
+        public void RestartHotseat(int seed, CharacterDef[] defs)
+        {
+            StopAllCoroutines();
+            _running = false;
+            _gameStarted = false;
+            _lockstep = null;
+            _randomSeed = seed;
+            // 天梯层局人数 = defs 长度（第 k 层 = k+1 人局，2..8）；AI 流按局重建（>4 人层原数组越界）。
+            // 热座默认路径不调本重载，无影响。
+            int n = defs != null && defs.Length >= 2 ? defs.Length : _playerCount;
+            _state = new WorldState(n, _randomSeed);
+            _ais = new SimpleAI[n];
+            for (int i = 0; i < n; i++) _ais[i] = new SimpleAI(i);
+            SubscribeEvents(_state.Events);
+            BeginHotseat(defs);
         }
     }
 }

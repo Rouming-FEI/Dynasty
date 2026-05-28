@@ -59,5 +59,31 @@ namespace Dynasty.Tests.Ladder
             Assert.AreEqual(60L, p.TotalScore);
             Assert.AreEqual(2, p.Attempts);
         }
+
+        [Test]
+        public void DefaultProfile_HasNoActiveRun()
+        {
+            var p = default(LadderProfile);
+            Assert.IsFalse(p.HasActiveRun);
+            Assert.AreEqual(0, p.ActiveSeed);
+            Assert.AreEqual(0, p.ActiveLayer);
+        }
+
+        [Test]
+        public void Apply_DoesNotTouchActiveRun()
+        {
+            var p = new LadderProfile
+            {
+                BestStreak = 0,
+                HasActiveRun = true,
+                ActiveSeed = 555,
+                ActiveLayer = 3
+            };
+            var q = p.Apply(2, LadderRules.SingleRunScore(2));
+            Assert.IsTrue(q.HasActiveRun);
+            Assert.AreEqual(555, q.ActiveSeed);
+            Assert.AreEqual(3, q.ActiveLayer);
+            Assert.AreEqual(2, q.BestStreak);
+        }
     }
 }
