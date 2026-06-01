@@ -24,6 +24,11 @@ namespace Network.Protocol
         /// <summary>协议版本（Hello 首字段，客户端与主机不一致时拒绝加入）。</summary>
         public const int ProtocolVersion = 1;
 
+        // ---- JoinReject 原因（载荷 = 1 byte reason）----
+        public const byte JoinRejectReasonFull = 0;       // 房间满员 / 已开局
+        public const byte JoinRejectReasonVersion = 1;    // 协议版本不符
+        public const byte JoinRejectReasonRoleTaken = 2;  // 角色已被真人占用
+
         /// <summary>从网络包读取的数组长度上限（约 100 万；防损坏/恶意包携带巨大长度导致分配 OOM）。</summary>
         private const int MaxArrayLength = 1 << 20;
 
@@ -96,10 +101,27 @@ namespace Network.Protocol
         public static byte ReadJoinReject(NetDataReader r) => r.GetByte();
 
         // ---- GameStart (H→C) ----
+        // 载荷：[turn:int][defCount:int][defIds:int×defCount]——defIds = 最终角色全表
+        // （AI 槽补位后；长度 = PlayerCount，客户端开局前应用）
 
-        public static void WriteGameStart(NetDataWriter w, int turn) => w.Put(turn);
+        public static void WriteGameStart(NetDataWriter w, int turn, int[] defIds)
+        {
+            w.Put(turn);
+            int count = defIds != null ? defIds.Length : 0;
+            w.Put(count);
+            for (int i = 0; i < count; i++)
+                w.Put(defIds[i]);
+        }
 
-        public static int ReadGameStart(NetDataReader r) => r.GetInt();
+        public static void ReadGameStart(NetDataReader r, out int turn, out int[] defIds)
+        {
+            turn = r.GetInt();
+            int count = r.GetInt();
+            CheckLength(count, "GameStart.DefIds");
+            defIds = new int[count];
+            for (int i = 0; i < count; i++)
+                defIds[i] = r.GetInt();
+        }
 
         // ---- RoundStart (H→C) ----
 

@@ -219,7 +219,7 @@ namespace Network.Session
             {
                 var w = new NetDataWriter();
                 NetProtocol.WriteHeader(w, NetMsgType.GameStart);
-                NetProtocol.WriteGameStart(w, _state.CurrentTurn);
+                NetProtocol.WriteGameStart(w, _state.CurrentTurn, _session.PlayerDefIds);
                 _transport.Broadcast(w);
                 _reconnect.CaptureSnapshot();   // 开局锚点（tick=0）：HandleResyncRequest(0,0) 全量重放兜底
             }
@@ -640,7 +640,7 @@ namespace Network.Session
                     // 客户端：收到开局广播 → 建世界开局（幂等：已开局则忽略）
                     if (!IsHost)
                     {
-                        try { NetProtocol.ReadGameStart(reader); }
+                        try { NetProtocol.ReadGameStart(reader, out _, out _); }
                         catch (Exception e) { ReportError($"GameStart 解析失败: {e.Message}"); }
                         StartGame();
                     }

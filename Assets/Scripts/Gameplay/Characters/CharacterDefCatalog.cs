@@ -5,6 +5,10 @@ namespace Gameplay.Characters
     /// <summary>16 角色 Def 目录（id → 工厂），Simulation 层专用（快照反序列化重建角色用）。</summary>
     public static class CharacterDefCatalog
     {
+        /// <summary>16 角色 Def Id 全集（Simulation 侧；房间 AI 槽补位候选池等用）。</summary>
+        public static readonly int[] AllIds =
+            { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+
         public static CharacterDef Get(int id)
         {
             switch (id)
