@@ -1,5 +1,4 @@
 using System.IO;
-using Core.Replay;
 using Gameplay.Characters;
 using LiteNetLib.Utils;
 using Network.Protocol;
@@ -16,8 +15,10 @@ namespace Dynasty.Tests.Network
             Assert.That(CharacterDefCatalog.AllIds, Is.Not.Null);
             Assert.That(CharacterDefCatalog.AllIds.Length, Is.EqualTo(16), "16 角色全集");
             for (int i = 1; i <= 16; i++)
+            {
                 Assert.That(CharacterDefCatalog.AllIds, Does.Contain(i), $"缺角色 {i}");
-            Assert.That(CharacterDefCatalog.Get(CharacterDefCatalog.AllIds[0]), Is.Not.Null, "每个 id 可解析 Def");
+                Assert.That(CharacterDefCatalog.Get(i), Is.Not.Null, $"角色 {i} 无法解析 Def");
+            }
         }
 
         [Test]
