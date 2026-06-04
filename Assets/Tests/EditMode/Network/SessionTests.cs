@@ -169,5 +169,38 @@ namespace Dynasty.Tests.Network
 
             Assert.Throws<InvalidOperationException>(() => host.ApplyJoinAccept(1, 1, new[] { 1, 2, 3, 4 }));
         }
+
+        [Test]
+        public void SetPlayerDef_写入槽位角色_越界抛异常()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 1, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            session.SetPlayerDef(1, 14);
+            Assert.That(session.PlayerDefIds[1], Is.EqualTo(14));
+            Assert.Throws<ArgumentException>(() => session.SetPlayerDef(9, 1));
+        }
+
+        [Test]
+        public void SetPlayerDef_仅主机可调()
+        {
+            var config = new SessionConfig { PlayerCount = 4 };
+            var session = new NetworkSession(config, false);
+            Assert.Throws<InvalidOperationException>(() => session.SetPlayerDef(1, 1));
+        }
+
+        [Test]
+        public void IsDefReserved_真人占用集查询()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 7, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            Assert.That(session.IsDefReserved(7), Is.True, "槽 0 主机角色已占用");
+            Assert.That(session.IsDefReserved(1), Is.False);
+            session.HandleHello(5, 1);              // peer 5 入座槽 1
+            session.SetPlayerDef(1, 14);            // 槽 1 真人选定 14
+            Assert.That(session.IsDefReserved(14), Is.True, "已入座真人槽角色占用");
+            Assert.That(session.IsDefReserved(16), Is.False);
+            Assert.That(session.IsDefReserved(-1), Is.False);
+            Assert.That(session.IsDefReserved(0), Is.False);
+        }
     }
 }

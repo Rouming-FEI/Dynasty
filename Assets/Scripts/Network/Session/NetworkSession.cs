@@ -137,6 +137,31 @@ namespace Network.Session
             Phase = SessionPhase.InGame;
         }
 
+        /// <summary>主机：写入槽位角色（入座真人先到先得选角；AI 空槽保持 -1 由开局补位）。
+        /// 不限制 Phase（补位在 TryStartGame 之后的 StartGame 内发生）。</summary>
+        public void SetPlayerDef(int playerId, int defId)
+        {
+            if (!IsHost)
+                throw new InvalidOperationException("仅主机可写槽位角色");
+            if (playerId < 0 || playerId >= _playerDefIds.Length)
+                throw new ArgumentException($"playerId {playerId} 越界（须在 [0, {_playerDefIds.Length - 1}]）", nameof(playerId));
+            _playerDefIds[playerId] = defId;
+        }
+
+        /// <summary>真人占用集查询：槽 0（主机本地）或已入座真人槽（PlayerPeerIds[i] != -1）的
+        /// 已定角色包含 defId → 占用。AI 空槽（-1）不参与；defId &lt;= 0 恒 false。</summary>
+        public bool IsDefReserved(int defId)
+        {
+            if (defId <= 0) return false;
+            for (int i = 0; i < _playerDefIds.Length; i++)
+            {
+                if (_playerDefIds[i] != defId) continue;
+                if (i == 0 || _slotOwnerPeer[i] != -1)
+                    return true;
+            }
+            return false;
+        }
+
         /// <summary>主机：重连者拿回原槽位（peerId 重新持有 playerId 槽，经 OnPlayerJoined 解冻信号）。
         /// 校验：InGame 阶段；playerId ∈ [1, PlayerCount-1]（槽 0 恒主机本地）；槽位空闲或已属于该 peer。
         /// 返回 true = 重连成功（槽位已重新分配）。</summary>

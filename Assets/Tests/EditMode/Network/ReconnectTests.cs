@@ -28,6 +28,8 @@ namespace Dynasty.Tests.Network
             public readonly int SelfPeerId;
             public readonly List<(int peer, byte[] data)> Outbound = new List<(int, byte[])>();
 
+            public event Action<int> OnPeerConnected;
+            public event Action<int> OnPeerDisconnected;
             public event Action<int, NetDataReader> OnDataReceived;
 
             public LoopbackTransport(int selfPeerId)
