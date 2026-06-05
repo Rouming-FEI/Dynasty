@@ -54,6 +54,7 @@ namespace Network.Session
         private bool _clientFaulted;                 // 客户端协议校验失败进入错误状态：停止重放，LastError 记录原因（I3/I6）
         private ChipAllocation[] _committedBatch;    // 主机：最近判定结算的全员筹码（OnJudgmentCommitted 捕获 → 广播）
         private ReplayActionRecord? _clientManualAction;  // 客户端：当前待注入行动记录（ManualInputProvider 读取，单次）
+        private bool _helloSent;                     // Lobby 握手：客户端 Hello 防重（Task 3）
 
         // 断线重连（Task 11）：主机会话日志 + 快照 + 客户端重放；断线槽冻结（宽限期不超时填充）
         private readonly ReconnectHandler _reconnect;
@@ -67,6 +68,27 @@ namespace Network.Session
         public bool GameOver => _state == null || _state.Phase == TurnPhase.GameOver;
         public string LastError { get; private set; }
         public event Action<string> OnError;
+
+        /// <summary>会话状态机（驱动层读 Phase/玩家槽/角色表/Seed）。</summary>
+        public NetworkSession Session => _session;
+
+        /// <summary>当前行动者 playerId（引擎侧；-1 = 无行动者/未开局）。presenter 网络模式渲染 actor 用。</summary>
+        public int CurrentActorPlayerId => _lockstep != null ? _lockstep.CurrentActorPlayerId : -1;
+
+        /// <summary>客户端：入座成功（ApplyJoinAccept 后，Phase=InGame 等 GameStart）。</summary>
+        public event Action<int> OnJoined;
+
+        /// <summary>主机视角：对端断线离座（槽已释放并冻结）。参数 = playerId。</summary>
+        public event Action<int> OnPeerLeft;
+
+        /// <summary>客户端：加入被拒。参数 = JoinReject 原因（NetProtocol.JoinRejectReason*）。</summary>
+        public event Action<byte> OnJoinRejected;
+
+        /// <summary>客户端：传输断线（驱动据此弹重连 UI；重连 = 全新会话，P6 语义）。</summary>
+        public event Action OnDisconnected;
+
+        /// <summary>客户端：入座请求的角色 DefId（驱动连接前设置；&lt;=0 = 未定不发 Hello）。</summary>
+        public int RequestedDefId { get; set; } = -1;
 
         /// <summary>客户端协议校验失败错误状态（重放端读取：faulted 后停止喂队列，M6）。
         /// public：测试程序集（Dynasty.Tests.EditMode）是独立 asmdef，internal 跨程序集不可见
@@ -111,6 +133,21 @@ namespace Network.Session
             {
                 if (IsHost && IsSlotFrozen(playerId)) UnfreezeSlot(playerId);
             };
+            // Task 3：传输断线接线（此前无人接——真实断线不释放槽/不冻结/客户端无感知）。
+            // 客户端重连 = 全新会话（P6 语义），故 OnPeerConnected 不做自动分派（驱动决定新加入/重连）。
+            _transport.OnPeerDisconnected += peerId =>
+            {
+                if (IsHost)
+                {
+                    int pid = _session.HandleDisconnect(peerId);   // OnPlayerLeft → FreezeSlot（既有接线）
+                    if (pid >= 0) OnPeerLeft?.Invoke(pid);
+                }
+                else
+                {
+                    NotifyDisconnected();   // 记录断线锚点（重连弃用本 loop 时无副作用）
+                    OnDisconnected?.Invoke();
+                }
+            };
         }
 
         /// <summary>重连服务（快照/会话日志/重放追平）；驱动层经其接入重连流程。</summary>
@@ -128,6 +165,31 @@ namespace Network.Session
             if (IsHost) return;
             _disconnectTick = _state != null ? _state.CurrentTick : 0;
             _disconnectTurn = _state != null ? _state.CurrentTurn : 0;
+        }
+
+        /// <summary>客户端：发送入座请求 Hello（Lobby 阶段、transport 已连接、防重）。驱动在
+        /// transport.OnPeerConnected 后调用；角色 = RequestedDefId（&lt;=0 报错不发）。</summary>
+        public void SendHello()
+        {
+            if (IsHost || _helloSent || _session.Phase != SessionPhase.Lobby) return;
+            if (_transport.LocalPeerId < 0) return;   // 未连接
+            if (RequestedDefId <= 0)
+            {
+                ReportError("未指定入座角色（RequestedDefId），无法加入");
+                return;
+            }
+            _helloSent = true;
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.Hello);
+            NetProtocol.WriteHello(w, NetProtocol.ProtocolVersion, RequestedDefId);
+            _transport.SendReliable(_transport.LocalPeerId, w);
+        }
+
+        /// <summary>客户端：换角重发 Hello（JoinReject(RoleTaken) 后 UI 改 RequestedDefId 再调）。</summary>
+        public void RetryHello()
+        {
+            _helloSent = false;
+            SendHello();
         }
 
         /// <summary>客户端：重连 Connect 成功后发送 ResyncRequest(lastTick, lastTurn, playerId)（驱动接线）。
@@ -636,6 +698,81 @@ namespace Network.Session
             if (!IsHost && _reconnect != null && _reconnect.IsResyncing && type != NetMsgType.ResyncReply) return;
             switch (type)
             {
+                case NetMsgType.Hello:
+                    // Lobby 握手（Task 3）：版本/满员/角色值域/占用裁决 → JoinAccept / JoinReject。
+                    // 占用裁决只针对新入座（槽角色仍 -1）；已持槽重复 Hello 不改角色、回当前表。
+                    if (IsHost)
+                    {
+                        try
+                        {
+                            NetProtocol.ReadHello(reader, out int proto, out int defId);
+                            if (proto != NetProtocol.ProtocolVersion)
+                            {
+                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonVersion);
+                                break;
+                            }
+                            if (_session.Phase != SessionPhase.Lobby)
+                            {
+                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
+                                break;
+                            }
+                            // Task 3 增量：角色值域校验在裁决（入座/占槽）前——defId 非法
+                            // （<=0 或目录无法解析）直接拒绝，不入座不占槽。
+                            if (defId <= 0 || CharacterDefCatalog.Get(defId) == null)
+                            {
+                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonInvalidRole);
+                                break;
+                            }
+                            int slot = _session.HandleHello(peerId, defId);
+                            if (slot < 0)
+                            {
+                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
+                                break;
+                            }
+                            if (_session.PlayerDefIds[slot] == -1)
+                            {
+                                if (_session.IsDefReserved(defId))
+                                {
+                                    _session.HandleDisconnect(peerId);   // 释放刚占的槽再拒绝
+                                    SendJoinReject(peerId, NetProtocol.JoinRejectReasonRoleTaken);
+                                    break;
+                                }
+                                _session.SetPlayerDef(slot, defId);
+                            }
+                            SendJoinAccept(peerId, slot);
+                        }
+                        catch (Exception e) { ReportError($"Hello 解析失败: {e.Message}"); }
+                    }
+                    break;
+                case NetMsgType.JoinAccept:
+                    // 客户端：入座成功（Phase=InGame，等 GameStart 开局）。
+                    // 房间规模权威 = JoinAccept 表：客户端构造时规模未知（占位 PlayerCount=8），
+                    // 解析后先修正 Config.PlayerCount 再 ApplyJoinAccept（校验按修正后规模通过）。
+                    if (!IsHost)
+                    {
+                        try
+                        {
+                            NetProtocol.ReadJoinAccept(reader, out int pid, out int seed, out int[] defIds, out int jMs, out int aMs);
+                            if (defIds == null || defIds.Length == 0)
+                            {
+                                ReportError("JoinAccept 角色表为空");
+                                break;
+                            }
+                            if (defIds.Length != _config.PlayerCount)
+                                _config.PlayerCount = defIds.Length;
+                            _session.ApplyJoinAccept(pid, seed, defIds);
+                            OnJoined?.Invoke(pid);
+                        }
+                        catch (Exception e) { ReportError($"JoinAccept 解析失败: {e.Message}"); }
+                    }
+                    break;
+                case NetMsgType.JoinReject:
+                    if (!IsHost)
+                    {
+                        try { OnJoinRejected?.Invoke(NetProtocol.ReadJoinReject(reader)); }
+                        catch (Exception e) { ReportError($"JoinReject 解析失败: {e.Message}"); }
+                    }
+                    break;
                 case NetMsgType.GameStart:
                     // 客户端：收到开局广播 → 建世界开局（幂等：已开局则忽略）
                     if (!IsHost)
@@ -890,6 +1027,25 @@ namespace Network.Session
             for (int i = 0; i < _chipFilled.Length; i++)
                 if (IsHumanSlot(i) && !_chipFilled[i]) return false;
             return true;
+        }
+
+        /// <summary>主机：向 peer 单播 JoinReject。</summary>
+        private void SendJoinReject(int peerId, byte reason)
+        {
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.JoinReject);
+            NetProtocol.WriteJoinReject(w, reason);
+            _transport.SendReliable(peerId, w);
+        }
+
+        /// <summary>主机：向 peer 单播 JoinAccept（当前全表：真人槽已定 + AI 槽 -1，开战前补位）。</summary>
+        private void SendJoinAccept(int peerId, int playerId)
+        {
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.JoinAccept);
+            NetProtocol.WriteJoinAccept(w, playerId, _session.Seed, _session.PlayerDefIds,
+                _config.JudgmentWindowMs, _config.ActionWindowMs);
+            _transport.SendReliable(peerId, w);
         }
 
         private void ReportError(string msg)

@@ -28,6 +28,7 @@ namespace Network.Protocol
         public const byte JoinRejectReasonFull = 0;       // 房间满员 / 已开局
         public const byte JoinRejectReasonVersion = 1;    // 协议版本不符
         public const byte JoinRejectReasonRoleTaken = 2;  // 角色已被真人占用
+        public const byte JoinRejectReasonInvalidRole = 3; // 角色请求非法/不存在
 
         /// <summary>从网络包读取的数组长度上限（约 100 万；防损坏/恶意包携带巨大长度导致分配 OOM）。</summary>
         private const int MaxArrayLength = 1 << 20;
