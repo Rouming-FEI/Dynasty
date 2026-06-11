@@ -113,6 +113,30 @@ namespace Dynasty.Tests.Network
             r.GetByte();
             Assert.That(r.GetByte(), Is.EqualTo(NetProtocol.JoinRejectReasonRoleTaken));
             Assert.That(hostSession.PlayerPeerIds[2], Is.EqualTo(-1), "拒绝后槽位释放");
+            Assert.That(host.IsSlotFrozen(2), Is.False, "占用裁决先于占槽——拒绝不占槽不冻结（fix：不再经 HandleDisconnect 触发冻结）");
+        }
+
+        [Test]
+        public void Hello_重复peerId请求自持角色_不判占用()
+        {
+            // fix 回归锁：占用裁决移到占槽前（OwnsRole 排除请求方自己）——已持槽 peer 重复
+            // 请求自己已持角色不判占用，仍回 JoinAccept（若排除缺失会把在座玩家误拒/赶出）。
+            var config = HostConfig(4);
+            var hostT = new PeerTransport { IsHost = true, LocalPeerId = 0 };
+            var hostSession = new NetworkSession(config, true);
+            var host = new NetworkGameLoop(hostT, hostSession, config);
+            hostSession.HandleHello(5, 5);
+            hostSession.SetPlayerDef(1, 14);   // peer 5 已持槽 1 角色 14
+
+            var w = new NetDataWriter();
+            NetProtocol.WriteHeader(w, NetMsgType.Hello);
+            NetProtocol.WriteHello(w, NetProtocol.ProtocolVersion, 14);   // 请求自己已持的 14
+            SendRaw(hostT, 5, w);
+
+            Assert.That(TypeOf(hostT.Outbound[hostT.Outbound.Count - 1].data), Is.EqualTo(NetMsgType.JoinAccept), "自持角色不被判占用");
+            Assert.That(hostSession.PlayerPeerIds[1], Is.EqualTo(5), "仍持槽 1");
+            Assert.That(hostSession.PlayerDefIds[1], Is.EqualTo(14), "角色不变");
+            Assert.That(hostSession.PlayerPeerIds[2], Is.EqualTo(-1), "不重复占槽");
         }
 
         [Test]

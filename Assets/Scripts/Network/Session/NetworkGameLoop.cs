@@ -699,8 +699,12 @@ namespace Network.Session
             switch (type)
             {
                 case NetMsgType.Hello:
-                    // Lobby 握手（Task 3）：版本/满员/角色值域/占用裁决 → JoinAccept / JoinReject。
-                    // 占用裁决只针对新入座（槽角色仍 -1）；已持槽重复 Hello 不改角色、回当前表。
+                    // Lobby 握手（Task 3）：版本/满员/角色值域裁决 → JoinAccept / JoinReject。
+                    // fix（主脑裁决）：占用裁决先于占槽——拒绝路径不再先占后释（旧序经
+                    // HandleDisconnect → OnPlayerLeft → FreezeSlot 把刚释放的槽冻结，被拒方
+                    // 离开则槽冻结至宽限期，期间开战首轮判定窗口挂起）。裁决全在
+                    // HandleHello（占槽）之前完成，拒绝恒不占槽不冻结；串行消息循环保证
+                    // 无竞态（同 defId 并发请求按序裁决）。
                     if (IsHost)
                     {
                         try
@@ -716,11 +720,17 @@ namespace Network.Session
                                 SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
                                 break;
                             }
-                            // Task 3 增量：角色值域校验在裁决（入座/占槽）前——defId 非法
-                            // （<=0 或目录无法解析）直接拒绝，不入座不占槽。
+                            // 角色值域校验：defId 非法（<=0 或目录无法解析）不入座不占槽。
                             if (defId <= 0 || CharacterDefCatalog.Get(defId) == null)
                             {
                                 SendJoinReject(peerId, NetProtocol.JoinRejectReasonInvalidRole);
+                                break;
+                            }
+                            // 占用裁决：请求方自己已持该角色（重复 Hello）不判占用；
+                            // 否则该角色被其它真人占用 → 拒绝（不占槽不冻结）。
+                            if (!OwnsRole(peerId, defId) && _session.IsDefReserved(defId))
+                            {
+                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonRoleTaken);
                                 break;
                             }
                             int slot = _session.HandleHello(peerId, defId);
@@ -729,16 +739,9 @@ namespace Network.Session
                                 SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
                                 break;
                             }
+                            // 新入座写请求角色；已持槽重复 Hello 不改已定角色。
                             if (_session.PlayerDefIds[slot] == -1)
-                            {
-                                if (_session.IsDefReserved(defId))
-                                {
-                                    _session.HandleDisconnect(peerId);   // 释放刚占的槽再拒绝
-                                    SendJoinReject(peerId, NetProtocol.JoinRejectReasonRoleTaken);
-                                    break;
-                                }
                                 _session.SetPlayerDef(slot, defId);
-                            }
                             SendJoinAccept(peerId, slot);
                         }
                         catch (Exception e) { ReportError($"Hello 解析失败: {e.Message}"); }
@@ -1046,6 +1049,22 @@ namespace Network.Session
             NetProtocol.WriteJoinAccept(w, playerId, _session.Seed, _session.PlayerDefIds,
                 _config.JudgmentWindowMs, _config.ActionWindowMs);
             _transport.SendReliable(peerId, w);
+        }
+
+        /// <summary>主机：peer 是否已入座且持有该角色（槽角色已定为 defId）——Hello 占用裁决
+        /// 排除请求方自己（fix：重复 Hello 请求自持角色不判占用）。</summary>
+        private bool OwnsRole(int peerId, int defId)
+        {
+            if (defId <= 0) return false;
+            int[] peers = _session.PlayerPeerIds;
+            int[] defs = _session.PlayerDefIds;
+            if (peers == null || defs == null) return false;
+            for (int i = 0; i < peers.Length && i < defs.Length; i++)
+            {
+                if (peers[i] == peerId && defs[i] == defId)
+                    return true;
+            }
+            return false;
         }
 
         private void ReportError(string msg)
