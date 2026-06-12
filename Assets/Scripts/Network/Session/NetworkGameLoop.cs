@@ -182,7 +182,13 @@ namespace Network.Session
             var w = new NetDataWriter();
             NetProtocol.WriteHeader(w, NetMsgType.Hello);
             NetProtocol.WriteHello(w, NetProtocol.ProtocolVersion, RequestedDefId);
-            _transport.SendReliable(_transport.LocalPeerId, w);
+            // 评审遗留：SendReliable 失败（对端不在连接表等）→ 复位防重标记并报错——
+            // 否则 _helloSent 残留 true，RetryHello/SendHello 永远无法重发（防重状态静默残留）。
+            if (!_transport.SendReliable(_transport.LocalPeerId, w))
+            {
+                _helloSent = false;
+                ReportError("Hello 发送失败（对端不在连接表），可重试");
+            }
         }
 
         /// <summary>客户端：换角重发 Hello（JoinReject(RoleTaken) 后 UI 改 RequestedDefId 再调）。</summary>
@@ -215,6 +221,9 @@ namespace Network.Session
         public void StartGame()
         {
             if (_state != null) return;
+            // Task 4：AI 空槽（-1）开战前确定性补位——主机补位后广播的全表即为最终表
+            // （P6 测试 HostPlayerDefIds 全表直给 → 无 -1 → 空转零影响）
+            if (IsHost) FillAiSlots();
             int[] defIds = _session.PlayerDefIds;
             if (defIds == null || defIds.Length != _config.PlayerCount)
             {
@@ -284,6 +293,36 @@ namespace Network.Session
                 NetProtocol.WriteGameStart(w, _state.CurrentTurn, _session.PlayerDefIds);
                 _transport.Broadcast(w);
                 _reconnect.CaptureSnapshot();   // 开局锚点（tick=0）：HandleResyncRequest(0,0) 全量重放兜底
+            }
+        }
+
+        /// <summary>
+        /// 主机：把会话表中 -1 槽（AI 空位）从 16 角色 − 真人占用集 确定性随机补齐。
+        /// 随机源 = 会话 seed 派生的独立流（不碰 WorldState 流——客户端不重复计算，全表随
+        /// GameStart 广播）；开局一次性路径，允许少量分配（非 Hot Path）。
+        /// </summary>
+        private void FillAiSlots()
+        {
+            int[] defs = _session.PlayerDefIds;
+            if (defs == null) return;
+            var rng = new Core.DeterministicRandom(_session.Seed ^ 0x51C7B1A5D5E7A9F3L);
+            var taken = new HashSet<int>();   // 真人占用 + 已补
+            for (int i = 0; i < defs.Length; i++)
+                if (defs[i] > 0) taken.Add(defs[i]);
+            var free = new List<int>(16);
+            for (int i = 1; i < defs.Length; i++)
+            {
+                if (defs[i] != -1) continue;
+                free.Clear();
+                for (int c = 0; c < Gameplay.Characters.CharacterDefCatalog.AllIds.Length; c++)
+                {
+                    int id = Gameplay.Characters.CharacterDefCatalog.AllIds[c];
+                    if (!taken.Contains(id)) free.Add(id);
+                }
+                if (free.Count == 0) break;   // 不可能：槽数 ≤ 8 < 16
+                int pick = rng.Next(free.Count);
+                defs[i] = free[pick];
+                taken.Add(defs[i]);
             }
         }
 
@@ -707,44 +746,56 @@ namespace Network.Session
                     // 无竞态（同 defId 并发请求按序裁决）。
                     if (IsHost)
                     {
+                        // 评审遗留收窄：try 只包载荷解析——解析失败（坏载荷）→ ReportError +
+                        // 放弃本消息：不占槽（不留幽灵座位）、不给 peer 任何回复。try 外是纯业务
+                        // 裁决/占槽路径（顺序：版本→Phase→值域→占用→HandleHello→SetPlayerDef
+                        // →SendJoinAccept）：HandleHello 为返回码语义、SetPlayerDef 的 playerId
+                        // 恒为 HandleHello 返回值且 defId 已值域校验，理论上不抛——若未来在业务
+                        // 路径加可能抛的调用，必须自行补偿（回滚占槽/补发回复）或继续收窄。
+                        int proto;
+                        int defId;
                         try
                         {
-                            NetProtocol.ReadHello(reader, out int proto, out int defId);
-                            if (proto != NetProtocol.ProtocolVersion)
-                            {
-                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonVersion);
-                                break;
-                            }
-                            if (_session.Phase != SessionPhase.Lobby)
-                            {
-                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
-                                break;
-                            }
-                            // 角色值域校验：defId 非法（<=0 或目录无法解析）不入座不占槽。
-                            if (defId <= 0 || CharacterDefCatalog.Get(defId) == null)
-                            {
-                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonInvalidRole);
-                                break;
-                            }
-                            // 占用裁决：请求方自己已持该角色（重复 Hello）不判占用；
-                            // 否则该角色被其它真人占用 → 拒绝（不占槽不冻结）。
-                            if (!OwnsRole(peerId, defId) && _session.IsDefReserved(defId))
-                            {
-                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonRoleTaken);
-                                break;
-                            }
-                            int slot = _session.HandleHello(peerId, defId);
-                            if (slot < 0)
-                            {
-                                SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
-                                break;
-                            }
-                            // 新入座写请求角色；已持槽重复 Hello 不改已定角色。
-                            if (_session.PlayerDefIds[slot] == -1)
-                                _session.SetPlayerDef(slot, defId);
-                            SendJoinAccept(peerId, slot);
+                            NetProtocol.ReadHello(reader, out proto, out defId);
                         }
-                        catch (Exception e) { ReportError($"Hello 解析失败: {e.Message}"); }
+                        catch (Exception e)
+                        {
+                            ReportError($"Hello 解析失败: {e.Message}");
+                            break;
+                        }
+                        if (proto != NetProtocol.ProtocolVersion)
+                        {
+                            SendJoinReject(peerId, NetProtocol.JoinRejectReasonVersion);
+                            break;
+                        }
+                        if (_session.Phase != SessionPhase.Lobby)
+                        {
+                            SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
+                            break;
+                        }
+                        // 角色值域校验：defId 非法（<=0 或目录无法解析）不入座不占槽。
+                        if (defId <= 0 || CharacterDefCatalog.Get(defId) == null)
+                        {
+                            SendJoinReject(peerId, NetProtocol.JoinRejectReasonInvalidRole);
+                            break;
+                        }
+                        // 占用裁决：请求方自己已持该角色（重复 Hello）不判占用；
+                        // 否则该角色被其它真人占用 → 拒绝（不占槽不冻结）。
+                        if (!OwnsRole(peerId, defId) && _session.IsDefReserved(defId))
+                        {
+                            SendJoinReject(peerId, NetProtocol.JoinRejectReasonRoleTaken);
+                            break;
+                        }
+                        int slot = _session.HandleHello(peerId, defId);
+                        if (slot < 0)
+                        {
+                            SendJoinReject(peerId, NetProtocol.JoinRejectReasonFull);
+                            break;
+                        }
+                        // 新入座写请求角色；已持槽重复 Hello 不改已定角色。
+                        if (_session.PlayerDefIds[slot] == -1)
+                            _session.SetPlayerDef(slot, defId);
+                        SendJoinAccept(peerId, slot);
                     }
                     break;
                 case NetMsgType.JoinAccept:
@@ -777,12 +828,22 @@ namespace Network.Session
                     }
                     break;
                 case NetMsgType.GameStart:
-                    // 客户端：收到开局广播 → 建世界开局（幂等：已开局则忽略）
+                    // 客户端：收到开局广播 → 应用最终全表（AI 槽补位结果）→ 建世界开局
                     if (!IsHost)
                     {
-                        try { NetProtocol.ReadGameStart(reader, out _, out _); }
+                        try
+                        {
+                            NetProtocol.ReadGameStart(reader, out int gsTurn, out int[] gsDefs);
+                            if (gsDefs == null || gsDefs.Length != _config.PlayerCount)
+                            {
+                                ReportError($"GameStart 角色表长度不符: {gsDefs?.Length ?? 0} != {_config.PlayerCount}");
+                                break;
+                            }
+                            // 复用 ApplyJoinAccept：幂等（不查 Phase），覆盖会话表为最终表
+                            _session.ApplyJoinAccept(_session.LocalPlayerId, _session.Seed, gsDefs);
+                            StartGame();
+                        }
                         catch (Exception e) { ReportError($"GameStart 解析失败: {e.Message}"); }
-                        StartGame();
                     }
                     break;
                 case NetMsgType.RoundStart:

@@ -367,5 +367,44 @@ namespace Dynasty.Tests.Network
 
             Assert.That(fired, Is.EqualTo(1));
         }
+
+        [Test]
+        public void 主机_Lobby真人断线_新peer入座空槽_解冻回JoinAccept()
+        {
+            // 评审遗留 E2E：真人断线（Lobby 期）→ 槽释放 + def 清空 + 冻结 → 新 peer
+            // Hello 入座该槽 → OnPlayerJoined 接线解冻 + JoinAccept（断线槽可被新真人接管）。
+            var config = HostConfig(4);
+            var hostT = new PeerTransport { IsHost = true, LocalPeerId = 0 };
+            var hostSession = new NetworkSession(config, true);
+            var host = new NetworkGameLoop(hostT, hostSession, config);
+
+            var w1 = new NetDataWriter();
+            NetProtocol.WriteHeader(w1, NetMsgType.Hello);
+            NetProtocol.WriteHello(w1, NetProtocol.ProtocolVersion, 14);
+            SendRaw(hostT, 5, w1);
+            Assert.That(hostSession.PlayerPeerIds[1], Is.EqualTo(5), "peer 5 入座槽 1");
+            hostT.Outbound.Clear();
+
+            // 真人断线（Lobby 期）：DropPeer → OnPeerDisconnected 接线 → 释放槽 + 清角色 + 冻结
+            hostT.DropPeer(5);
+            Assert.That(hostSession.PlayerPeerIds[1], Is.EqualTo(-1), "断线槽释放");
+            Assert.That(hostSession.PlayerDefIds[1], Is.EqualTo(-1), "Lobby 期角色一并释放（角色可被新玩家选用）");
+            Assert.That(host.IsSlotFrozen(1), Is.True, "断线槽冻结（宽限期等待重连）");
+
+            // 新 peer 6 请求同一角色 → 入座空槽 1（OnPlayerJoined 接线解冻）→ 回 JoinAccept
+            int joined = -1;
+            hostSession.OnPlayerJoined += pid => joined = pid;
+            var w2 = new NetDataWriter();
+            NetProtocol.WriteHeader(w2, NetMsgType.Hello);
+            NetProtocol.WriteHello(w2, NetProtocol.ProtocolVersion, 14);
+            SendRaw(hostT, 6, w2);
+
+            Assert.That(hostSession.PlayerPeerIds[1], Is.EqualTo(6), "新 peer 接管原断线槽");
+            Assert.That(hostSession.PlayerDefIds[1], Is.EqualTo(14), "新入座者角色写入");
+            Assert.That(host.IsSlotFrozen(1), Is.False, "OnPlayerJoined 解冻（槽不再冻结）");
+            Assert.That(joined, Is.EqualTo(1), "OnPlayerJoined 触发");
+            Assert.That(TypeOf(hostT.Outbound[hostT.Outbound.Count - 1].data), Is.EqualTo(NetMsgType.JoinAccept),
+                "新入座者收到 JoinAccept");
+        }
     }
 }
