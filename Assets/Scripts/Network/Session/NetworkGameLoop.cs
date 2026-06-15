@@ -87,6 +87,12 @@ namespace Network.Session
         /// <summary>客户端：传输断线（驱动据此弹重连 UI；重连 = 全新会话，P6 语义）。</summary>
         public event Action OnDisconnected;
 
+        /// <summary>判定窗口开（主机本地开窗 / 客户端收到 RoundStart）。UI 据此重置提交标记并显示面板。参数 = (回合, 窗口时长 ms)。</summary>
+        public event Action<int, int> OnJudgmentWindow;
+
+        /// <summary>行动窗口开（主机本地开窗 / 客户端收到 ActionTurn）。UI 据此授权本端行动按钮。参数 = (行动者 playerId, 窗口时长 ms)。</summary>
+        public event Action<int, int> OnActionWindow;
+
         /// <summary>客户端：入座请求的角色 DefId（驱动连接前设置；&lt;=0 = 未定不发 Hello）。</summary>
         public int RequestedDefId { get; set; } = -1;
 
@@ -562,6 +568,8 @@ namespace Network.Session
             NetProtocol.WriteHeader(w, NetMsgType.ActionTurn);
             NetProtocol.WriteActionTurn(w, actorId, _config.ActionWindowMs);
             _transport.Broadcast(w);
+            // UI 窗口信号（主机本地开窗）：授权行动者本端操作
+            OnActionWindow?.Invoke(actorId, _config.ActionWindowMs);
         }
 
         private void BroadcastActionBatch(ReplayActionRecord rec, byte isPass)
@@ -629,6 +637,8 @@ namespace Network.Session
             NetProtocol.WriteHeader(w, NetMsgType.RoundStart);
             NetProtocol.WriteRoundStart(w, _state.CurrentTurn, _config.JudgmentWindowMs);
             _transport.Broadcast(w);
+            // UI 窗口信号（主机本地开窗）：UI 据此重置提交标记并显示判定面板
+            OnJudgmentWindow?.Invoke(_state.CurrentTurn, _config.JudgmentWindowMs);
         }
 
         private void BroadcastChipBatch(ChipAllocation[] batch)
@@ -847,9 +857,16 @@ namespace Network.Session
                     }
                     break;
                 case NetMsgType.RoundStart:
-                    // 客户端纯重放不依赖 RoundStart（等 ChipBatch），仅消费载荷
-                    if (!IsHost) { try { NetProtocol.ReadRoundStart(reader, out int t, out int wms); }
-                        catch (Exception e) { ReportError($"RoundStart 解析失败: {e.Message}"); } }
+                    // 客户端纯重放不依赖 RoundStart（等 ChipBatch），载荷供 UI 窗口信号
+                    if (!IsHost)
+                    {
+                        try
+                        {
+                            NetProtocol.ReadRoundStart(reader, out int rst, out int rms);
+                            OnJudgmentWindow?.Invoke(rst, rms);
+                        }
+                        catch (Exception e) { ReportError($"RoundStart 解析失败: {e.Message}"); }
+                    }
                     break;
                 case NetMsgType.ChipSubmit:
                     if (IsHost)
@@ -918,10 +935,14 @@ namespace Network.Session
                     }
                     break;
                 case NetMsgType.ActionTurn:
-                    // 客户端纯重放不依赖 ActionTurn（等 ActionBatch），仅消费载荷
+                    // 客户端纯重放不依赖 ActionTurn（等 ActionBatch），载荷供 UI 窗口信号
                     if (!IsHost)
                     {
-                        try { NetProtocol.ReadActionTurn(reader, out int atPid, out int atMs); }
+                        try
+                        {
+                            NetProtocol.ReadActionTurn(reader, out int atPid, out int atMs);
+                            OnActionWindow?.Invoke(atPid, atMs);
+                        }
                         catch (Exception e) { ReportError($"ActionTurn 解析失败: {e.Message}"); }
                     }
                     break;

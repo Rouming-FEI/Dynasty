@@ -372,6 +372,49 @@ namespace Dynasty.Tests.Network
                 "重放追平后哈希必须与主机一致（快照+日志重放确定性）");
         }
 
+        // ==================== 回落 AI 后真人重连（RejoinSlot 空槽路径，Task 5） ====================
+
+        /// <summary>P6 场景在宽限期内重连；本用例覆盖断线槽超时回落 AI 之后才重连——主机侧槽 1 已
+        /// 由 AI 托管推进多回合，真人以全新会话经 ResyncRequest 重连（RejoinSlot 拿回空槽 → 解冻），
+        /// 快照+日志全量重放追平，哈希与主机一致。</summary>
+        [Test]
+        public void 回落AI后_真人重连_追平哈希一致()
+        {
+            var f = Fixture.Create(4, 1);   // 槽 0 主机真人 + 槽 1 对端真人 + 槽 2/3 AI
+            AdvanceTurns(f, 2);             // 完成 1 回合 → 停在回合 2 判定边界
+
+            // —— 断线并耗尽宽限期 → 槽 1 回落 AI → 主机继续推进
+            f.HostSession.HandleDisconnect(1);
+            f.Clock.Now += f.Config.ReconnectGraceMs + 1;
+            f.Pump();                       // 主机解冻 → 槽 1 回落 AI → 判定/行动继续
+            AdvanceTurns(f, 4);             // 主机再完成 2 回合（槽 1 由 AI 托管）→ CurrentTurn == 4
+
+            Assert.That(f.Host.State.CurrentTurn, Is.GreaterThan(2), "回落 AI 后主机持续推进");
+
+            // —— 真人以全新会话重连（RejoinSlot 拿回空槽 + 全量重放）
+            var defIds = new int[f.Config.PlayerCount];
+            for (int i = 0; i < defIds.Length; i++) defIds[i] = i + 1;
+            var session2 = new NetworkSession(f.Config, false);
+            session2.ApplyJoinAccept(1, 42, defIds);
+            var transport2 = new LoopbackTransport(1);
+            var client2 = new NetworkGameLoop(transport2, session2, f.Config);
+            client2.ClockProvider = () => f.Clock.Now;
+            client2.NotifyDisconnected();   // 锚点 (0,0) → 全量重放
+            client2.SendResyncRequest();
+            // 先手动路由初始 ResyncRequest/Reply 完成握手再进追赶循环（场景 A/B 同驱动顺序）：
+            // PumpReconnect 循环以 IsResyncing 为前置，而该标记只在收到初始 ResyncReply 后为真
+            RouteOutbound(transport2, f.HostTransport, 7);   // 初始请求 → 主机（RejoinSlot + 回复）
+            RouteOutbound(f.HostTransport, transport2, 0);   // 回复 → 客户端2（重建进入追平）
+            Assert.That(client2.Reconnect.IsResyncing, Is.True, "初始 ResyncRequest→Reply 后应进入追平");
+            int guard = 0;
+            while (client2.Reconnect.IsResyncing && guard++ < 800)
+                PumpReconnect(f, client2, transport2);
+            Assert.That(client2.Reconnect.IsResyncing, Is.False, "重放应在有限步内追平");
+            Assert.That(client2.LastError, Is.Null, "重放期间不得进入错误状态");
+            Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
+                "回落后重连接管：追平哈希与主机一致");
+        }
+
         // ==================== 断线槽冻结（场景 4） ====================
 
         [Test]
