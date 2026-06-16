@@ -156,6 +156,44 @@ namespace Dynasty.Tests.Network
             Assert.That(client.State.PlayerCount, Is.EqualTo(4));
         }
 
+        /// <summary>跨端 E2E 锁镜像（I-2）：主机 StartGame 广播的 GameStart 载荷 = AI 补位后全表
+        /// （无 -1）；把广播字节原样注入全新客户端 loop（JoinAccept 已入座、未开局）→ 客户端按同一
+        /// 全表开局（会话表 == 主机表）。「客户端_收GameStart全表」为手工构造载荷，本用例锁真实广播链路。</summary>
+        [Test]
+        public void 主机StartGame广播_补位全表_全新客户端同表开局()
+        {
+            var config = AiSlotConfig(4);   // 槽 0 = 7，槽 1..3 占位 -1
+            var hostT = new TransportStub();
+            var session = new NetworkSession(config, true);
+            var host = new NetworkGameLoop(hostT, session, config);
+            session.HandleHello(5, 5);
+            session.SetPlayerDef(1, 14);   // 真人槽 1 选混沌法师；槽 2/3 保持 -1（AI）
+            host.StartGame();
+
+            // 从主机 Outbound 找 GameStart 广播（Broadcast 以 peer=-1 标记，SendReliable 带真实 peer）
+            int gsIdx = hostT.Outbound.FindIndex(m => m.peer == -1 && (NetMsgType)m.data[0] == NetMsgType.GameStart);
+            Assert.That(gsIdx, Is.GreaterThanOrEqualTo(0), "主机开局应广播 GameStart");
+            var r = new NetDataReader(hostT.Outbound[gsIdx].data);
+            NetProtocol.ReadType(r);
+            NetProtocol.ReadGameStart(r, out _, out int[] hostDefs);
+            Assert.That(hostDefs, Is.EqualTo(session.PlayerDefIds), "广播载荷表 = 主机补位后全表");
+            Assert.That(hostDefs, Does.Not.Contain(-1), "广播全表无 AI 占位 -1");
+
+            // 全新客户端 loop（占位 config：客户端侧不读 HostPlayerDefIds，仅占位同规模）
+            var clientT = new TransportStub();
+            var clientSession = new NetworkSession(config, false);
+            clientSession.ApplyJoinAccept(1, 42, new[] { 7, 14, -1, -1 });   // 入座时 AI 槽占位
+            var client = new NetworkGameLoop(clientT, clientSession, config);
+            Assert.That(client.State, Is.Null, "未开局");
+
+            var w = new NetDataWriter();
+            w.Put(hostT.Outbound[gsIdx].data, 0, hostT.Outbound[gsIdx].data.Length);   // 原样转发广播字节
+            clientT.Inject(0, w);
+
+            Assert.That(client.State, Is.Not.Null, "应用广播全表后开局");
+            Assert.That(clientSession.PlayerDefIds, Is.EqualTo(hostDefs), "客户端会话表 = 主机广播表");
+        }
+
         private static SessionConfig AiSlotConfig(int playerCount)
         {
             var defIds = new int[playerCount];

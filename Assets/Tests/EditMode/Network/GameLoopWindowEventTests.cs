@@ -13,6 +13,7 @@ namespace Dynasty.Tests.Network
     /// <summary>
     /// Task 5：窗口事件出口——主机 OpenWindow/OpenActionWindow 本地触发、客户端 RoundStart/
     /// ActionTurn 广播到达触发 OnJudgmentWindow/OnActionWindow（UI 交互对齐信号）。
+    /// 另含 I-1 裁决回归：开战解冻 Lobby 冻结槽（断线弃权玩家不阻塞开局判定窗口）。
     /// </summary>
     public class GameLoopWindowEventTests
     {
@@ -151,6 +152,53 @@ namespace Dynasty.Tests.Network
             }
             Assert.That(aEvents, Is.GreaterThanOrEqualTo(1), "行动开窗触发事件");
             Assert.That(aPid, Is.EqualTo(0), "胜者槽 0 先行动");
+        }
+
+        // ==================== I-1 裁决回归：开战解冻 Lobby 冻结槽 ====================
+
+        /// <summary>Lobby 期断线未归玩家弃权：开战即房间定稿，冻结槽解除冻结并参与 AI 补位，
+        /// 判定窗口不按真人挂起。用真实消息/会话路径（传输断线接线 → HandleDisconnect → 冻结）。</summary>
+        [Test]
+        public void 开战解冻Lobby冻结槽_弃权槽AI补位_判定窗口不挂起()
+        {
+            var config = new SessionConfig
+            {
+                PlayerCount = 2, RandomSeed = 42,
+                JudgmentWindowMs = 60000, ActionWindowMs = 60000,
+                ReconnectGraceMs = 60000,   // 宽限期远长于测试运行时间：排除「宽限到自动回落 AI」掩盖缺陷
+                HostPlayerDefIds = new[] { 1, 2 }
+            };
+            var hostT = new BounceTransport(0);
+            var hostSession = new NetworkSession(config, true);
+            hostSession.HandleHello(1, 1);   // 槽 1 真人（对端 peer 1）
+            var host = new NetworkGameLoop(hostT, hostSession, config);
+
+            // Lobby 期对端断线（真实传输断线接线）：槽释放 + 角色一并释放（Lobby 语义）+ 冻结
+            hostT.DropPeer(1);
+            Assert.That(hostSession.PlayerPeerIds[1], Is.EqualTo(-1), "断线槽释放");
+            Assert.That(hostSession.PlayerDefIds[1], Is.EqualTo(-1), "Lobby 断线角色一并释放");
+            Assert.That(host.IsSlotFrozen(1), Is.True, "断线槽冻结（宽限期等待重连）");
+
+            // 主机开战：TryStartGame + StartGame → 开战解冻弃权槽 → 槽 1 参与 AI 确定性补位
+            Assert.That(hostSession.TryStartGame(), Is.True);
+            host.StartGame();
+            Assert.That(host.State, Is.Not.Null, "开局成功");
+            Assert.That(host.IsSlotFrozen(1), Is.False, "开战即定稿：Lobby 断线未归弃权，冻结解除");
+            Assert.That(hostSession.PlayerDefIds[1], Is.Not.EqualTo(-1), "弃权槽角色参与 AI 补位");
+
+            // 判定窗口能推进（不再按真人挂起）：泵几轮 Tick + 槽 0 提交筹码 → 判定结算收口
+            int jEvents = 0;
+            host.OnJudgmentWindow += (t, ms) => jEvents++;
+            var c0 = new ChipAllocation(0); c0.Set(3, 0, 0);
+            int guard = 0;
+            while (host.State.Phase == TurnPhase.JudgmentPhase && guard++ < 300)
+            {
+                host.Tick();
+                if (host.State.Phase == TurnPhase.JudgmentPhase)
+                    host.SubmitChip(0, c0);
+            }
+            Assert.That(host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "弃权槽解冻补 AI 后判定结算收口，窗口不再挂起");
+            Assert.That(jEvents, Is.GreaterThanOrEqualTo(1), "判定窗口事件出现");
         }
     }
 }

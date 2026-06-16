@@ -229,7 +229,15 @@ namespace Network.Session
             if (_state != null) return;
             // Task 4：AI 空槽（-1）开战前确定性补位——主机补位后广播的全表即为最终表
             // （P6 测试 HostPlayerDefIds 全表直给 → 无 -1 → 空转零影响）
-            if (IsHost) FillAiSlots();
+            if (IsHost)
+            {
+                // 开战解冻（I-1 裁决）：开战 = 房间定稿——Lobby 期断线未归玩家弃权，其冻结槽解除
+                // 冻结并参与 AI 补位（角色已随 Lobby 断线释放为 -1）；宽限等待只属于房间期——
+                // 开战前玩家可经新 Hello 重新入座并解冻（既有 E2E 已锁）。残留冻结会让弃权槽
+                // 按真人语义挂起判定/行动窗口（IsHumanSlot），开局即死锁。
+                UnfreezeAllSlots();
+                FillAiSlots();
+            }
             int[] defIds = _session.PlayerDefIds;
             if (defIds == null || defIds.Length != _config.PlayerCount)
             {
@@ -302,6 +310,10 @@ namespace Network.Session
             }
         }
 
+        /// <summary>AI 补位派生盐（seed 异或派生常数）：独立流派生盐——与 AI 决策等其它派生流错开，
+        /// 防未来复制派生式导致流冲突（同 seed 同流 → 决策序列可预测/碰撞）。</summary>
+        private const long AiFillSeedSalt = 0x51C7B1A5D5E7A9F3L;
+
         /// <summary>
         /// 主机：把会话表中 -1 槽（AI 空位）从 16 角色 − 真人占用集 确定性随机补齐。
         /// 随机源 = 会话 seed 派生的独立流（不碰 WorldState 流——客户端不重复计算，全表随
@@ -311,18 +323,19 @@ namespace Network.Session
         {
             int[] defs = _session.PlayerDefIds;
             if (defs == null) return;
-            var rng = new Core.DeterministicRandom(_session.Seed ^ 0x51C7B1A5D5E7A9F3L);
+            var rng = new Core.DeterministicRandom(_session.Seed ^ AiFillSeedSalt);
             var taken = new HashSet<int>();   // 真人占用 + 已补
             for (int i = 0; i < defs.Length; i++)
                 if (defs[i] > 0) taken.Add(defs[i]);
-            var free = new List<int>(16);
+            var free = new List<int>(CharacterDefCatalog.AllIds.Length);
+            // 槽 0 必须为主机真人角色（不参与补位）：槽 0 置 -1 会在 StartGame 报未知角色
             for (int i = 1; i < defs.Length; i++)
             {
                 if (defs[i] != -1) continue;
                 free.Clear();
-                for (int c = 0; c < Gameplay.Characters.CharacterDefCatalog.AllIds.Length; c++)
+                for (int c = 0; c < CharacterDefCatalog.AllIds.Length; c++)
                 {
-                    int id = Gameplay.Characters.CharacterDefCatalog.AllIds[c];
+                    int id = CharacterDefCatalog.AllIds[c];
                     if (!taken.Contains(id)) free.Add(id);
                 }
                 if (free.Count == 0) break;   // 不可能：槽数 ≤ 8 < 16
@@ -843,7 +856,9 @@ namespace Network.Session
                     {
                         try
                         {
-                            NetProtocol.ReadGameStart(reader, out int gsTurn, out int[] gsDefs);
+                            // 轮次只解析不消费（out _）；长度双保险保留——显式校验让长度错误以
+                            // 明确消息报出，不被尾部 catch 误标成「解析失败」
+                            NetProtocol.ReadGameStart(reader, out _, out int[] gsDefs);
                             if (gsDefs == null || gsDefs.Length != _config.PlayerCount)
                             {
                                 ReportError($"GameStart 角色表长度不符: {gsDefs?.Length ?? 0} != {_config.PlayerCount}");
@@ -1170,6 +1185,20 @@ namespace Network.Session
         {
             if (_frozenSlots == null || playerId < 0 || playerId >= _frozenSlots.Length) return;
             _frozenSlots[playerId] = false;
+        }
+
+        /// <summary>主机：开战解冻全部冻结槽（I-1 裁决：开战即房间定稿）。幂等——无冻结槽时零副作用。
+        /// Lobby 期断线未归玩家 = 弃权：冻结槽解除冻结，其角色位（已随 Lobby 断线释放为 -1）
+        /// 参与 AI 确定性补位；宽限等待只属于房间期（InGame 断线玩家可经 RejoinSlot 重连接管）。
+        /// 若残留冻结，弃权槽会按真人语义挂起判定/行动窗口（IsHumanSlot），开局即死锁。</summary>
+        private void UnfreezeAllSlots()
+        {
+            if (_frozenSlots == null) return;
+            for (int i = 0; i < _frozenSlots.Length; i++)
+            {
+                _frozenSlots[i] = false;
+                _frozenAtMs[i] = 0;
+            }
         }
 
         /// <summary>主机：断线槽宽限期检查——ReconnectGraceMs 到仍不归 → 解冻回落 AI（槽位已被
