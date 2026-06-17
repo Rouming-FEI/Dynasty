@@ -221,6 +221,35 @@ namespace Dynasty.Tests.Network
                 f.Pump();
         }
 
+        /// <summary>重连接管后推进：把主机推进到 targetTurn（真人窗口一律超时跳过——槽 1 已接管
+        /// 为真人，超时按真人 1-1-1/WasteAP 处理），广播经 transport2 实时泵给重连客户端消费
+        /// （替代 AdvanceTurns 的 Fixture.Pump 宿主客户端路径），尾部追齐两端 tick。</summary>
+        private static void AdvanceReconnectTurn(Fixture f, NetworkGameLoop client2, LoopbackTransport transport2, int targetTurn)
+        {
+            int guard = 0;
+            while (f.Host.State.CurrentTurn < targetTurn && f.Host.State.Phase != TurnPhase.GameOver && guard++ < 800)
+            {
+                if (f.Host.State.Phase == TurnPhase.JudgmentPhase)
+                {
+                    f.Clock.Now += f.Config.JudgmentWindowMs + 1;
+                    PumpReconnect(f, client2, transport2);
+                }
+                else if (f.Host.State.Phase == TurnPhase.ActionPhase)
+                {
+                    f.Clock.Now += f.Config.ActionWindowMs + 1;
+                    PumpReconnect(f, client2, transport2);
+                }
+                else
+                {
+                    PumpReconnect(f, client2, transport2);   // TurnEnd 等防御路径
+                }
+            }
+            Assert.That(f.Host.State.Phase, Is.Not.EqualTo(TurnPhase.GameOver), "推进期间不得意外终局");
+            int sync = 0;
+            while (client2.State.CurrentTick != f.Host.State.CurrentTick && sync++ < 500)
+                PumpReconnect(f, client2, transport2);
+        }
+
         /// <summary>解析 ResyncReply 载荷（[snapshotTick][snapshotLen][snapshotBytes][logLen][logBytes]）。</summary>
         private static void ParseReply(byte[] payload, out int snapshotTick, out byte[] snapshotBytes, out byte[] logBytes)
         {
@@ -376,7 +405,8 @@ namespace Dynasty.Tests.Network
 
         /// <summary>P6 场景在宽限期内重连；本用例覆盖断线槽超时回落 AI 之后才重连——主机侧槽 1 已
         /// 由 AI 托管推进多回合，真人以全新会话经 ResyncRequest 重连（RejoinSlot 拿回空槽 → 解冻），
-        /// 快照+日志全量重放追平，哈希与主机一致。</summary>
+        /// 快照+日志全量重放追平，哈希与主机一致；评审 A1 追加「接管」行为断言：重连 peer 重新持有
+        /// 槽位后，判定窗按真人挂起等待重连方提交（不再 AI 代管自动收口），且主机接受其输入并收口。</summary>
         [Test]
         public void 回落AI后_真人重连_追平哈希一致()
         {
@@ -413,6 +443,41 @@ namespace Dynasty.Tests.Network
             Assert.That(client2.LastError, Is.Null, "重放期间不得进入错误状态");
             Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
                 "回落后重连接管：追平哈希与主机一致");
+
+            // —— 评审 A1：补「接管」行为断言——追平哈希只能证明重放一致，无法区分「主机已把
+            // 槽 1 切回真人等提交」与「仍由 AI 代管」。三步验证接管生效：
+            // 1) 接管前提：槽 1 由重连 peer 7 重新持有且解冻（PumpReconnect 消息路径中 client2
+            //    以 peer 7 注入主机——与「主机收到ResyncRequest」用例的 peer 约定一致）
+            Assert.That(f.HostSession.PlayerPeerIds[1], Is.EqualTo(7), "槽 1 由重连 peer 7 重新持有（RejoinSlot 接管）");
+            Assert.That(f.Host.IsSlotFrozen(1), Is.False, "重连接管后槽 1 解冻");
+
+            // 2) 推进到「接管后新开」的判定窗：追平时主机可能停在槽 1 仍为 AI 时已收集筹码的
+            //    旧判定轮（判定轮输入冻结语义），须推进一整回合让下一判定窗的收集发生在槽 1
+            //    真人化之后——该窗槽 0/1 都按真人挂起等待提交
+            AdvanceReconnectTurn(f, client2, transport2, f.Host.State.CurrentTurn + 1);
+            PumpReconnect(f, client2, transport2);   // 开窗 + 首次收集（槽 0/1 真人未提交 → 暂停）
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase), "推进后应停在判定窗");
+
+            // 3) 只提交槽 0 → 槽 1 按真人挂起，判定不得收口（若主机仍把槽 1 当 AI 代管，
+            //    其筹码已在收集时缓存 → 槽 0 提交即收口离开判定阶段——本断言红）
+            f.Host.SubmitChip(0, C(0, 3, 0, 0));
+            PumpReconnect(f, client2, transport2);
+            PumpReconnect(f, client2, transport2);
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.JudgmentPhase),
+                "槽 1 已接管为真人：只提交槽 0 判定窗须继续挂起等待");
+
+            // 4) 槽 1 经重连方消息路径提交剪刀 3（client2 编码 ChipSubmit 发往主机，持有者校验
+            //    以重连 peer 7 通过）→ 判定收口推进 → 主机接受重连方输入，两端哈希一致
+            client2.SubmitChip(1, C(1, 0, 3, 0));
+            int guard2 = 0;
+            while (f.Host.State.Phase == TurnPhase.JudgmentPhase && guard2++ < 50)
+                PumpReconnect(f, client2, transport2);
+            guard2 = 0;
+            while (client2.State.CurrentTick != f.Host.State.CurrentTick && guard2++ < 200)
+                PumpReconnect(f, client2, transport2);
+            Assert.That(f.Host.State.Phase, Is.EqualTo(TurnPhase.ActionPhase), "双方提交后判定收口推进");
+            Assert.That(client2.State.ComputeStateHash(), Is.EqualTo(f.Host.State.ComputeStateHash()),
+                "主机接受重连方提交：收口后哈希一致");
         }
 
         // ==================== 断线槽冻结（场景 4） ====================

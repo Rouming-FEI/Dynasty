@@ -87,10 +87,12 @@ namespace Network.Session
         /// <summary>客户端：传输断线（驱动据此弹重连 UI；重连 = 全新会话，P6 语义）。</summary>
         public event Action OnDisconnected;
 
-        /// <summary>判定窗口开（主机本地开窗 / 客户端收到 RoundStart）。UI 据此重置提交标记并显示面板。参数 = (回合, 窗口时长 ms)。</summary>
+        /// <summary>判定窗口开（主机本地开窗 / 客户端收到 RoundStart）。UI 据此重置提交标记并显示面板。参数 = (回合, 窗口时长 ms)。
+        /// 平局作废重判轮同回合会再次触发（每窗口一次），消费方须幂等处理。</summary>
         public event Action<int, int> OnJudgmentWindow;
 
-        /// <summary>行动窗口开（主机本地开窗 / 客户端收到 ActionTurn）。UI 据此授权本端行动按钮。参数 = (行动者 playerId, 窗口时长 ms)。</summary>
+        /// <summary>行动窗口开（主机本地开窗 / 客户端收到 ActionTurn）。UI 据此授权本端行动按钮。参数 = (行动者 playerId, 窗口时长 ms)。
+        /// 同一行动者多个 AP 命令各开一次窗（每命令一次），消费方须幂等处理。</summary>
         public event Action<int, int> OnActionWindow;
 
         /// <summary>客户端：入座请求的角色 DefId（驱动连接前设置；&lt;=0 = 未定不发 Hello）。</summary>
@@ -227,22 +229,23 @@ namespace Network.Session
         public void StartGame()
         {
             if (_state != null) return;
-            // Task 4：AI 空槽（-1）开战前确定性补位——主机补位后广播的全表即为最终表
-            // （P6 测试 HostPlayerDefIds 全表直给 → 无 -1 → 空转零影响）
-            if (IsHost)
-            {
-                // 开战解冻（I-1 裁决）：开战 = 房间定稿——Lobby 期断线未归玩家弃权，其冻结槽解除
-                // 冻结并参与 AI 补位（角色已随 Lobby 断线释放为 -1）；宽限等待只属于房间期——
-                // 开战前玩家可经新 Hello 重新入座并解冻（既有 E2E 已锁）。残留冻结会让弃权槽
-                // 按真人语义挂起判定/行动窗口（IsHumanSlot），开局即死锁。
-                UnfreezeAllSlots();
-                FillAiSlots();
-            }
+            // 角色表校验先行（失败可重试、不动会话）：弃权裁决与 AI 补位是「确认可开局」之后的
+            // 定稿动作——校验失败路径不提前执行解冻/占位（评审 B2）。
             int[] defIds = _session.PlayerDefIds;
             if (defIds == null || defIds.Length != _config.PlayerCount)
             {
                 ReportError("角色表缺失或长度不符，无法开局");
                 return;
+            }
+            if (IsHost)
+            {
+                // 开战解冻（I-1 裁决）+ AI 空槽（-1）确定性补位：开战 = 房间定稿——Lobby 期
+                // 断线未归玩家弃权，其冻结槽解除冻结并参与 AI 补位（角色已随 Lobby 断线释放为
+                // -1）；宽限等待只属于房间期——开战前玩家可经新 Hello 重新入座并解冻（既有
+                // E2E 已锁）。残留冻结会让弃权槽按真人语义挂起判定/行动窗口（IsHumanSlot），
+                // 开局即死锁。补位后广播的全表即为最终表（P6 测试全表直给 → 无 -1 → 空转零影响）。
+                UnfreezeAllSlots();
+                FillAiSlots();
             }
             // I4：全部校验（含角色表解析）通过后再赋值 _state/_lockstep——任一步失败都保持
             // _state == null，调用方可修复后重试；避免半初始化坏状态（_state 非空但 _lockstep
@@ -875,12 +878,11 @@ namespace Network.Session
                     // 客户端纯重放不依赖 RoundStart（等 ChipBatch），载荷供 UI 窗口信号
                     if (!IsHost)
                     {
-                        try
-                        {
-                            NetProtocol.ReadRoundStart(reader, out int rst, out int rms);
-                            OnJudgmentWindow?.Invoke(rst, rms);
-                        }
-                        catch (Exception e) { ReportError($"RoundStart 解析失败: {e.Message}"); }
+                        int rst, rms;
+                        try { NetProtocol.ReadRoundStart(reader, out rst, out rms); }
+                        catch (Exception e) { ReportError($"RoundStart 解析失败: {e.Message}"); break; }
+                        // Invoke 在 try 外：UI handler 异常不得被吞成「解析失败」，也不得复用 catch 语义
+                        OnJudgmentWindow?.Invoke(rst, rms);
                     }
                     break;
                 case NetMsgType.ChipSubmit:
@@ -953,12 +955,11 @@ namespace Network.Session
                     // 客户端纯重放不依赖 ActionTurn（等 ActionBatch），载荷供 UI 窗口信号
                     if (!IsHost)
                     {
-                        try
-                        {
-                            NetProtocol.ReadActionTurn(reader, out int atPid, out int atMs);
-                            OnActionWindow?.Invoke(atPid, atMs);
-                        }
-                        catch (Exception e) { ReportError($"ActionTurn 解析失败: {e.Message}"); }
+                        int atPid, atMs;
+                        try { NetProtocol.ReadActionTurn(reader, out atPid, out atMs); }
+                        catch (Exception e) { ReportError($"ActionTurn 解析失败: {e.Message}"); break; }
+                        // Invoke 在 try 外：UI handler 异常不得被吞成「解析失败」，也不得复用 catch 语义
+                        OnActionWindow?.Invoke(atPid, atMs);
                     }
                     break;
                 case NetMsgType.ActionSubmit:
