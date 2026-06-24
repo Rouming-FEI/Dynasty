@@ -207,7 +207,6 @@ namespace Dynasty.Tests
             probe = 3;
             BattleSnapshot snap = presenter.BuildSnapshot();
             Assert.IsTrue(snap.CharacterRows[3].IsCurrentActor, "actor 高亮来自注入 provider");
-            probe = -1;
         }
 
         [Test]

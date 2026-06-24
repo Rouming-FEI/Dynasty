@@ -251,7 +251,7 @@ namespace UI.Presenter
         private Action<ICommand> _cmdSink;
         private bool _judgmentSubmitted;
 
-        /// <summary>真人玩家 id（Bind 后有效；-1 = 未绑定）。</summary>
+        /// <summary>真人玩家 id（Bind/AttachNetwork 后有效；-1 = 未绑定）。</summary>
         public int HumanPlayerId => _humanPlayerId;
 
         /// <summary>是否有待消费的筹码提交（UI 判定面板显隐依据）。</summary>
@@ -308,6 +308,12 @@ namespace UI.Presenter
         /// </summary>
         public void Bind(LocalLockstep lockstep, int humanPlayerId)
         {
+            // 与 AttachNetwork 互斥，最后一次调用决定模式；同实例交叉切换不可达
+            // （每局新建 presenter），防御性清零
+            _chipSink = null;
+            _cmdSink = null;
+            _networkActorProvider = null;
+            _judgmentSubmitted = false;
             if (humanPlayerId < 0 || humanPlayerId >= lockstep.State.PlayerCount)
                 throw new ArgumentException(
                     $"humanPlayerId {humanPlayerId} 超出玩家范围 [0, {lockstep.State.PlayerCount - 1}]",
