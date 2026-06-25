@@ -40,6 +40,14 @@ namespace UI
         private bool _logOverlayOpen;
         private bool _bootstrapWarned;               // _bootstrap 未接线只告警一次
 
+        // 网络模式（Task 7）：driver 由 NetworkUIController 在开局后经 BeginNetworkedBattle 注入；
+        // 授权位随窗口事件开/关（RoundStart → 判定可提交；ActionTurn(me) → 行动按钮可构建）
+        [SerializeField] private NetworkUIController _network;   // 网络对战宿主（同一场景；热座模式可空）
+        private INetworkBattleDriver _netDriver;                 // 网络模式激活期间非空
+        private bool _netJudgmentGranted;                        // 判定窗口授权（RoundStart 事件 → 面板可提交）
+        private bool _netActionGranted;                          // 行动窗口授权（ActionTurn(me) → 按钮可构建）
+        private bool _netBattleEnded;                            // 网络终局已呈现（防重复渲染）
+
         // 行动按钮脏检查签名（玩家|AP|地点|回合|阶段 变化才重建按钮；地点入签名
         // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变；数据幽灵
         // actor 另追加 |form{形态}|clone{分身} 维度：Handsonic 切形态(125)/Harmonics
@@ -110,6 +118,20 @@ namespace UI
                 // （正常流程 RequestRestart 已收起，此处兜底，幂等）
                 _resultOverlay.style.display = DisplayStyle.None;
                 _chipOverlay.style.display = DisplayStyle.None;
+                return;
+            }
+
+            // 网络模式：数据源 = driver（presenter 已 AttachNetwork 持有同一 WorldState）
+            if (_netDriver != null)
+            {
+                if (_netDriver.State == null) return;   // 未开局
+                BattleSnapshot s = _presenter.BuildSnapshot();
+                RenderTopBar(s);
+                RenderInfoRows(s);
+                RenderMap(s);
+                RenderActionBar(s);
+                RenderLogTail(s);
+                RenderNetworkOverlays(s);
                 return;
             }
 
@@ -231,6 +253,12 @@ namespace UI
 
         private void RenderActionBar(BattleSnapshot s)
         {
+            if (_netDriver != null)
+            {
+                RenderNetworkActionBar(s);
+                return;
+            }
+
             WorldState state = _bootstrap.GetState();
             string signature = BuildActionSignature(s, state);
             if (signature == _actionSignature) return;
@@ -280,6 +308,67 @@ namespace UI
             int playerId = c.PlayerId;
             AddButton("浪费 1 AP",
                 () => _presenter.SubmitCommand(new WasteAPCommand(tick, playerId)));
+        }
+
+        // ---------------- 网络模式行动栏 ----------------
+
+        private void RenderNetworkActionBar(BattleSnapshot s)
+        {
+            WorldState state = _netDriver.State;
+            string signature = BuildActionSignature(s, state) + "|" + (_netActionGranted ? 1 : 0);
+            if (signature == _actionSignature) return;
+            _actionSignature = signature;
+            while (_actionBar.childCount > 1)
+                _actionBar.RemoveAt(_actionBar.childCount - 1);
+
+            if (s.GameOver)
+            {
+                _actionHint.text = "对局已结束";
+                CloseSubmenu();
+                return;
+            }
+
+            BattleSnapshot.CharacterRow actorRow = null;
+            for (int i = 0; i < s.CharacterRows.Count; i++)
+            {
+                BattleSnapshot.CharacterRow r = s.CharacterRows[i];
+                if (r.IsCurrentActor && !r.IsDead) { actorRow = r; break; }
+            }
+            if (actorRow == null)
+            {
+                _actionHint.text = s.PhaseText == "判定阶段" ? "等待筹码提交…" : "等待…";
+                return;
+            }
+            if (actorRow.PlayerId != _presenter.HumanPlayerId)
+            {
+                // 网络模式：非本端行动统一「行动中…」（客户端不知槽位真人/AI 属性）
+                _actionHint.text = $"{actorRow.Name} 行动中…";
+                return;
+            }
+            if (!_netActionGranted)
+            {
+                _actionHint.text = $"{actorRow.Name} 的回合（等待窗口…）";
+                return;
+            }
+
+            _actionHint.text = $"{actorRow.Name} 的回合（{actorRow.ActionPoints} AP）";
+            Character c = state.GetCharacterByPlayer(actorRow.PlayerId);
+            if (c == null) return;
+            if (state.GhostCloneActive && c.Definition?.Id == SkillSystem.DataGhostCharacterId)
+                _actionHint.text += $"　分身 {state.GhostCloneSanity:F1} 理智";
+
+            AddMoveButtons(state, c);
+            AddAttackButtons(state, c);
+            AddSkillButtons(state, c);
+            AddItemButtons(state, c);
+
+            int tick = state.CurrentTick;
+            int playerId = c.PlayerId;
+            AddButton("浪费 1 AP", () =>
+            {
+                _presenter.SubmitCommand(new WasteAPCommand(tick, playerId));
+                _netActionGranted = false;   // 一窗口一动作（下一个 ActionTurn 再授权）
+            });
         }
 
         private static string BuildActionSignature(BattleSnapshot s, WorldState state)
@@ -860,6 +949,34 @@ namespace UI
                 RefreshFullLog();
         }
 
+        // ---------------- 网络模式覆盖层 ----------------
+
+        private void RenderNetworkOverlays(BattleSnapshot s)
+        {
+            // 选角层永不显示（网络局从主菜单进）
+            _charSelectOverlay.style.display = DisplayStyle.None;
+
+            // 筹码层：判定阶段 + 窗口授权 + 本人未提交 + 存活
+            bool showChip = !s.GameOver
+                         && s.PhaseText == "判定阶段"
+                         && _netJudgmentGranted
+                         && !_presenter.JudgmentSubmitted
+                         && !IsHumanDead(s);
+            _chipOverlay.style.display = showChip ? DisplayStyle.Flex : DisplayStyle.None;
+            if (showChip)
+            {
+                _chipHint.text = $"剩余 {ChipsTotal - (_chipRock + _chipScissors + _chipPaper)}";
+                _chipSubtitle.text = s.LastJudgmentGlobalFlat
+                    ? "全局平局，重新分配"
+                    : "分配你的筹码（其余玩家等待中）…";
+            }
+
+            // 网络终局由 NetworkUIController 结算层呈现——本层不弹 result overlay
+            _resultOverlay.style.display = DisplayStyle.None;
+
+            if (_logOverlayOpen) RenderLogTail(s);
+        }
+
         private bool IsHumanDead(BattleSnapshot s)
         {
             for (int i = 0; i < s.CharacterRows.Count; i++)
@@ -930,6 +1047,61 @@ namespace UI
         public void ResetToCharacterSelect()
         {
             RequestRestart();   // 既有私有方法语义完备（RestartHotseat + presenter 清空 + 各层收起）
+        }
+
+        // ---------------- 网络对战入口（NetworkUIController 调用；热座路径零改动） ----------------
+
+        /// <summary>网络对局开始（NetworkUIController 在开局后调用）：presenter 换网、接 driver。</summary>
+        public void BeginNetworkedBattle(INetworkBattleDriver driver)
+        {
+            if (driver == null || driver.State == null) return;
+            if (_presenter != null && _netDriver != null) return;   // 已在网络局
+            // 网络模式要求离开热座选角态（热座若已开局先复位——正常流程网络局从主菜单进，无热座局）
+            if (_bootstrap.IsGameStarted()) RequestRestart();
+            _netDriver = driver;
+            _netJudgmentGranted = false;
+            _netActionGranted = false;
+            _netBattleEnded = false;
+            _presenter = new BattlePresenter(driver.State);
+            // 注意：cmdSink 包装层承担「一窗口一动作」——点击提交即清行动授权
+            // （下一个 ActionTurn 再授权）；判定提交的收起由 JudgmentSubmitted 承担
+            _presenter.AttachNetwork(driver.LocalPlayerId, () => driver.CurrentActorPlayerId,
+                driver.SubmitChip,
+                cmd => { driver.SubmitCommand(cmd); _netActionGranted = false; });
+            _actionSignature = null;
+            _charSelectOverlay.style.display = DisplayStyle.None;
+            _chipOverlay.style.display = DisplayStyle.None;
+            _resultOverlay.style.display = DisplayStyle.None;
+            ResetChipCounts();
+        }
+
+        /// <summary>网络对局结束（终局回主菜单 / 断开）：卸载网络分支回待机。</summary>
+        public void EndNetworkedBattle()
+        {
+            _presenter?.DetachNetwork();
+            _presenter = null;
+            _netDriver = null;
+            _netJudgmentGranted = false;
+            _netActionGranted = false;
+            _netBattleEnded = false;
+            _chipOverlay.style.display = DisplayStyle.None;
+            _resultOverlay.style.display = DisplayStyle.None;
+            CloseSubmenu();
+            CloseLogOverlay();
+            ResetChipCounts();
+        }
+
+        /// <summary>判定窗口事件（RoundStart 广播到达 / 主机本地开窗）：复位提交标记、开放筹码面板。</summary>
+        public void NotifyJudgmentWindow()
+        {
+            _presenter?.ResetJudgmentSubmitted();
+            _netJudgmentGranted = true;
+        }
+
+        /// <summary>行动窗口事件（ActionTurn(本端)）：授权行动按钮构建（消除窗口未开先提交被丢）。</summary>
+        public void NotifyMyActionWindow()
+        {
+            _netActionGranted = true;
         }
 
         private void RequestRestart()
