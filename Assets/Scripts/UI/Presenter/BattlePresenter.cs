@@ -308,16 +308,17 @@ namespace UI.Presenter
         /// </summary>
         public void Bind(LocalLockstep lockstep, int humanPlayerId)
         {
-            // 与 AttachNetwork 互斥，最后一次调用决定模式；同实例交叉切换不可达
-            // （每局新建 presenter），防御性清零
-            _chipSink = null;
-            _cmdSink = null;
-            _networkActorProvider = null;
-            _judgmentSubmitted = false;
             if (humanPlayerId < 0 || humanPlayerId >= lockstep.State.PlayerCount)
                 throw new ArgumentException(
                     $"humanPlayerId {humanPlayerId} 超出玩家范围 [0, {lockstep.State.PlayerCount - 1}]",
                     nameof(humanPlayerId));
+            // 与 AttachNetwork 互斥，最后一次调用决定模式；同实例交叉切换不可达
+            // （每局新建 presenter），防御性清零。置于参数校验之后：失败调用被 catch 时
+            // 不留下「sink 已清而 lockstep 未绑」的半态
+            _chipSink = null;
+            _cmdSink = null;
+            _networkActorProvider = null;
+            _judgmentSubmitted = false;
             _lockstep = lockstep;
             _humanPlayerId = humanPlayerId;
             _pendingJudgment = null;

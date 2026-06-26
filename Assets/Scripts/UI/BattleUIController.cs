@@ -40,13 +40,11 @@ namespace UI
         private bool _logOverlayOpen;
         private bool _bootstrapWarned;               // _bootstrap 未接线只告警一次
 
-        // 网络模式（Task 7）：driver 由 NetworkUIController 在开局后经 BeginNetworkedBattle 注入；
+        // 网络模式（Task 7）：driver 由网络对战宿主在开局后经 BeginNetworkedBattle 注入；
         // 授权位随窗口事件开/关（RoundStart → 判定可提交；ActionTurn(me) → 行动按钮可构建）
-        [SerializeField] private NetworkUIController _network;   // 网络对战宿主（同一场景；热座模式可空）
         private INetworkBattleDriver _netDriver;                 // 网络模式激活期间非空
         private bool _netJudgmentGranted;                        // 判定窗口授权（RoundStart 事件 → 面板可提交）
         private bool _netActionGranted;                          // 行动窗口授权（ActionTurn(me) → 按钮可构建）
-        private bool _netBattleEnded;                            // 网络终局已呈现（防重复渲染）
 
         // 行动按钮脏检查签名（玩家|AP|地点|回合|阶段 变化才重建按钮；地点入签名
         // 是为覆盖 0AP 免费行动——免费旅行改位置但 AP/回合/阶段 均不变；数据幽灵
@@ -347,7 +345,7 @@ namespace UI
             }
             if (!_netActionGranted)
             {
-                _actionHint.text = $"{actorRow.Name} 的回合（等待窗口…）";
+                _actionHint.text = "回合窗口开启中…";
                 return;
             }
 
@@ -968,13 +966,13 @@ namespace UI
                 _chipHint.text = $"剩余 {ChipsTotal - (_chipRock + _chipScissors + _chipPaper)}";
                 _chipSubtitle.text = s.LastJudgmentGlobalFlat
                     ? "全局平局，重新分配"
-                    : "分配你的筹码（其余玩家等待中）…";
+                    : "分配你的筹码（等待判定结算…）";
             }
 
             // 网络终局由 NetworkUIController 结算层呈现——本层不弹 result overlay
             _resultOverlay.style.display = DisplayStyle.None;
 
-            if (_logOverlayOpen) RenderLogTail(s);
+            if (_logOverlayOpen) RefreshFullLog();
         }
 
         private bool IsHumanDead(BattleSnapshot s)
@@ -1061,7 +1059,6 @@ namespace UI
             _netDriver = driver;
             _netJudgmentGranted = false;
             _netActionGranted = false;
-            _netBattleEnded = false;
             _presenter = new BattlePresenter(driver.State);
             // 注意：cmdSink 包装层承担「一窗口一动作」——点击提交即清行动授权
             // （下一个 ActionTurn 再授权）；判定提交的收起由 JudgmentSubmitted 承担
@@ -1083,7 +1080,6 @@ namespace UI
             _netDriver = null;
             _netJudgmentGranted = false;
             _netActionGranted = false;
-            _netBattleEnded = false;
             _chipOverlay.style.display = DisplayStyle.None;
             _resultOverlay.style.display = DisplayStyle.None;
             CloseSubmenu();
@@ -1095,6 +1091,9 @@ namespace UI
         public void NotifyJudgmentWindow()
         {
             _presenter?.ResetJudgmentSubmitted();
+            // RoundStart 到达 = 上一行动窗口必然已关闭：清行动授权（覆盖「行动窗口开启但
+            // 未点击即轮换」的残留路径——行动栏的 actor 检查只是既有兜底，不构成窗口门控）
+            _netActionGranted = false;
             _netJudgmentGranted = true;
         }
 
