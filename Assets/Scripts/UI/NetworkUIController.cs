@@ -532,12 +532,14 @@ namespace UI
                 }
                 _session.ApplyJoinAccept(playerId, seed, defIds);   // 重建入座态 → Resync 路径
             }
-            else
-            {
-                _loop.RequestedDefId = myDefId > 0 ? myDefId : _roleIds.Length > 0 ? _roleIds[0] : 1;
-                // 保持 Phase=Lobby：重连成功后走 Hello 重新入座（主机房间期接受新 Hello）
-            }
             _loop = new NetworkGameLoop(_transport, _session, _config);
+            if (!wasInGame)
+            {
+                // 保持 Phase=Lobby：重连成功后走 Hello 以原角色重新入座（主机房间期接受新 Hello）
+                // RequestedDefId 必须赋给新 loop：旧 loop 已弃用，其值不迁移
+                // （评审 P2——赋旧实例会被换新丢弃为默认 -1，SendHello 对 <=0 拒发，房间期自动重连必然失败）
+                _loop.RequestedDefId = myDefId > 0 ? myDefId : _roleIds.Length > 0 ? _roleIds[0] : 1;
+            }
             SubscribeLoopEvents();
             var t = _transport;
             t.OnPeerConnected += id =>
