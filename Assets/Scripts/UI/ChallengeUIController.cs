@@ -20,6 +20,7 @@ namespace UI
     {
         [SerializeField] private GameBootstrap _bootstrap;
         [SerializeField] private BattleUIController _battleUI;
+        [SerializeField] private NetworkUIController _networkUI;   // 网络对战入口（Inspector 引用）
 
         private IProfileStore _store;
         private ChallengeRunner _runner;
@@ -60,6 +61,7 @@ namespace UI
             root.Q<Button>("new-run-button").clicked += OnNewRun;
             root.Q<Button>("continue-button").clicked += OnContinue;
             root.Q<Button>("to-hotseat-button").clicked += OnToHotseat;
+            root.Q<Button>("net-battle-button").clicked += OnNetBattle;
             root.Q<Button>("abandon-button").clicked += OnAbandon;
 
             // 档案存储：Simulation FileProfileStore + Unity persistentDataPath
@@ -179,6 +181,22 @@ namespace UI
             _hudRoot.style.display = DisplayStyle.None;
         }
 
+        private void OnNetBattle()
+        {
+            if (_networkUI == null)
+            {
+                if (!_warned)
+                {
+                    _warned = true;
+                    Debug.LogError("[LadderUI] 未指定 NetworkUIController 引用——请在 Inspector 拖入");
+                }
+                return;
+            }
+            // 隐藏挑战菜单（露出由 NetworkUI 常驻层接管）；网络局进行中挑战层不动
+            _menuRoot.style.display = DisplayStyle.None;
+            _networkUI.ShowMainMenu();
+        }
+
         private void OnAbandon()
         {
             if (!_layerRunning) return;
@@ -216,7 +234,7 @@ namespace UI
 
         // ---------------- 屏显 ----------------
 
-        private void ShowMenu()
+        public void ShowMenu()
         {
             _hudRoot.style.display = DisplayStyle.None;
             _overlayRoot.style.display = DisplayStyle.None;
