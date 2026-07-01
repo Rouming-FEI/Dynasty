@@ -635,6 +635,7 @@ namespace UI
             _bannerRoot.style.display = DisplayStyle.None;
             _roomRoot.style.display = DisplayStyle.None;
             _overlayRoot.style.display = DisplayStyle.None;
+            _menuRoot.style.display = DisplayStyle.None;   // 回单人互切闭环：不隐则不透明 net-panel 盖住挑战菜单
             _battleUI?.EndNetworkedBattle();
         }
 
