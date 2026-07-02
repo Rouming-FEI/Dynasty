@@ -13,7 +13,9 @@ namespace UI
     /// 层局承载 = 复用热座链路：GameBootstrap.RestartHotseat(seed, defs) 复位 →
     /// BattleUIController.BeginBattleWithDefs(defs) 开局（热座全交互即真人操作）。
     /// 每帧轮询层局终态（GameOver 或槽 0 死亡）→ ReportHumanLayerEnd 推进会话。
-    /// 挂载要求：UIDocument（Source Asset = LadderUI.uxml）+ Inspector 引用 GameBootstrap 与 BattleUIController。
+    /// 挂载要求：UIDocument（Source Asset = LadderUI.uxml）+ Inspector 引用 GameBootstrap、
+    /// BattleUIController 与 NetworkUIController（入口互切引用）。
+    /// 入口互切：挑战主菜单「网络对战」→ NetworkUIController.ShowMainMenu；NetworkUI「回单人模式」→ 本类 ShowMenu()。
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public class ChallengeUIController : MonoBehaviour
@@ -33,7 +35,8 @@ namespace UI
         private Label _hudLayer, _hudChar, _hudStreak;
         private Label _overlayTitle, _overlayBody;
         private Button _overlayPrimary, _overlaySecondary;
-        private bool _warned;
+        private bool _warned;               // 层局引用缺失告警去重（StartLayer：bootstrap/battleUI 缺失，会话内一次）
+        private bool _netWarned;            // 网络入口引用缺失告警去重（OnNetBattle：_networkUI 缺失，会话内一次）
 
         private void Start()
         {
@@ -185,9 +188,9 @@ namespace UI
         {
             if (_networkUI == null)
             {
-                if (!_warned)
+                if (!_netWarned)
                 {
-                    _warned = true;
+                    _netWarned = true;
                     Debug.LogError("[LadderUI] 未指定 NetworkUIController 引用——请在 Inspector 拖入");
                 }
                 return;
@@ -234,6 +237,12 @@ namespace UI
 
         // ---------------- 屏显 ----------------
 
+        /// <summary>
+        /// 显示挑战主菜单（档案/段位/连胜提示）。类内调用点：Start 启动完成、终局回菜单、暂停存档点返回。
+        /// 跨控制器契约：NetworkUIController.OnBackToSingle（「回单人模式」按钮）调用本方法——
+        /// 网络侧须先 QuitAll 隐藏自身全部屏（含不透明主菜单），挑战菜单才可见。
+        /// 前置条件：须在 Start() 完成后调用（依赖 _store/_menuRoot 等已就绪），勿在 Awake 期调用。
+        /// </summary>
         public void ShowMenu()
         {
             _hudRoot.style.display = DisplayStyle.None;
