@@ -120,16 +120,17 @@ namespace UI
             }
 
             // 网络模式：数据源 = driver（presenter 已 AttachNetwork 持有同一 WorldState）
+            // 变量名 netSnap——避免与下方热座分支的 s（方法体层级声明）遮蔽冲突（CS0136）
             if (_netDriver != null)
             {
                 if (_netDriver.State == null) return;   // 未开局
-                BattleSnapshot s = _presenter.BuildSnapshot();
-                RenderTopBar(s);
-                RenderInfoRows(s);
-                RenderMap(s);
-                RenderActionBar(s);
-                RenderLogTail(s);
-                RenderNetworkOverlays(s);
+                BattleSnapshot netSnap = _presenter.BuildSnapshot();
+                RenderTopBar(netSnap);
+                RenderInfoRows(netSnap);
+                RenderMap(netSnap);
+                RenderActionBar(netSnap);
+                RenderLogTail(netSnap);
+                RenderNetworkOverlays(netSnap);
                 return;
             }
 

@@ -43,7 +43,6 @@ namespace UI
         private bool _reconnecting;
         private int _reconnectAttempt;
         private float _nextReconnectAt;
-        private bool _overlayOpen;              // 弹层当前是否占用（断线/终局互斥）
         private bool _roomDirty;                // 主机房间屏刷新标记（真人入座事件早于槽角色写入，延迟下一帧重渲染）
 
         // ---- UI 元素（Start 内赋值） ----
@@ -469,7 +468,6 @@ namespace UI
             _reconnecting = true;
             _reconnectAttempt = 0;
             _nextReconnectAt = Time.time;
-            _overlayOpen = true;
             SetOverlayVisible(true, "连接断开",
                 "正在尝试自动重连…", "放弃", () => { StopReconnect(false); ShowMainMenu(); });
         }
