@@ -51,7 +51,9 @@ namespace Dynasty.Tests.Network
             Assert.That(CharacterDefCatalog.AllIds.Length, Is.EqualTo(16), "16 角色全集");
             for (int i = 1; i <= 16; i++)
             {
-                Assert.That(CharacterDefCatalog.AllIds, Does.Contain(i), $"缺角色 {i}");
+                // CollectionAssert.Contains：Unity 内建 NUnit 3.5 的 Does.Contain 仅 string 重载
+                // （dotnet 用 3.13 有 object 重载——先例：SerializeTests Guid 文件名兼容修复）
+                CollectionAssert.Contains(CharacterDefCatalog.AllIds, i, $"缺角色 {i}");
                 Assert.That(CharacterDefCatalog.Get(i), Is.Not.Null, $"角色 {i} 无法解析 Def");
             }
         }
@@ -177,7 +179,8 @@ namespace Dynasty.Tests.Network
             NetProtocol.ReadType(r);
             NetProtocol.ReadGameStart(r, out _, out int[] hostDefs);
             Assert.That(hostDefs, Is.EqualTo(session.PlayerDefIds), "广播载荷表 = 主机补位后全表");
-            Assert.That(hostDefs, Does.Not.Contain(-1), "广播全表无 AI 占位 -1");
+            // CollectionAssert.DoesNotContain：同上，NUnit 3.5 兼容（Does.Not.Contain(int) 仅 string 重载）
+            CollectionAssert.DoesNotContain(hostDefs, -1, "广播全表无 AI 占位 -1");
 
             // 全新客户端 loop（占位 config：客户端侧不读 HostPlayerDefIds，仅占位同规模）
             var clientT = new TransportStub();
