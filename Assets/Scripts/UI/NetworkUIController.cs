@@ -114,6 +114,16 @@ namespace UI
             _hostRoleField = root.Q<DropdownField>("host-role-field");
             _clientRoleField = root.Q<DropdownField>("client-role-field");
 
+            // 防御：key 元素查询失败 → 先尽力隐藏已解析 root（防止可见全屏面板拦截点击），再报错禁用
+            HideAllRoots();
+            if (_menuRoot == null || _roomRoot == null || _bannerRoot == null || _overlayRoot == null
+                || _hostCountField == null || _hostRoleField == null || _clientRoleField == null)
+            {
+                Debug.LogError("[NetUI] NetworkUI.uxml 关键元素缺失（root/DropdownField 查询失败）——请确认 UXML 与代码同版本");
+                enabled = false;
+                return;
+            }
+
             _roleIds = CharacterCatalog.GetAllIds();
             var names = new List<string>(_roleIds.Length);
             for (int i = 0; i < _roleIds.Length; i++)
@@ -136,12 +146,16 @@ namespace UI
             _overlayPrimary.clicked += () => _primaryAction?.Invoke();
             _overlaySecondary.clicked += () => _secondaryAction?.Invoke();
 
-            // 默认常驻置顶（盖住热座/挑战画面）；进入方式 = 挑战主菜单「网络对战」按钮
-            _roomRoot.style.display = DisplayStyle.None;
-            _bannerRoot.style.display = DisplayStyle.None;
-            _overlayRoot.style.display = DisplayStyle.None;
-            _menuRoot.style.display = DisplayStyle.None;
             _started = true;
+        }
+
+        /// <summary>隐藏全部屏根元素（幂等；null 安全——Start 防御与 QuitAll 共用）。</summary>
+        private void HideAllRoots()
+        {
+            if (_menuRoot != null) _menuRoot.style.display = DisplayStyle.None;
+            if (_roomRoot != null) _roomRoot.style.display = DisplayStyle.None;
+            if (_bannerRoot != null) _bannerRoot.style.display = DisplayStyle.None;
+            if (_overlayRoot != null) _overlayRoot.style.display = DisplayStyle.None;
         }
 
         private void Update()
@@ -630,10 +644,7 @@ namespace UI
             _inBattle = false;
             _judgmentMs = 0;
             _roomDirty = false;
-            _bannerRoot.style.display = DisplayStyle.None;
-            _roomRoot.style.display = DisplayStyle.None;
-            _overlayRoot.style.display = DisplayStyle.None;
-            _menuRoot.style.display = DisplayStyle.None;   // 回单人互切闭环：不隐则不透明 net-panel 盖住挑战菜单
+            HideAllRoots();   // 四屏全隐（含 menu-root——回单人互切闭环：不隐则不透明 net-panel 盖住挑战菜单）
             _battleUI?.EndNetworkedBattle();
         }
 

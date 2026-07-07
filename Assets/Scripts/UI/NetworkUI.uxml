@@ -9,16 +9,16 @@
                 <ui:VisualElement style="margin: 20px;">
                     <ui:Label text="—— 建房（主机） ——" class="net-subtitle" />
                     <ui:TextField name="host-port-field" label="端口" value="7777" class="net-field" />
-                    <ui:DropdownField name="host-count-field" label="人数" index="2" class="net-field" />
+                    <ui:DropdownField name="host-count-field" label="人数" class="net-field" />
                     <ui:TextField name="host-seed-field" label="种子（空 = 随机）" value="" class="net-field" />
-                    <ui:DropdownField name="host-role-field" label="我的角色" index="0" class="net-field" />
+                    <ui:DropdownField name="host-role-field" label="我的角色" class="net-field" />
                     <ui:Button name="host-start-button" text="创建房间" class="net-button" />
                 </ui:VisualElement>
                 <ui:VisualElement style="margin: 20px;">
                     <ui:Label text="—— 加入（客户端） ——" class="net-subtitle" />
                     <ui:TextField name="client-ip-field" label="主机 IP" value="127.0.0.1" class="net-field" />
                     <ui:TextField name="client-port-field" label="端口" value="7777" class="net-field" />
-                    <ui:DropdownField name="client-role-field" label="我的角色" index="0" class="net-field" />
+                    <ui:DropdownField name="client-role-field" label="我的角色" class="net-field" />
                     <ui:Button name="client-join-button" text="加入房间" class="net-button" />
                 </ui:VisualElement>
             </ui:VisualElement>
