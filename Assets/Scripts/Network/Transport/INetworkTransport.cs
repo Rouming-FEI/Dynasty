@@ -30,6 +30,12 @@ namespace Network.Transport
         /// <summary>组播到全部对端（不含本地）；无对端返回 false。</summary>
         bool Broadcast(NetDataWriter w);
 
+        /// <summary>对端连接建立（主机侧：AcceptPeer；客户端侧：Connect 成功 ack）。peerId 语义同 OnDataReceived。</summary>
+        event Action<int> OnPeerConnected;
+
+        /// <summary>对端断开（主动 Stop/超时/掉线）。</summary>
+        event Action<int> OnPeerDisconnected;
+
         /// <summary>收到可靠数据（peerId, reader）。reader 仅回调内有效。</summary>
         event Action<int, NetDataReader> OnDataReceived;
     }

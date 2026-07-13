@@ -104,7 +104,9 @@ namespace Network.Session
         }
 
         /// <summary>主机：peerId 断线 → 槽位释放并返回玩家 id（-1=该 peer 无槽位）。
-        /// 断线重连窗口（ReconnectGraceMs）由 Task 11 ReconnectHandler 接入；本层断线即释放。</summary>
+        /// 断线重连窗口（ReconnectGraceMs）由 Task 11 ReconnectHandler 接入；本层断线即释放。
+        /// 槽位角色按阶段处置（Task 2 评审加固）：Lobby 期连角色一起释放（槽置 -1，新玩家可选该角色）；
+        /// InGame 期保留角色残留（断线槽回落 AI 托管原角色 + 重连接管语义）。</summary>
         public int HandleDisconnect(int peerId)
         {
             if (!IsHost)
@@ -114,6 +116,8 @@ namespace Network.Session
                 if (_slotOwnerPeer[i] == peerId)
                 {
                     _slotOwnerPeer[i] = -1;
+                    if (Phase == SessionPhase.Lobby)
+                        _playerDefIds[i] = -1;
                     OnPlayerLeft?.Invoke(i);
                     return i;
                 }
@@ -135,6 +139,34 @@ namespace Network.Session
             _playerDefIds = new int[defIds.Length];
             Array.Copy(defIds, _playerDefIds, defIds.Length);
             Phase = SessionPhase.InGame;
+        }
+
+        /// <summary>主机：写入槽位角色（入座真人先到先得选角；AI 空槽保持 -1 由开局补位）。
+        /// 不限制 Phase（补位在 TryStartGame 之后的 StartGame 内发生）。</summary>
+        public void SetPlayerDef(int playerId, int defId)
+        {
+            if (!IsHost)
+                throw new InvalidOperationException("仅主机可写槽位角色");
+            if (playerId < 0 || playerId >= _playerDefIds.Length)
+                throw new ArgumentException($"playerId {playerId} 越界（须在 [0, {_playerDefIds.Length - 1}]）", nameof(playerId));
+            _playerDefIds[playerId] = defId;
+        }
+
+        /// <summary>真人占用集查询：槽 0（主机本地）或已入座真人槽（PlayerPeerIds[i] != -1）的
+        /// 已定角色包含 defId → 占用。AI 空槽（-1）不参与；defId &lt;= 0 恒 false。
+        /// 仅主机可查询（客户端无角色表 _playerDefIds = null，须先守卫再解引用）。</summary>
+        public bool IsDefReserved(int defId)
+        {
+            if (!IsHost)
+                throw new InvalidOperationException("仅主机可查询占用");
+            if (defId <= 0) return false;
+            for (int i = 0; i < _playerDefIds.Length; i++)
+            {
+                if (_playerDefIds[i] != defId) continue;
+                if (i == 0 || _slotOwnerPeer[i] != -1)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>主机：重连者拿回原槽位（peerId 重新持有 playerId 槽，经 OnPlayerJoined 解冻信号）。

@@ -5,6 +5,7 @@ using Gameplay.Movement;
 using Network.Local;
 using AI;
 using UI.Presenter;
+using UI.ViewModels;
 using NUnit.Framework;
 
 namespace Dynasty.Tests
@@ -151,6 +152,80 @@ namespace Dynasty.Tests
 
             Assert.AreNotEqual(TurnPhase.ActionPhase, state.Phase,
                 "200 轮内必须离开行动阶段（修复前 AI 槽被 ManualInputProvider 劫持恒返回 null，死锁）");
+        }
+
+        // ==================== 网络模式（Task 6：输入分流） ====================
+
+        [Test]
+        public void 网络模式_提交筹码_直达Sink_置JudgmentSubmitted()
+        {
+            LocalLockstep ls = CreateLs(out WorldState state);
+            var presenter = new BattlePresenter(ls.State);
+            ChipAllocation? sent = null;
+            presenter.AttachNetwork(1, () => ls.CurrentActorPlayerId,
+                a => sent = a, cmd => { });
+
+            presenter.SubmitChipAllocation(2, 1, 0);
+
+            Assert.IsFalse(presenter.HasPendingJudgment, "网络模式不写本地 pending");
+            Assert.IsTrue(presenter.JudgmentSubmitted, "已提交标记置位");
+            Assert.IsNotNull(sent);
+            Assert.AreEqual(1, sent.Value.PlayerId, "筹码归属 AttachNetwork 的 playerId");
+            Assert.AreEqual(2, sent.Value.Rock);
+            Assert.AreEqual(1, sent.Value.Scissors);
+        }
+
+        [Test]
+        public void 网络模式_提交命令_直达Sink()
+        {
+            LocalLockstep ls = CreateLs(out WorldState state);
+            var presenter = new BattlePresenter(ls.State);
+            ICommand got = null;
+            presenter.AttachNetwork(0, () => ls.CurrentActorPlayerId,
+                a => { }, cmd => got = cmd);
+
+            var cmd = new WasteAPCommand(state.CurrentTick, 0);
+            presenter.SubmitCommand(cmd);
+            Assert.AreSame(cmd, got, "命令直达 sink");
+
+            // 非绑定玩家命令仍丢弃（与热座语义一致）
+            ICommand stray = null;
+            presenter.AttachNetwork(0, () => ls.CurrentActorPlayerId, a => { }, c => stray = c);
+            presenter.SubmitCommand(new WasteAPCommand(state.CurrentTick, 1));
+            Assert.IsNull(stray, "非绑定玩家命令丢弃");
+        }
+
+        [Test]
+        public void 网络模式_actor查询走注入Provider()
+        {
+            LocalLockstep ls = CreateLs(out WorldState state);
+            ls.StartGame();   // 快照需要角色行（默认 3 角色轮换填充 4 槽），计划原文漏开局面
+            var presenter = new BattlePresenter(ls.State);
+            int probe = -1;
+            presenter.AttachNetwork(2, () => probe, a => { }, cmd => { });
+
+            probe = 3;
+            BattleSnapshot snap = presenter.BuildSnapshot();
+            Assert.IsTrue(snap.CharacterRows[3].IsCurrentActor, "actor 高亮来自注入 provider");
+        }
+
+        [Test]
+        public void 网络模式_ResetJudgmentSubmitted与Detach_复位语义()
+        {
+            LocalLockstep ls = CreateLs(out WorldState state);
+            var presenter = new BattlePresenter(ls.State);
+            presenter.AttachNetwork(0, () => ls.CurrentActorPlayerId, a => { }, cmd => { });
+
+            presenter.SubmitChipAllocation(1, 1, 1);
+            Assert.IsTrue(presenter.JudgmentSubmitted);
+            presenter.ResetJudgmentSubmitted();   // 窗口事件（RoundStart）到达 → 允许新一轮提交
+            Assert.IsFalse(presenter.JudgmentSubmitted);
+
+            presenter.DetachNetwork();
+            Assert.IsFalse(presenter.NetworkMode);
+            Assert.IsFalse(presenter.JudgmentSubmitted);
+            presenter.SubmitChipAllocation(0, 0, 0);   // 回到热座语义不崩
+            Assert.IsTrue(presenter.HasPendingJudgment);
         }
     }
 }

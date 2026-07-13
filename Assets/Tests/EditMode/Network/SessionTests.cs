@@ -169,5 +169,100 @@ namespace Dynasty.Tests.Network
 
             Assert.Throws<InvalidOperationException>(() => host.ApplyJoinAccept(1, 1, new[] { 1, 2, 3, 4 }));
         }
+
+        [Test]
+        public void SetPlayerDef_写入槽位角色_越界抛异常()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 1, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            session.SetPlayerDef(1, 14);
+            Assert.That(session.PlayerDefIds[1], Is.EqualTo(14));
+            Assert.Throws<ArgumentException>(() => session.SetPlayerDef(9, 1));
+        }
+
+        [Test]
+        public void SetPlayerDef_仅主机可调()
+        {
+            var config = new SessionConfig { PlayerCount = 4 };
+            var session = new NetworkSession(config, false);
+            Assert.Throws<InvalidOperationException>(() => session.SetPlayerDef(1, 1));
+        }
+
+        [Test]
+        public void IsDefReserved_真人占用集查询()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 7, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            Assert.That(session.IsDefReserved(7), Is.True, "槽 0 主机角色已占用");
+            Assert.That(session.IsDefReserved(1), Is.False);
+            session.HandleHello(5, 1);              // peer 5 入座槽 1
+            session.SetPlayerDef(1, 14);            // 槽 1 真人选定 14
+            Assert.That(session.IsDefReserved(14), Is.True, "已入座真人槽角色占用");
+            Assert.That(session.IsDefReserved(16), Is.False);
+            Assert.That(session.IsDefReserved(-1), Is.False);
+            Assert.That(session.IsDefReserved(0), Is.False);
+        }
+
+        // ---- Task 2 质量评审加固（增量）：断线分阶段 def 处置 / 占用查询守卫 / 契约断言 ----
+
+        [Test]
+        public void IsDefReserved_仅主机可调()
+        {
+            var config = new SessionConfig { PlayerCount = 4 };   // 客户端无角色表（_playerDefIds = null）
+            var session = new NetworkSession(config, false);
+
+            Assert.Throws<InvalidOperationException>(() => session.IsDefReserved(1));
+        }
+
+        [Test]
+        public void HandleDisconnect_Lobby期断线释放槽位并清角色()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 7, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            session.HandleHello(5, 14);
+            session.SetPlayerDef(1, 14);            // 槽 1 真人选定 14
+
+            Assert.That(session.HandleDisconnect(5), Is.EqualTo(1));
+            Assert.That(session.PlayerPeerIds[1], Is.EqualTo(-1), "槽位释放");
+            Assert.That(session.PlayerDefIds[1], Is.EqualTo(-1), "Lobby 期断线连角色一起释放（新人可选该角色）");
+        }
+
+        [Test]
+        public void HandleDisconnect_InGame期断线释放槽位保留角色残留()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 7, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            session.HandleHello(5, 14);
+            session.SetPlayerDef(1, 14);
+            session.TryStartGame();                 // Lobby → InGame（开战后断线）
+
+            Assert.That(session.HandleDisconnect(5), Is.EqualTo(1));
+            Assert.That(session.PlayerPeerIds[1], Is.EqualTo(-1), "槽位释放");
+            Assert.That(session.PlayerDefIds[1], Is.EqualTo(14), "InGame 断线保留角色（回落 AI 托管原角色 + 重连接管）");
+        }
+
+        [Test]
+        public void SetPlayerDef_负playerId越界抛异常()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 1, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+
+            Assert.Throws<ArgumentException>(() => session.SetPlayerDef(-1, 1));
+        }
+
+        [Test]
+        public void IsDefReserved_InGame断线残留角色不计真人占用()
+        {
+            var config = new SessionConfig { PlayerCount = 4, HostPlayerDefIds = new[] { 7, -1, -1, -1 } };
+            var session = new NetworkSession(config, true);
+            session.HandleHello(5, 14);
+            session.SetPlayerDef(1, 14);
+            session.TryStartGame();
+            session.HandleDisconnect(5);            // InGame 断线：peer 释放、def 残留
+
+            Assert.That(session.PlayerPeerIds[1], Is.EqualTo(-1));
+            Assert.That(session.PlayerDefIds[1], Is.EqualTo(14), "角色残留");
+            Assert.That(session.IsDefReserved(14), Is.False, "占用判定只看真人槽——无真人持 14 则不计占用");
+        }
     }
 }

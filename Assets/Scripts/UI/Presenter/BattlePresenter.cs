@@ -133,9 +133,11 @@ namespace UI.Presenter
             return snap;
         }
 
-        /// <summary>当前行动者（未绑定 lockstep 时 -1）。Bind 赋 _lockstep。</summary>
+        /// <summary>当前行动者（未绑定且无 provider 时 -1）。网络模式读注入 provider。</summary>
         private int CurrentActorPlayerId()
-            => _lockstep != null ? _lockstep.CurrentActorPlayerId : -1;
+            => _chipSink != null
+                ? (_networkActorProvider != null ? _networkActorProvider() : -1)
+                : (_lockstep != null ? _lockstep.CurrentActorPlayerId : -1);
 
         private string BuildWinnerText()
         {
@@ -236,17 +238,67 @@ namespace UI.Presenter
             });
         }
 
-        // ---------------- 输入意图（热座） ----------------
+        // ---------------- 输入意图（热座 pending + 网络 sink 分流） ----------------
 
         private int _humanPlayerId = -1;
         private ChipAllocation? _pendingJudgment;
         private ICommand _pendingCommand;
 
-        /// <summary>真人玩家 id（Bind 后有效；-1 = 未绑定）。</summary>
+        // 网络模式（Task 6）：不 Bind——lockstep 输入钩子归 NetworkGameLoop（客户端纯重放安全）；
+        // 输入经 sink 直通 loop.SubmitChip/SubmitAction；actor 查询走注入 provider
+        private Func<int> _networkActorProvider;
+        private Action<ChipAllocation> _chipSink;
+        private Action<ICommand> _cmdSink;
+        private bool _judgmentSubmitted;
+
+        /// <summary>真人玩家 id（Bind/AttachNetwork 后有效；-1 = 未绑定）。</summary>
         public int HumanPlayerId => _humanPlayerId;
 
         /// <summary>是否有待消费的筹码提交（UI 判定面板显隐依据）。</summary>
         public bool HasPendingJudgment => _pendingJudgment != null;
+
+        /// <summary>网络模式激活（sink 已装配；NetworkMode=false = 热座 Bind 语义）。</summary>
+        public bool NetworkMode => _chipSink != null;
+
+        /// <summary>网络模式：本端已提交判定（窗口事件 ResetJudgmentSubmitted 复位；筹码面板显隐用）。</summary>
+        public bool JudgmentSubmitted => _judgmentSubmitted;
+
+        /// <summary>
+        /// 装配网络模式（替代 Bind）：playerId = 本端槽位；actorProvider = 当前行动者查询
+        /// （NetworkGameLoop.CurrentActorPlayerId）；chipSink/cmdSink = 提交出口
+        /// （驱动层转 loop.SubmitChip / SubmitAction）。不触碰 lockstep 钩子。
+        /// </summary>
+        public void AttachNetwork(int playerId, Func<int> actorProvider,
+            Action<ChipAllocation> chipSink, Action<ICommand> cmdSink)
+        {
+            if (actorProvider == null) throw new ArgumentNullException(nameof(actorProvider));
+            if (chipSink == null) throw new ArgumentNullException(nameof(chipSink));
+            if (cmdSink == null) throw new ArgumentNullException(nameof(cmdSink));
+            _lockstep = null;
+            _humanPlayerId = playerId;
+            _networkActorProvider = actorProvider;
+            _chipSink = chipSink;
+            _cmdSink = cmdSink;
+            _pendingJudgment = null;
+            _pendingCommand = null;
+            _judgmentSubmitted = false;
+        }
+
+        /// <summary>复位已提交标记（每个判定窗口事件 = 新一轮提交允许）。</summary>
+        public void ResetJudgmentSubmitted() => _judgmentSubmitted = false;
+
+        /// <summary>卸载网络模式：回到未绑定状态（热座 Bind 前语义）。</summary>
+        public void DetachNetwork()
+        {
+            _lockstep = null;
+            _humanPlayerId = -1;
+            _networkActorProvider = null;
+            _chipSink = null;
+            _cmdSink = null;
+            _pendingJudgment = null;
+            _pendingCommand = null;
+            _judgmentSubmitted = false;
+        }
 
         /// <summary>
         /// 绑定 LocalLockstep：设置真人掩码并接管该玩家的判定/行动输入钩子。
@@ -260,6 +312,13 @@ namespace UI.Presenter
                 throw new ArgumentException(
                     $"humanPlayerId {humanPlayerId} 超出玩家范围 [0, {lockstep.State.PlayerCount - 1}]",
                     nameof(humanPlayerId));
+            // 与 AttachNetwork 互斥，最后一次调用决定模式；同实例交叉切换不可达
+            // （每局新建 presenter），防御性清零。置于参数校验之后：失败调用被 catch 时
+            // 不留下「sink 已清而 lockstep 未绑」的半态
+            _chipSink = null;
+            _cmdSink = null;
+            _networkActorProvider = null;
+            _judgmentSubmitted = false;
             _lockstep = lockstep;
             _humanPlayerId = humanPlayerId;
             _pendingJudgment = null;
@@ -270,20 +329,37 @@ namespace UI.Presenter
             lockstep.ManualInputProvider = GetHumanActionInput;
         }
 
-        /// <summary>暂存筹码分配意图（归属 Bind 绑定的真人玩家，后提交覆盖先提交）。</summary>
+        /// <summary>暂存筹码分配意图（归属绑定玩家）：网络模式直达 chipSink；热座写 pending。
+        /// 后提交覆盖先提交（热座）；网络模式每窗口一次提交由 UI 门控。</summary>
         public void SubmitChipAllocation(int rock, int scissors, int paper)
         {
+            if (_chipSink != null)
+            {
+                var alloc = new ChipAllocation(_humanPlayerId)
+                {
+                    Rock = rock, Scissors = scissors, Paper = paper
+                };
+                _chipSink(alloc);
+                _judgmentSubmitted = true;
+                return;
+            }
             _pendingJudgment = new ChipAllocation(_humanPlayerId)
             {
                 Rock = rock, Scissors = scissors, Paper = paper
             };
         }
 
-        /// <summary>暂存行动指令意图；非绑定玩家的指令直接丢弃（防误用输入进入确定性流）。</summary>
+        /// <summary>暂存行动指令意图：网络模式直达 cmdSink；热座写 pending。
+        /// 非绑定玩家的指令直接丢弃（防误用输入进入确定性流）。</summary>
         public void SubmitCommand(ICommand cmd)
         {
             if (_humanPlayerId >= 0 && cmd.PlayerId != _humanPlayerId)
                 return;
+            if (_cmdSink != null)
+            {
+                _cmdSink(cmd);
+                return;
+            }
             _pendingCommand = cmd;
         }
 

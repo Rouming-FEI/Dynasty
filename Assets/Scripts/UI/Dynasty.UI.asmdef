@@ -1,7 +1,7 @@
 {
     "name": "Dynasty.UI",
     "rootNamespace": "",
-    "references": ["Dynasty.Simulation", "Dynasty.Bootstrap"],
+    "references": ["Dynasty.Simulation", "Dynasty.Bootstrap", "LiteNetLib"],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

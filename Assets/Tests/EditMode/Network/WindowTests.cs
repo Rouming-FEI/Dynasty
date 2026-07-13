@@ -39,6 +39,8 @@ namespace Dynasty.Tests.Network
             /// <summary>ActionBatch 广播载荷 (playerId, isPass, kind)——超时跳过/AI 行动断言。</summary>
             public readonly List<(int Player, int IsPass, ReplayActionKind Kind)> ActionBatchLog = new List<(int, int, ReplayActionKind)>();
 
+            public event Action<int> OnPeerConnected;
+            public event Action<int> OnPeerDisconnected;
             public event Action<int, NetDataReader> OnDataReceived;
 
             public LoopbackTransport(int selfPeerId)

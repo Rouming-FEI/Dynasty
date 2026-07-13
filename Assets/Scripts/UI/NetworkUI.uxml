@@ -1,0 +1,57 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <ui:Style src="NetworkUI.uss" />
+    <ui:VisualElement name="net-root" class="net-root">
+
+        <!-- ① 主菜单：建房 / 入房 -->
+        <ui:VisualElement name="menu-root" class="net-panel">
+            <ui:Label text="网络对战" class="net-title" />
+            <ui:VisualElement class="net-row">
+                <ui:VisualElement style="margin: 20px;">
+                    <ui:Label text="—— 建房（主机） ——" class="net-subtitle" />
+                    <ui:TextField name="host-port-field" label="端口" value="7777" class="net-field" />
+                    <ui:DropdownField name="host-count-field" label="人数" class="net-field" />
+                    <ui:TextField name="host-seed-field" label="种子（空 = 随机）" value="" class="net-field" />
+                    <ui:DropdownField name="host-role-field" label="我的角色" class="net-field" />
+                    <ui:Button name="host-start-button" text="创建房间" class="net-button" />
+                </ui:VisualElement>
+                <ui:VisualElement style="margin: 20px;">
+                    <ui:Label text="—— 加入（客户端） ——" class="net-subtitle" />
+                    <ui:TextField name="client-ip-field" label="主机 IP" value="127.0.0.1" class="net-field" />
+                    <ui:TextField name="client-port-field" label="端口" value="7777" class="net-field" />
+                    <ui:DropdownField name="client-role-field" label="我的角色" class="net-field" />
+                    <ui:Button name="client-join-button" text="加入房间" class="net-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Label name="menu-error-label" class="net-error" />
+            <ui:Button name="back-single-button" text="← 回单人模式（热座 / 天梯挑战）" class="net-button" />
+        </ui:VisualElement>
+
+        <!-- ② 房间屏 -->
+        <ui:VisualElement name="room-root" class="net-panel">
+            <ui:Label name="room-title-label" class="net-title" />
+            <ui:Label name="room-seed-label" class="net-hint" />
+            <ui:Label name="room-list-label" class="net-stats" />
+            <ui:Label name="room-hint-label" class="net-hint" />
+            <ui:Button name="room-start-button" text="开战" class="net-button" />
+            <ui:Button name="room-leave-button" text="离开房间" class="net-button" />
+        </ui:VisualElement>
+
+        <!-- ③ 对局横幅（InGame 常驻顶条） -->
+        <ui:VisualElement name="banner-root" class="net-hud">
+            <ui:Label name="banner-status-label" class="net-hud-item" />
+            <ui:Label name="banner-window-label" class="net-hud-item" />
+            <ui:Button name="banner-quit-button" text="断开并退出" class="net-button net-hud-quit" />
+        </ui:VisualElement>
+
+        <!-- ④ 弹层（断线/重连/错误/终局共用） -->
+        <ui:VisualElement name="overlay-root" class="net-overlay">
+            <ui:VisualElement class="net-overlay-card">
+                <ui:Label name="overlay-title-label" class="net-title" />
+                <ui:Label name="overlay-body-label" class="net-stats" />
+                <ui:Label name="overlay-error-label" class="net-error" />
+                <ui:Button name="overlay-primary-button" class="net-button" />
+                <ui:Button name="overlay-secondary-button" class="net-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
