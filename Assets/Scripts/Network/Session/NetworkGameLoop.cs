@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using AI;
 using Core;
@@ -261,6 +261,8 @@ namespace Network.Session
                 }
             }
             _state = new WorldState(_config.PlayerCount, _session.Seed);
+            // 事件风暴熔断 → 现有错误通道（OnError：UI 可见 + 日志），主机/客户端统一可观测
+            _state.Events.DepthWarningSink = ReportError;
             _ais = new SimpleAI[_config.PlayerCount];
             for (int i = 0; i < _config.PlayerCount; i++)
                 _ais[i] = new SimpleAI(i);
