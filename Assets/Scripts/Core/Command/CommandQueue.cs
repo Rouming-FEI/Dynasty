@@ -45,15 +45,20 @@ namespace Core.Command
             return cmd;
         }
 
+        /// <summary>
+        /// 单批执行：循环取出队首执行并计数，链式命令（执行中 Enqueue）追加到队尾、同批消费；
+        /// 执行条数达到 CommandBatchLimit 后，剩余命令 drain 丢弃（批上限熔断）。
+        /// 注意：这是「单批命令数上限」，不是递归深度——递归深度限制由 EventBus 承担。
+        /// </summary>
         public void ExecuteAll(WorldState state)
         {
-            int depth = 0;
+            int executed = 0;
             while (_count > 0)
             {
-                depth++;
-                if (depth > GameConfig.CommandMaxDepth)
+                executed++;
+                if (executed > GameConfig.CommandBatchLimit)
                 {
-                    while (_count > 0) Dequeue(); // drain
+                    while (_count > 0) Dequeue(); // drain 剩余：本批不再执行
                     break;
                 }
                 ICommand cmd = Dequeue();
