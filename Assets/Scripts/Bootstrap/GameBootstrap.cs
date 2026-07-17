@@ -32,6 +32,7 @@ namespace Bootstrap
 
             _state = new WorldState(_playerCount, _randomSeed);
             SubscribeEvents(_state.Events);
+            _state.Events.DepthWarningSink = msg => Debug.LogError(msg);   // 事件风暴熔断 → Unity Console
 
             _ais = new SimpleAI[_playerCount];
             for (int i = 0; i < _playerCount; i++)
@@ -277,6 +278,7 @@ namespace Bootstrap
             _lockstep = null;
             _state = new WorldState(_playerCount, _randomSeed);
             SubscribeEvents(_state.Events);
+            _state.Events.DepthWarningSink = msg => Debug.LogError(msg);   // 事件风暴熔断 → Unity Console
         }
 
         /// <summary>热座重开：指定种子 + 注入角色（天梯挑战层局用——层局人数与 AI 流按 defs
@@ -295,6 +297,7 @@ namespace Bootstrap
             _ais = new SimpleAI[n];
             for (int i = 0; i < n; i++) _ais[i] = new SimpleAI(i);
             SubscribeEvents(_state.Events);
+            _state.Events.DepthWarningSink = msg => Debug.LogError(msg);   // 事件风暴熔断 → Unity Console
             BeginHotseat(defs);
         }
     }
