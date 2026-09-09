@@ -30,4 +30,4 @@ AGENTS.md
 *.DotSettings.user
 
 # dotnet verify project (out-of-Unity validation; sources vendored, not tracked)
-tools/verify/
+/tools/
